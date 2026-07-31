@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environment
+.venv/
+
+# Environment variables
+.env
+
+# Databases
+db/
+
+# Logs
+logs/
+
+# IDE
+.vscode/
+
+# Streamlit
+.streamlit/
+
+# Python caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Operating system
+Thumbs.db
+.DS_Store

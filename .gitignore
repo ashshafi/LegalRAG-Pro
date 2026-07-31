@@ -1,0 +1,32 @@
+# Virtual environment
+.venv/
+
+# Environment variables
+.env
+
+# Chroma database
+db/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# IDE
+.vscode/
+
+# Streamlit
+.streamlit/
+
+# Test caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Logs
+logs/
+
+# Operating system
+Thumbs.db
+.DS_Store
