@@ -1,8 +1,20 @@
-import streamlit as st
 from pathlib import Path
+
+import streamlit as st
 
 
 def show_sidebar():
+    """
+    Display the application sidebar.
+
+    Returns
+    -------
+    tuple
+        (
+            selected_documents,
+            timeline_clicked
+        )
+    """
 
     st.sidebar.title("📚 Documents")
 
@@ -10,7 +22,7 @@ def show_sidebar():
         Path("docs").glob("*.pdf")
     )
 
-    selected = []
+    selected_documents = []
 
     for pdf in docs:
 
@@ -18,32 +30,56 @@ def show_sidebar():
             pdf.name,
             value=True
         ):
-            selected.append(pdf.name)
+            selected_documents.append(
+                pdf.name
+            )
 
     st.sidebar.divider()
 
     st.sidebar.title("⚖ Tribunal Tools")
 
-    st.sidebar.button("📅 Timeline")
+    timeline_clicked = st.sidebar.button(
+        "📅 Timeline",
+        use_container_width=True
+    )
 
-    st.sidebar.button("📚 Evidence Explorer")
+    st.sidebar.button(
+        "📚 Evidence Explorer",
+        use_container_width=True
+    )
 
-    st.sidebar.button("👤 People Explorer")
+    st.sidebar.button(
+        "👤 People Explorer",
+        use_container_width=True
+    )
 
-    st.sidebar.button("📑 Compare Documents")
+    st.sidebar.button(
+        "📑 Compare Documents",
+        use_container_width=True
+    )
 
-    st.sidebar.button("📄 Reports")
+    st.sidebar.button(
+        "📄 Reports",
+        use_container_width=True
+    )
 
     st.sidebar.divider()
 
     st.sidebar.title("📊 Status")
 
-    st.sidebar.success("OpenAI Connected")
-
-    st.sidebar.success("Chroma Connected")
-
-    st.sidebar.info(
-        f"{len(docs)} document(s)"
+    st.sidebar.success(
+        "OpenAI Connected"
     )
 
-    return selected
+    st.sidebar.success(
+        "Chroma Connected"
+    )
+
+    st.sidebar.info(
+        f"{len(docs)} document(s) indexed"
+    )
+
+    return (
+        selected_documents,
+        timeline_clicked
+    )
