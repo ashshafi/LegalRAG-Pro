@@ -1,85 +1,49 @@
-from pathlib import Path
-
 import streamlit as st
-
-from document_manager import get_documents
-from index_documents import index_pdf
+from pathlib import Path
 
 
 def show_sidebar():
 
-    selected_documents = []
+    st.sidebar.title("📚 Documents")
 
-    with st.sidebar:
+    docs = sorted(
+        Path("docs").glob("*.pdf")
+    )
 
-        st.header("📚 Documents")
+    selected = []
 
-        documents = get_documents()
+    for pdf in docs:
 
-        st.caption(
-            f"{len(documents)} document(s) indexed"
-        )
+        if st.sidebar.checkbox(
+            pdf.name,
+            value=True
+        ):
+            selected.append(pdf.name)
 
-        st.divider()
+    st.sidebar.divider()
 
-        search = st.text_input(
-            "🔍 Search documents"
-        )
+    st.sidebar.title("⚖ Tribunal Tools")
 
-        for document in documents:
+    st.sidebar.button("📅 Timeline")
 
-            if search.lower() in document.lower():
+    st.sidebar.button("📚 Evidence Explorer")
 
-                if st.checkbox(
-                    document,
-                    value=True
-                ):
-                    selected_documents.append(
-                        document
-                    )
+    st.sidebar.button("👤 People Explorer")
 
-        st.divider()
+    st.sidebar.button("📑 Compare Documents")
 
-        uploaded_file = st.file_uploader(
-            "Upload PDF",
-            type=["pdf"]
-        )
+    st.sidebar.button("📄 Reports")
 
-        if uploaded_file:
+    st.sidebar.divider()
 
-            docs_folder = Path("docs")
-            docs_folder.mkdir(exist_ok=True)
+    st.sidebar.title("📊 Status")
 
-            save_path = docs_folder / uploaded_file.name
+    st.sidebar.success("OpenAI Connected")
 
-            with open(save_path, "wb") as f:
-                f.write(uploaded_file.getbuffer())
+    st.sidebar.success("Chroma Connected")
 
-            st.success("PDF saved")
+    st.sidebar.info(
+        f"{len(docs)} document(s)"
+    )
 
-            if st.button("📥 Index Document"):
-
-                with st.spinner(
-                    "Indexing..."
-                ):
-                    index_pdf(save_path)
-
-                st.success(
-                    "Finished indexing"
-                )
-
-        st.divider()
-
-        st.subheader("⚖ Tribunal Tools")
-
-        st.button("📅 Timeline")
-
-        st.button("📚 Evidence Explorer")
-
-        st.button("👤 People Explorer")
-
-        st.button("📑 Compare Documents")
-
-        st.button("📄 Reports")
-
-    return selected_documents
+    return selected
