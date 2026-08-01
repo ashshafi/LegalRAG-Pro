@@ -1,70 +1,78 @@
-from dotenv import load_dotenv
-from openai import OpenAI
-import chromadb
+import streamlit as st
 
-load_dotenv()
+from legalrag import ask
 
-client = OpenAI()
 
-# Connect to ChromaDB
-chroma_client = chromadb.PersistentClient(path="db")
-collection = chroma_client.get_collection("legal_documents")
+def show_chat(selected_documents):
 
-question = input("Ask a question: ")
+    st.header("💬 AI Assistant")
 
-# Create embedding for the question
-embedding = client.embeddings.create(
-    model="text-embedding-3-small",
-    input=question
-)
+    question = st.text_input(
+        "Ask a legal question"
+    )
 
-question_vector = embedding.data[0].embedding
+    if st.button("🔍 Ask"):
 
-# Search the database
-results = collection.query(
-    query_embeddings=[question_vector],
-    n_results=3
-)
+        if not question:
 
-# Build the context for GPT
-context = ""
+            st.warning(
+                "Please enter a question."
+            )
 
-for i in range(len(results["documents"][0])):
+            return
 
-    metadata = results["metadatas"][0][i]
+        with st.spinner(
+            "Searching documents..."
+        ):
 
-    context += f"""
-Document: {metadata['file']}
-Page: {metadata['page']}
+            result = ask(
+                question,
+                selected_documents
+            )
 
-{results["documents"][0][i]}
+        # ----------------------------
+        # Answer
+        # ----------------------------
 
-----------------------------
+        st.subheader("📄 Answer")
 
-"""
+        st.success(result["answer"])
 
-prompt = f"""
-You are an AI legal assistant.
+        st.divider()
 
-Answer ONLY using the information below.
+        # ----------------------------
+        # Evidence
+        # ----------------------------
 
-If the answer is not contained in the documents,
-say you cannot find it.
+        st.subheader("📚 Supporting Evidence")
 
-Documents:
+        if not result["sources"]:
 
-{context}
+            st.info("No supporting evidence found.")
 
-Question:
+            return
 
-{question}
-"""
+        for source in result["sources"]:
 
-response = client.responses.create(
-    model="gpt-5",
-    input=prompt
-)
+            preview = source["text"][:250]
 
-print("\n=========================\n")
+            if len(source["text"]) > 250:
+                preview += "..."
 
-print(response.output_text)
+            st.markdown(
+                f"### 📄 {source['file']}"
+            )
+
+            st.caption(
+                f"Page {source['page']}"
+            )
+
+            st.write(preview)
+
+            with st.expander(
+                "Show full evidence"
+            ):
+
+                st.write(source["text"])
+
+            st.divider()
