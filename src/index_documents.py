@@ -1,152 +1,178 @@
+"""Index PDF documents into the LegalRAG Pro Chroma collection."""
+
+from __future__ import annotations
+
+import argparse
+import logging
 from pathlib import Path
 
+import chromadb
 from dotenv import load_dotenv
-from pypdf import PdfReader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from openai import OpenAI
-import chromadb
+from pypdf import PdfReader
 
+from case_management.document_context import (
+    build_chunk_metadata,
+    build_document_id,
+    normalise_case_id,
+)
 from ocr import extract_text
 
-# ==========================================
-# Load environment variables
-# ==========================================
+LOGGER = logging.getLogger(__name__)
 
 load_dotenv()
 
 client = OpenAI()
-
-# ==========================================
-# Connect to Chroma
-# ==========================================
-
 chroma_client = chromadb.PersistentClient(path="db")
-
-collection = chroma_client.get_or_create_collection(
-    name="legal_documents"
-)
-
-# ==========================================
-# Text splitter
-# ==========================================
+collection = chroma_client.get_or_create_collection(name="legal_documents")
 
 splitter = RecursiveCharacterTextSplitter(
     chunk_size=1000,
-    chunk_overlap=200
+    chunk_overlap=200,
 )
 
-# ==========================================
-# Index a single PDF
-# ==========================================
 
-def index_pdf(pdf_path):
+def index_pdf(pdf_path: str | Path, case_id: str | None = None) -> int:
+    """Index one PDF and optionally associate every chunk with a case.
 
-    pdf_path = Path(pdf_path)
+    Args:
+        pdf_path: PDF file to index.
+        case_id: Stable internal case ID. When omitted, the historic global
+            indexing behaviour and document-ID format are preserved.
 
-    print(f"\nReading {pdf_path.name}")
+    Returns:
+        Number of chunks successfully added to Chroma.
+    """
 
-    reader = PdfReader(pdf_path)
+    path = Path(pdf_path)
+    cleaned_case_id = normalise_case_id(case_id)
 
+    LOGGER.info(
+        "Indexing %s%s",
+        path.name,
+        f" for case {cleaned_case_id}" if cleaned_case_id else "",
+    )
+
+    reader = PdfReader(path)
     total_chunks = 0
-
-    # OCR the whole PDF once if needed
-    ocr_text = None
+    ocr_text: str | None = None
     ocr_used = False
 
     for page_number, page in enumerate(reader.pages, start=1):
-
         text = page.extract_text()
 
-        # ----------------------------------
-        # Fall back to OCR if page has no text
-        # ----------------------------------
-
         if not text or not text.strip():
-
-            print(f"Page {page_number}: No text found - using OCR")
+            LOGGER.info("Page %s has no text; using OCR.", page_number)
 
             if not ocr_used:
-
                 try:
-                    ocr_text = extract_text(pdf_path)
+                    ocr_text = extract_text(path)
                     ocr_used = True
-                    print("OCR completed successfully.")
-
-                except Exception as e:
-                    print(f"OCR failed: {e}")
+                    LOGGER.info("OCR completed successfully for %s.", path.name)
+                except Exception:
+                    LOGGER.exception("OCR failed for %s.", path.name)
                     continue
 
             text = ocr_text
-
             if not text or not text.strip():
-                print(f"Page {page_number}: OCR found no text")
+                LOGGER.warning("OCR found no text for page %s.", page_number)
                 continue
-
-        print(f"Page {page_number}: {len(text)} characters")
 
         chunks = splitter.split_text(text)
 
-        print(f"Page {page_number}: {len(chunks)} chunks")
-
         for chunk_number, chunk in enumerate(chunks):
-
             try:
-
                 response = client.embeddings.create(
                     model="text-embedding-3-small",
-                    input=chunk
+                    input=chunk,
                 )
-
                 embedding = response.data[0].embedding
 
-                document_id = (
-                    f"{pdf_path.stem}_{page_number}_{chunk_number}"
+                document_id = build_document_id(
+                    pdf_path=path,
+                    page_number=page_number,
+                    chunk_number=chunk_number,
+                    case_id=cleaned_case_id,
+                )
+                metadata = build_chunk_metadata(
+                    pdf_path=path,
+                    page_number=page_number,
+                    chunk_number=chunk_number,
+                    case_id=cleaned_case_id,
                 )
 
                 collection.add(
                     ids=[document_id],
                     embeddings=[embedding],
                     documents=[chunk],
-                    metadatas=[{
-                        "file": pdf_path.name,
-                        "page": page_number,
-                        "chunk": chunk_number
-                    }]
+                    metadatas=[metadata],
                 )
-
                 total_chunks += 1
-
-            except Exception as e:
-                print(
-                    f"Error adding chunk "
-                    f"{chunk_number}: {e}"
+            except Exception:
+                LOGGER.exception(
+                    "Error adding chunk %s from %s page %s.",
+                    chunk_number,
+                    path.name,
+                    page_number,
                 )
 
-    print(f"\nFinished indexing {pdf_path.name}")
-    print(f"Chunks added: {total_chunks}")
+    LOGGER.info("Finished indexing %s (%s chunks).", path.name, total_chunks)
+    return total_chunks
 
-# ==========================================
-# Index every PDF in docs/
-# ==========================================
 
-def index_all_documents():
+def index_all_documents(case_id: str | None = None) -> int:
+    """Index every PDF in ``docs/`` and return the total chunks added."""
 
     docs_folder = Path("docs")
-
-    pdf_files = list(docs_folder.glob("*.pdf"))
+    pdf_files = sorted(docs_folder.glob("*.pdf"))
 
     if not pdf_files:
-        print("No PDF files found.")
-        return
+        LOGGER.warning("No PDF files found in %s.", docs_folder.resolve())
+        return 0
 
+    total_chunks = 0
     for pdf_file in pdf_files:
-        index_pdf(pdf_file)
+        total_chunks += index_pdf(pdf_file, case_id=case_id)
 
-    print("\nFinished indexing all documents.")
+    LOGGER.info("Finished indexing all documents (%s chunks).", total_chunks)
+    return total_chunks
 
-# ==========================================
-# Run from command line
-# ==========================================
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Index LegalRAG Pro PDFs into Chroma."
+    )
+    parser.add_argument(
+        "--case-id",
+        dest="case_id",
+        help=(
+            "Stable internal case UUID to store in Chroma metadata. "
+            "Omit to preserve legacy/global indexing behaviour."
+        ),
+    )
+    parser.add_argument(
+        "--pdf",
+        type=Path,
+        help="Index one PDF instead of every PDF in docs/.",
+    )
+    return parser.parse_args()
+
+
+def main() -> None:
+    """Run the command-line indexing entry point."""
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(levelname)s %(name)s: %(message)s",
+    )
+    args = _parse_args()
+
+    if args.pdf is not None:
+        index_pdf(args.pdf, case_id=args.case_id)
+    else:
+        index_all_documents(case_id=args.case_id)
+
 
 if __name__ == "__main__":
-    index_all_documents()
+    main()

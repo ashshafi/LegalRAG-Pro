@@ -1,16 +1,51 @@
-from config import openai_client, collection
+"""Vector retrieval for LegalRAG Pro."""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+
+from case_management.retrieval_scope import build_retrieval_filter
+from config import collection, openai_client
 from models import EMBEDDING_MODEL
+from query_expander import expand_query
 
 
-def retrieve(question, n_results=3):
-    embedding = openai_client.embeddings.create(
+def retrieve(
+    question: str,
+    selected_documents: Sequence[str] | None = None,
+    n_results: int = 10,
+    *,
+    case_id: str | None = None,
+) -> dict:
+    """Retrieve relevant chunks within the requested case scope.
+
+    Args:
+        question: User's legal question.
+        selected_documents: Optional filenames selected by the user.
+        n_results: Maximum number of vector results.
+        case_id: Active internal case ID. When supplied, Chroma is strictly
+            filtered to chunks belonging to that case. When omitted, legacy
+            global retrieval behaviour is preserved.
+    """
+
+    expanded_query = expand_query(question)
+
+    response = openai_client.embeddings.create(
         model=EMBEDDING_MODEL,
-        input=question
+        input=expanded_query,
+    )
+    question_embedding = response.data[0].embedding
+
+    where = build_retrieval_filter(
+        case_id=case_id,
+        selected_documents=selected_documents,
     )
 
-    question_vector = embedding.data[0].embedding
+    query_kwargs = {
+        "query_embeddings": [question_embedding],
+        "n_results": n_results,
+    }
+    if where is not None:
+        query_kwargs["where"] = where
 
-    return collection.query(
-        query_embeddings=[question_vector],
-        n_results=n_results
-    )
+    return collection.query(**query_kwargs)

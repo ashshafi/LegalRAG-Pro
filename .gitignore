@@ -30,3 +30,5 @@ logs/
 # Operating system
 Thumbs.db
 .DS_Store
+# Local case database
+data/
