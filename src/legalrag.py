@@ -5,6 +5,12 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from config import openai_client
+from evidence_classification import (
+    EVIDENCE_CLASSIFICATION_METHOD_KEY,
+    EVIDENCE_SOURCE_LABEL_KEY,
+    EVIDENCE_SOURCE_TYPE_KEY,
+)
+from evidence_reasoning import build_evidence_context, build_legal_prompt
 from models import CHAT_MODEL
 from retriever import retrieve
 
@@ -24,41 +30,8 @@ def ask(
         case_id=case_id,
     )
 
-    context = ""
-
-    for i in range(len(results["documents"][0])):
-        metadata = results["metadatas"][0][i]
-
-        context += f"""
-Document: {metadata['file']}
-Page: {metadata['page']}
-
-{results["documents"][0][i]}
-
---------------------------------------------------
-
-"""
-
-    prompt = f"""
-You are LegalRAG Pro, an AI Employment Tribunal assistant.
-
-Answer ONLY using the supplied documents.
-
-If the answer cannot be found in the supplied documents,
-say:
-
-"I cannot find sufficient evidence in the supplied documents."
-
-Always cite the document name and page number where possible.
-
-Documents:
-
-{context}
-
-Question:
-
-{question}
-"""
+    context = build_evidence_context(results)
+    prompt = build_legal_prompt(question=question, context=context)
 
     response = openai_client.responses.create(
         model=CHAT_MODEL,
@@ -75,6 +48,18 @@ Question:
                 "file": metadata["file"],
                 "page": metadata["page"],
                 "text": results["documents"][0][i],
+                "source_type": metadata.get(
+                    EVIDENCE_SOURCE_TYPE_KEY,
+                    "other",
+                ),
+                "source_label": metadata.get(
+                    EVIDENCE_SOURCE_LABEL_KEY,
+                    "Unclassified evidence",
+                ),
+                "classification_method": metadata.get(
+                    EVIDENCE_CLASSIFICATION_METHOD_KEY,
+                    "unknown",
+                ),
             }
         )
 

@@ -42,6 +42,27 @@ class DocumentContextTests(unittest.TestCase):
         self.assertEqual(metadata["case_id"], "case-123")
         self.assertEqual(metadata["file"], "ET1.pdf")
 
+    def test_evidence_source_metadata_is_added_only_when_supplied(self) -> None:
+        metadata = build_chunk_metadata(
+            pdf_path="docs/Medical.pdf",
+            page_number=4,
+            chunk_number=1,
+            case_id="case-a",
+            evidence_source_type="independent_medical",
+            evidence_source_label="Independent medical evidence",
+            evidence_classification_method="automatic",
+        )
+
+        self.assertEqual(metadata["evidence_source_type"], "independent_medical")
+        self.assertEqual(
+            metadata["evidence_source_label"],
+            "Independent medical evidence",
+        )
+        self.assertEqual(
+            metadata["evidence_classification_method"],
+            "automatic",
+        )
+
     def test_legacy_document_id_is_unchanged(self) -> None:
         document_id = build_document_id(
             pdf_path="docs/ET1.pdf",

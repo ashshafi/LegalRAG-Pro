@@ -6,8 +6,10 @@ from collections.abc import Sequence
 
 from case_management.retrieval_scope import build_retrieval_filter
 from config import collection, openai_client
+from evidence_classification import enrich_retrieval_metadata
 from models import EMBEDDING_MODEL
 from query_expander import expand_query
+from retrieval_quality import improve_retrieval_results, overfetch_count
 
 
 def retrieve(
@@ -43,9 +45,15 @@ def retrieve(
 
     query_kwargs = {
         "query_embeddings": [question_embedding],
-        "n_results": n_results,
+        "n_results": overfetch_count(n_results),
     }
     if where is not None:
         query_kwargs["where"] = where
 
-    return collection.query(**query_kwargs)
+    raw_results = collection.query(**query_kwargs)
+    classified_results = enrich_retrieval_metadata(raw_results)
+
+    return improve_retrieval_results(
+        classified_results,
+        n_results=n_results,
+    )

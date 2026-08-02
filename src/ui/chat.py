@@ -79,6 +79,11 @@ def show_chat(
             with st.expander(
                 f"📄 {source['file']} — Page {source['page']}"
             ):
+                st.caption(
+                    f"{source.get('source_label', 'Unclassified evidence')} "
+                    "· classification: "
+                    f"{source.get('classification_method', 'unknown')}"
+                )
                 st.write(source["text"])
 
     if st.session_state.show_timeline:

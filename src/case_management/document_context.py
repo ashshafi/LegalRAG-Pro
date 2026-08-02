@@ -26,11 +26,15 @@ def build_chunk_metadata(
     page_number: int,
     chunk_number: int,
     case_id: str | None = None,
+    evidence_source_type: str | None = None,
+    evidence_source_label: str | None = None,
+    evidence_classification_method: str | None = None,
 ) -> dict[str, str | int]:
     """Build Chroma metadata for one document chunk.
 
     Existing metadata keys remain unchanged for backwards compatibility.
-    ``case_id`` is added only when case-aware ingestion is requested.
+    ``case_id`` and evidence-source fields are added only when their respective
+    case-aware/evidence-aware ingestion values are supplied.
     """
 
     path = Path(pdf_path)
@@ -43,6 +47,15 @@ def build_chunk_metadata(
     cleaned_case_id = normalise_case_id(case_id)
     if cleaned_case_id is not None:
         metadata[CASE_ID_METADATA_KEY] = cleaned_case_id
+
+    if evidence_source_type:
+        metadata["evidence_source_type"] = evidence_source_type
+    if evidence_source_label:
+        metadata["evidence_source_label"] = evidence_source_label
+    if evidence_classification_method:
+        metadata["evidence_classification_method"] = (
+            evidence_classification_method
+        )
 
     return metadata
 
