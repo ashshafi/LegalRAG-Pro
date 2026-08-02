@@ -32,3 +32,6 @@ Thumbs.db
 .DS_Store
 # Local case database
 data/
+
+# Confidential case documents
+docs/*.pdf
