@@ -12,6 +12,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from openai import OpenAI
 from pypdf import PdfReader
 
+from chunk_provenance import add_chunk_provenance_to_metadata
 from evidence_classification import EvidenceSourceType, classify_evidence_source
 
 from case_management.document_context import (
@@ -118,6 +119,10 @@ def index_pdf(
                     evidence_source_type=classification.source_type.value,
                     evidence_source_label=classification.label,
                     evidence_classification_method=classification.method,
+                )
+                metadata = add_chunk_provenance_to_metadata(
+                    metadata,
+                    text=chunk,
                 )
 
                 collection.add(

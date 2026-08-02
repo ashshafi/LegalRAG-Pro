@@ -54,3 +54,19 @@ behaviour have been retained.
 - Preserved Sprint 2.1 case isolation and Sprint 2.2 Milestone 1 duplicate
   suppression/diversification unchanged.
 - Regression suite expanded from 42 to 58 passing tests.
+
+## Sprint 2.2 Milestone 3 - Chunk Provenance and Primary-Source Reranking
+
+- Added chunk-level provenance so mixed/composite PDFs can distinguish the local
+  author/source of individual evidence excerpts from the document/container
+  classification.
+- Added conservative mixed-correspondence handling for ambiguous bundles such as
+  employer/insurer email chains.
+- Added bounded primary-source reranking that preserves Chroma's top semantic hit
+  while allowing nearby direct records to move ahead of retrospective or
+  secondary sources.
+- Preserved Sprint 2.2 Milestone 1 duplicate suppression/diversification and
+  Milestone 2 evidence classification/reasoning unchanged.
+- Added provenance-aware answer context and Evidence panel labels.
+- Existing indexes remain compatible; chunk provenance is added at retrieval
+  time and is persisted for newly indexed chunks.

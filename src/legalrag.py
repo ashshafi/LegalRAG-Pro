@@ -10,7 +10,22 @@ from evidence_classification import (
     EVIDENCE_SOURCE_LABEL_KEY,
     EVIDENCE_SOURCE_TYPE_KEY,
 )
-from evidence_reasoning import build_evidence_context, build_legal_prompt
+from chunk_provenance import (
+    CHUNK_PROVENANCE_METHOD_KEY,
+    CHUNK_SOURCE_LABEL_KEY,
+    CHUNK_SOURCE_TYPE_KEY,
+    PRIMARY_SOURCE_LABEL_KEY,
+    PRIMARY_SOURCE_TIER_KEY,
+)
+from evidence_reranking import (
+    RETRIEVAL_ORIGINAL_RANK_KEY,
+    RETRIEVAL_PROMOTION_KEY,
+    RETRIEVAL_RERANK_RANK_KEY,
+)
+from provenance_reasoning import (
+    build_provenance_context,
+    build_provenance_legal_prompt,
+)
 from models import CHAT_MODEL
 from retriever import retrieve
 
@@ -30,8 +45,8 @@ def ask(
         case_id=case_id,
     )
 
-    context = build_evidence_context(results)
-    prompt = build_legal_prompt(question=question, context=context)
+    context = build_provenance_context(results)
+    prompt = build_provenance_legal_prompt(question=question, context=context)
 
     response = openai_client.responses.create(
         model=CHAT_MODEL,
@@ -59,6 +74,36 @@ def ask(
                 "classification_method": metadata.get(
                     EVIDENCE_CLASSIFICATION_METHOD_KEY,
                     "unknown",
+                ),
+                "chunk_source_type": metadata.get(
+                    CHUNK_SOURCE_TYPE_KEY,
+                    "other",
+                ),
+                "chunk_source_label": metadata.get(
+                    CHUNK_SOURCE_LABEL_KEY,
+                    "Unclassified evidence",
+                ),
+                "chunk_provenance_method": metadata.get(
+                    CHUNK_PROVENANCE_METHOD_KEY,
+                    "unknown",
+                ),
+                "primary_source_tier": metadata.get(
+                    PRIMARY_SOURCE_TIER_KEY,
+                    0,
+                ),
+                "primary_source_label": metadata.get(
+                    PRIMARY_SOURCE_LABEL_KEY,
+                    "Unclassified source",
+                ),
+                "original_rank": metadata.get(
+                    RETRIEVAL_ORIGINAL_RANK_KEY,
+                ),
+                "rerank_rank": metadata.get(
+                    RETRIEVAL_RERANK_RANK_KEY,
+                ),
+                "primary_source_promotion": metadata.get(
+                    RETRIEVAL_PROMOTION_KEY,
+                    0,
                 ),
             }
         )

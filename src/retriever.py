@@ -6,7 +6,9 @@ from collections.abc import Sequence
 
 from case_management.retrieval_scope import build_retrieval_filter
 from config import collection, openai_client
+from chunk_provenance import enrich_chunk_provenance
 from evidence_classification import enrich_retrieval_metadata
+from evidence_reranking import rerank_for_primary_sources
 from models import EMBEDDING_MODEL
 from query_expander import expand_query
 from retrieval_quality import improve_retrieval_results, overfetch_count
@@ -52,8 +54,10 @@ def retrieve(
 
     raw_results = collection.query(**query_kwargs)
     classified_results = enrich_retrieval_metadata(raw_results)
+    provenance_results = enrich_chunk_provenance(classified_results)
+    reranked_results = rerank_for_primary_sources(provenance_results)
 
     return improve_retrieval_results(
-        classified_results,
+        reranked_results,
         n_results=n_results,
     )

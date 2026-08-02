@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import streamlit as st
 
+from evidence_display import build_evidence_heading
 from features.timeline import extract_timeline_events, sort_events
 from legalrag import ask
 from ui.timeline import show_timeline
@@ -76,14 +77,32 @@ def show_chat(
         st.subheader("📚 Evidence")
 
         for source in result["sources"]:
-            with st.expander(
-                f"📄 {source['file']} — Page {source['page']}"
-            ):
-                st.caption(
-                    f"{source.get('source_label', 'Unclassified evidence')} "
-                    "· classification: "
-                    f"{source.get('classification_method', 'unknown')}"
+            with st.expander(build_evidence_heading(source)):
+                document_label = source.get(
+                    "source_label",
+                    "Unclassified evidence",
                 )
+                chunk_label = source.get(
+                    "chunk_source_label",
+                    "Unclassified evidence",
+                )
+                primary_label = source.get(
+                    "primary_source_label",
+                    "Unclassified source",
+                )
+                provenance_method = source.get(
+                    "chunk_provenance_method",
+                    "unknown",
+                )
+                st.caption(
+                    f"Chunk provenance: {chunk_label} "
+                    f"· {primary_label} "
+                    f"· method: {provenance_method}"
+                )
+                if chunk_label != document_label:
+                    st.caption(
+                        f"Container classification: {document_label}"
+                    )
                 st.write(source["text"])
 
     if st.session_state.show_timeline:
