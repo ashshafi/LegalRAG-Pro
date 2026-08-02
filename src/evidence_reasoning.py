@@ -11,6 +11,7 @@ from evidence_classification import (
 
 EVIDENCE_STATUS_LABELS: Final[tuple[str, ...]] = (
     "Documented fact",
+    "Source assertion",
     "Claimant evidence",
     "Independent medical evidence",
     "Employer evidence",
@@ -82,6 +83,10 @@ Apply the labels as follows:
 - Documented fact: use only for something directly established by the cited
   document itself, such as the existence/date/content of a letter, contract,
   order or record. Do not use it merely because a party asserts something.
+- Source assertion: use when a source states a material proposition is true but
+  the supplied evidence does not independently establish that proposition.
+  Attribute the assertion to its source. This label establishes that the
+  assertion was made, not that the asserted proposition is true.
 - Claimant evidence: use when the proposition depends on a claimant witness
   statement, claimant correspondence, or claimant submission. Attribute it
   expressly (for example, "Mr Shafi states...") unless independently

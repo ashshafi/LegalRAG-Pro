@@ -19,11 +19,20 @@ def build_evidence_heading(source: dict[str, Any]) -> str:
     chunk_label = str(
         source.get("chunk_source_label") or "Unclassified evidence"
     )
+    semantic_label = str(
+        source.get("semantic_source_label") or chunk_label
+    )
+    confidence = str(source.get("provenance_confidence") or "").strip()
+    basis = str(source.get("provenance_basis") or "").strip().replace("_", " ")
     document_label = str(
         source.get("source_label") or "Unclassified evidence"
     )
 
-    heading = f"📄 {file_name} — Page {page} | {chunk_label}"
-    if document_label != chunk_label:
+    heading = f"📄 {file_name} — Page {page} | {semantic_label}"
+    if confidence and basis:
+        heading += f" | provenance: {confidence} ({basis})"
+    elif confidence:
+        heading += f" | provenance: {confidence}"
+    if document_label != semantic_label:
         heading += f" | container: {document_label}"
     return heading

@@ -86,6 +86,10 @@ def show_chat(
                     "chunk_source_label",
                     "Unclassified evidence",
                 )
+                semantic_label = source.get(
+                    "semantic_source_label",
+                    chunk_label,
+                )
                 primary_label = source.get(
                     "primary_source_label",
                     "Unclassified source",
@@ -94,12 +98,27 @@ def show_chat(
                     "chunk_provenance_method",
                     "unknown",
                 )
+                provenance_basis = source.get("provenance_basis", "unknown")
+                provenance_confidence = source.get("provenance_confidence", "low")
+                provenance_warning = source.get("provenance_warning", "")
+                knowledge_signal = source.get(
+                    "knowledge_signal_label",
+                    "No explicit knowledge indicator detected",
+                )
                 st.caption(
-                    f"Chunk provenance: {chunk_label} "
+                    f"Semantic provenance: {semantic_label} "
+                    f"· confidence: {provenance_confidence} "
+                    f"· basis: {provenance_basis}"
+                )
+                st.caption(
+                    f"Retrieval provenance: {chunk_label} "
                     f"· {primary_label} "
                     f"· method: {provenance_method}"
                 )
-                if chunk_label != document_label:
+                st.caption(f"Knowledge/awareness signal: {knowledge_signal}")
+                if provenance_warning:
+                    st.caption(f"Provenance caution: {provenance_warning}")
+                if semantic_label != document_label:
                     st.caption(
                         f"Container classification: {document_label}"
                     )

@@ -70,3 +70,23 @@ behaviour have been retained.
 - Added provenance-aware answer context and Evidence panel labels.
 - Existing indexes remain compatible; chunk provenance is added at retrieval
   time and is persisted for newly indexed chunks.
+
+## Sprint 2.2 Milestone 4 - Evidence Semantics & Assertion Safety
+
+- Added a post-retrieval semantic provenance layer that runs after the frozen
+  Milestone 3 reranking pipeline and does not change result order or scope.
+- Added provenance basis (`manual`, `explicit_sender`, `signature`,
+  `known_document_author`, `container_fallback`, `mixed`, `unknown`) and
+  confidence (`high`, `medium`, `low`).
+- Added a conservative semantic downgrade for weak role-based container labels
+  that are not supported by authorship or filename provenance, covering the
+  Appendix L5 leadership-continuity anomaly without changing retrieval ranks.
+- Added `Source assertion` as an explicit answer status so a source saying a
+  proposition is true is not silently converted into substantive truth.
+- Added deterministic knowledge/awareness signals that distinguish a source
+  assertion from direct communication/acknowledgement indicators; these signals
+  are advisory metadata and are never treated as proof.
+- Added visible provenance confidence/basis and semantic provenance to the
+  Evidence panel while retaining the original retrieval provenance for audit.
+- Preserved Milestones 1-3 retrieval, deduplication, diversification,
+  case-isolation, chunk-provenance, and reranking modules unchanged.

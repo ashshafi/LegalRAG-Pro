@@ -79,6 +79,16 @@ class EvidenceReasoningTests(unittest.TestCase):
         self.assertIn("Where evidence conflicts", compact)
         self.assertIn("silently choosing one account", compact)
 
+    def test_source_assertion_is_an_allowed_status_label(self) -> None:
+        prompt = build_legal_prompt(
+            question="What did CACI know?",
+            context="Evidence ID: E1",
+        )
+        compact = " ".join(prompt.split())
+
+        self.assertIn("Documented fact | Source assertion | Claimant evidence", compact)
+        self.assertIn("This label establishes that the assertion was made", compact)
+
 
 if __name__ == "__main__":
     unittest.main()

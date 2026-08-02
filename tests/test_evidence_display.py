@@ -49,6 +49,41 @@ class EvidenceDisplayTests(unittest.TestCase):
             "📄 Unknown.pdf — Page 4 | Unclassified evidence",
         )
 
+    def test_heading_shows_semantic_confidence_and_basis(self) -> None:
+        heading = build_evidence_heading({
+            "file": "Appendix H5.pdf",
+            "page": 2,
+            "chunk_source_label": "Mixed / composite evidence",
+            "semantic_source_label": "Mixed / composite evidence",
+            "provenance_confidence": "medium",
+            "provenance_basis": "mixed",
+            "source_label": "Insurer evidence",
+        })
+
+        self.assertEqual(
+            heading,
+            "📄 Appendix H5.pdf — Page 2 | Mixed / composite evidence "
+            "| provenance: medium (mixed) | container: Insurer evidence",
+        )
+
+    def test_heading_exposes_low_confidence_l5_downgrade(self) -> None:
+        heading = build_evidence_heading({
+            "file": "Appendix L5 - Leadership Continuity.pdf",
+            "page": 1,
+            "chunk_source_label": "Occupational-health evidence",
+            "semantic_source_label": "Unclassified evidence",
+            "provenance_confidence": "low",
+            "provenance_basis": "container_fallback",
+            "source_label": "Occupational-health evidence",
+        })
+
+        self.assertEqual(
+            heading,
+            "📄 Appendix L5 - Leadership Continuity.pdf — Page 1 "
+            "| Unclassified evidence | provenance: low (container fallback) "
+            "| container: Occupational-health evidence",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
