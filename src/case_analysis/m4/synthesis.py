@@ -1,17 +1,19 @@
 """Deterministic Sprint 2.4 M4.2/M4.3 whole-case synthesis.
 
 M4.2 derives issue positions, direct proposition/element findings and the
-overall analytical-development state.  M4.3 additionally materialises only the
-four derivations authorised by its frozen v1.1 contract: missing evidence,
-insufficient evidence, unresolved propositions, and narrow assertion-level
-timing conflicts.  The builder remains offline, provenance preserving, and
-fail-closed; it does not retrieve evidence, invoke an LLM, create risks or
-priority questions, or reconstruct discarded conflict semantics.
+overall analytical-development state. M4.3 materialises the four derivations
+authorised by its frozen v1.1 contract: missing evidence, insufficient evidence,
+unresolved propositions, and narrow assertion-level timing conflicts. M4.4
+classifies those durable deficiencies only as evidence/timing risks and neutral
+material-gap priority questions. The builder remains offline, provenance
+preserving, and fail-closed; it does not retrieve evidence, invoke an LLM, rank
+legal importance, or reconstruct discarded conflict/dependency semantics.
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import replace
 from collections.abc import Iterable
 
 from case_analysis.models import CaseAnalysisFoundation
@@ -35,6 +37,8 @@ from .identity import (
     derive_conflict_id,
     derive_finding_id,
     derive_gap_id,
+    derive_priority_question_id,
+    derive_risk_id,
     fingerprint_case_chronology,
     fingerprint_case_matrices,
 )
@@ -55,7 +59,12 @@ from .models import (
     IssuePositionStatus,
     MaterialConflict,
     OverallState,
+    PriorityBasis,
+    PriorityLevel,
+    PriorityQuestion,
     PropositionRef,
+    RiskArea,
+    RiskType,
     SynthesisFinding,
     SynthesisProvenanceRef,
     SynthesisSourceLineage,
@@ -610,6 +619,109 @@ def _derive_timing_conflicts(
     return tuple(conflicts)
 
 
+
+def _derive_risks(
+    *,
+    synthesis_id: str,
+    gaps: tuple[EvidenceGap, ...],
+    conflicts: tuple[MaterialConflict, ...],
+) -> tuple[RiskArea, ...]:
+    """Classify only the M4.3 deficiencies authorised by M4.4 v1.0."""
+
+    risks: list[RiskArea] = []
+    for gap in sorted(gaps, key=lambda item: item.gap_id):
+        risk_id = derive_risk_id(
+            synthesis_id=synthesis_id,
+            risk_type=RiskType.EVIDENCE_RISK,
+            scope=gap.scope,
+            gap_ids=(gap.gap_id,),
+        )
+        risks.append(
+            RiskArea(
+                risk_id=risk_id,
+                risk_type=RiskType.EVIDENCE_RISK,
+                scope=gap.scope,
+                materiality=gap.materiality,
+                description=f"Evidence risk: {gap.description}",
+                gap_ids=(gap.gap_id,),
+                affected_issue_ids=(gap.issue_analysis_id,),
+            )
+        )
+
+    for conflict in sorted(conflicts, key=lambda item: item.conflict_id):
+        if conflict.conflict_type is not ConflictType.TIMING_CONFLICT:
+            raise ValueError(
+                "M4.4 v1.0 cannot classify non-timing MaterialConflict objects."
+            )
+        risk_id = derive_risk_id(
+            synthesis_id=synthesis_id,
+            risk_type=RiskType.TIMING_RISK,
+            scope=conflict.scope,
+            conflict_ids=(conflict.conflict_id,),
+        )
+        risks.append(
+            RiskArea(
+                risk_id=risk_id,
+                risk_type=RiskType.TIMING_RISK,
+                scope=conflict.scope,
+                materiality=conflict.materiality,
+                description=(
+                    "Timing risk: the frozen synthesis contains incompatible retained "
+                    f"temporal positions for {conflict.subject}."
+                ),
+                conflict_ids=(conflict.conflict_id,),
+                affected_issue_ids=conflict.related_issue_ids,
+            )
+        )
+    return tuple(risks)
+
+
+def _derive_priority_questions(
+    *,
+    synthesis_id: str,
+    gaps: tuple[EvidenceGap, ...],
+) -> tuple[PriorityQuestion, ...]:
+    """Reuse exact frozen legal questions for material-gap classifications."""
+
+    grouped: dict[tuple[str, str], list[EvidenceGap]] = defaultdict(list)
+    for gap in gaps:
+        if gap.element_id is None:
+            raise ValueError(
+                "M4.4 v1.0 MATERIAL_GAP questions require an exact element coordinate."
+            )
+        grouped[(gap.issue_analysis_id, gap.element_id)].append(gap)
+
+    questions: list[PriorityQuestion] = []
+    for (issue_analysis_id, element_id), members in sorted(grouped.items()):
+        ordered = tuple(sorted(members, key=lambda item: item.gap_id))
+        question_texts = {item.unresolved_question for item in ordered}
+        if len(question_texts) != 1:
+            raise ValueError(
+                "M4.4 grouped gaps for one issue/element disagree on unresolved_question "
+                f"for {(issue_analysis_id, element_id)!r}."
+            )
+        question = next(iter(question_texts))
+        gap_ids = tuple(item.gap_id for item in ordered)
+        question_id = derive_priority_question_id(
+            synthesis_id=synthesis_id,
+            basis_type=PriorityBasis.MATERIAL_GAP,
+            affected_issue_ids=(issue_analysis_id,),
+            affected_element_ids=(element_id,),
+            gap_ids=gap_ids,
+        )
+        questions.append(
+            PriorityQuestion(
+                question_id=question_id,
+                question=question,
+                priority=PriorityLevel.MEDIUM,
+                basis_type=PriorityBasis.MATERIAL_GAP,
+                affected_issue_ids=(issue_analysis_id,),
+                affected_element_ids=(element_id,),
+                gap_ids=gap_ids,
+            )
+        )
+    return tuple(questions)
+
 def _overall_state(positions: tuple[IssuePosition, ...]) -> OverallState:
     statuses = {position.position_status for position in positions}
     if IssuePositionStatus.MATERIALLY_DISPUTED in statuses:
@@ -626,12 +738,12 @@ def _overall_state(positions: tuple[IssuePosition, ...]) -> OverallState:
     raise ValueError("Unsupported IssuePosition combination for M4.2 overall state.")
 
 
-def build_case_synthesis(
+def _build_m43_semantic_core(
     foundation: CaseAnalysisFoundation,
     matrices: CaseMatrices,
     chronology: CaseChronology,
 ) -> CaseSynthesis:
-    """Build the deterministic M4.2/M4.3 synthesis from frozen M1/M2/M3 state."""
+    """Build the frozen M4.3 semantic core before M4.4 classifications."""
 
     _validate_source_preconditions(foundation, matrices, chronology)
     lineage, synthesis_id = _source_lineage(foundation, matrices, chronology)
@@ -720,6 +832,51 @@ def build_case_synthesis(
         risks=(),
         priority_questions=(),
         overall_state=_overall_state(tuple(issue_positions)),
+    )
+    validate_case_synthesis(
+        synthesis,
+        foundation=foundation,
+        matrices=matrices,
+        chronology=chronology,
+    )
+    return synthesis
+
+
+def build_case_synthesis(
+    foundation: CaseAnalysisFoundation,
+    matrices: CaseMatrices,
+    chronology: CaseChronology,
+) -> CaseSynthesis:
+    """Build deterministic M4.2-M4.4 synthesis from frozen M1/M2/M3 state."""
+
+    core = _build_m43_semantic_core(foundation, matrices, chronology)
+    risks = _derive_risks(
+        synthesis_id=core.synthesis_id,
+        gaps=core.gaps,
+        conflicts=core.conflicts,
+    )
+    priority_questions = _derive_priority_questions(
+        synthesis_id=core.synthesis_id,
+        gaps=core.gaps,
+    )
+
+    risk_ids_by_issue: dict[str, list[str]] = defaultdict(list)
+    for risk in risks:
+        for issue_analysis_id in risk.affected_issue_ids:
+            risk_ids_by_issue[issue_analysis_id].append(risk.risk_id)
+
+    issue_positions = tuple(
+        replace(
+            position,
+            risk_ids=tuple(sorted(set(risk_ids_by_issue[position.issue_analysis_id]))),
+        )
+        for position in core.issue_positions
+    )
+    synthesis = replace(
+        core,
+        issue_positions=issue_positions,
+        risks=risks,
+        priority_questions=priority_questions,
     )
     validate_case_synthesis(
         synthesis,

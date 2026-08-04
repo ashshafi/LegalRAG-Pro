@@ -16,7 +16,10 @@ from case_analysis.m4.models import (
     FindingType,
     IssuePositionStatus,
     OverallState,
+    PriorityBasis,
+    PriorityLevel,
     PropositionRef,
+    RiskType,
 )
 from case_analysis.m4.serialization import dumps_case_synthesis, loads_case_synthesis
 from case_analysis.m4.synthesis import build_case_synthesis
@@ -304,20 +307,24 @@ def test_issue_position_material_findings_never_cross_issue_boundary():
             assert issue_ids == {position.issue_analysis_id}
 
 
-def test_m43_only_advances_conflict_gap_outputs_and_keeps_later_outputs_deferred():
+def test_m44_only_advances_risk_priority_outputs_over_m43_children():
     foundation, matrices, chronology = synthetic_sources()
     synthesis = build_case_synthesis(foundation, matrices, chronology)
     assert synthesis.conflicts == ()
     assert synthesis.gaps
-    assert synthesis.risks == ()
-    assert synthesis.priority_questions == ()
+    assert len(synthesis.risks) == len(synthesis.gaps)
+    assert all(item.risk_type is RiskType.EVIDENCE_RISK for item in synthesis.risks)
+    assert synthesis.priority_questions
+    assert all(item.basis_type is PriorityBasis.MATERIAL_GAP for item in synthesis.priority_questions)
+    assert all(item.priority is PriorityLevel.MEDIUM for item in synthesis.priority_questions)
     assert all(item.finding_type is not FindingType.CROSS_ISSUE_FEATURE for item in synthesis.findings)
     assert all(item.scope is FindingScope.ELEMENT for item in synthesis.findings)
     gap_ids = {item.gap_id for item in synthesis.gaps}
+    risk_ids = {item.risk_id for item in synthesis.risks}
     for position in synthesis.issue_positions:
         assert set(position.gap_ids).issubset(gap_ids)
         assert position.conflict_ids == ()
-        assert position.risk_ids == ()
+        assert set(position.risk_ids).issubset(risk_ids)
 
 
 @pytest.mark.parametrize(
@@ -460,12 +467,13 @@ def test_m3_multi_issue_event_does_not_trigger_cross_issue_synthesis():
     assert not any(item.finding_type is FindingType.CROSS_ISSUE_FEATURE for item in synthesis.findings)
 
 
-def test_builder_public_contract_returns_valid_case_synthesis_without_m44_outputs():
+def test_builder_public_contract_returns_valid_case_synthesis_with_only_m44_authorised_outputs():
     foundation, matrices, chronology = synthetic_sources()
     synthesis = build_case_synthesis(foundation, matrices, chronology)
     assert synthesis.case_id == foundation.case_id
     assert synthesis.source_lineage.foundation_synthesis_id == foundation.synthesis_id
     assert {item.issue_analysis_id for item in synthesis.issue_positions} == set(foundation.source_issue_analysis_ids)
-    assert synthesis.risks == ()
-    assert synthesis.priority_questions == ()
+    assert all(item.risk_type is RiskType.EVIDENCE_RISK for item in synthesis.risks)
+    assert all(item.basis_type is PriorityBasis.MATERIAL_GAP for item in synthesis.priority_questions)
+    assert all(item.priority is PriorityLevel.MEDIUM for item in synthesis.priority_questions)
     assert all(item.finding_type is not FindingType.CROSS_ISSUE_FEATURE for item in synthesis.findings)

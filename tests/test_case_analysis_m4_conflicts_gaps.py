@@ -28,6 +28,9 @@ from case_analysis.m4.models import (
     FindingType,
     GapType,
     PropositionRef,
+    PriorityBasis,
+    PriorityLevel,
+    RiskType,
 )
 from case_analysis.m4.serialization import dumps_case_synthesis, loads_case_synthesis
 from case_analysis.m4.synthesis import _derive_timing_conflicts, build_case_synthesis
@@ -435,11 +438,13 @@ def test_only_authorised_gap_and_conflict_types_are_generated():
     assert {item.conflict_type for item in synthesis.conflicts}.issubset({ConflictType.TIMING_CONFLICT})
 
 
-def test_m43_keeps_risks_priority_questions_and_cross_issue_findings_empty():
+def test_m44_classifies_m43_children_without_cross_issue_findings():
     foundation, matrices, chronology = _timing_conflict_chronology()
     synthesis = build_case_synthesis(foundation, matrices, chronology)
-    assert synthesis.risks == ()
-    assert synthesis.priority_questions == ()
+    assert any(item.risk_type is RiskType.TIMING_RISK for item in synthesis.risks)
+    assert all(item.risk_type in {RiskType.EVIDENCE_RISK, RiskType.TIMING_RISK} for item in synthesis.risks)
+    assert all(item.basis_type is PriorityBasis.MATERIAL_GAP for item in synthesis.priority_questions)
+    assert all(item.priority is PriorityLevel.MEDIUM for item in synthesis.priority_questions)
     assert all(item.finding_type is not FindingType.CROSS_ISSUE_FEATURE for item in synthesis.findings)
 
 
@@ -487,17 +492,16 @@ def test_m43_source_foundation_matrices_and_chronology_remain_immutable():
     assert after == before
 
 
-def test_m43_preserves_m42_finding_issue_and_overall_semantics_while_only_linking_new_children():
+def test_m44_preserves_m43_issue_links_while_only_adding_risk_links():
     foundation, matrices, chronology = synthetic_sources()
     synthesis = build_case_synthesis(foundation, matrices, chronology)
-    # Frozen M4.2 semantics remain under their original tests; M4.3 only populates
-    # conflict/gap links on those immutable semantic issue positions.
     assert synthesis.synthesis_id
     assert synthesis.findings
     assert synthesis.overall_state
     gap_ids = {item.gap_id for item in synthesis.gaps}
     conflict_ids = {item.conflict_id for item in synthesis.conflicts}
+    risk_ids = {item.risk_id for item in synthesis.risks}
     for position in synthesis.issue_positions:
         assert set(position.gap_ids).issubset(gap_ids)
         assert set(position.conflict_ids).issubset(conflict_ids)
-        assert position.risk_ids == ()
+        assert set(position.risk_ids).issubset(risk_ids)
