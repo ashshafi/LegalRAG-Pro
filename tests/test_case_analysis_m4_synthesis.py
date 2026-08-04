@@ -247,7 +247,7 @@ def test_inconsistent_same_family_payload_fails_closed():
         build_case_synthesis(foundation, corrupted, chronology)
 
 
-def test_insufficient_element_creates_one_element_limiting_finding_not_gap():
+def test_insufficient_element_preserves_m42_limiting_finding_when_m43_gap_is_added():
     foundation, matrices, chronology = _one_issue_sources()
     issue = matrices.issue_matrix[0]
     target = issue.element_records[0]
@@ -265,7 +265,9 @@ def test_insufficient_element_creates_one_element_limiting_finding_not_gap():
     assert matches[0].status is FindingStatus.UNRESOLVED_IN_FROZEN_STATE
     assert isinstance(matches[0].provenance_refs[0].target, ElementRef)
     assert matches[0].provenance_refs[0].target.element_id == target.element_id
-    assert synthesis.gaps == ()
+    target_gaps = [item for item in synthesis.gaps if item.element_id == target.element_id]
+    assert len(target_gaps) == 1
+    assert target_gaps[0].gap_type.value == "insufficient_evidence"
 
 
 def test_unresolved_element_does_not_invent_required_element_finding():
@@ -302,18 +304,19 @@ def test_issue_position_material_findings_never_cross_issue_boundary():
             assert issue_ids == {position.issue_analysis_id}
 
 
-def test_m42_keeps_all_deferred_collections_empty_and_cross_issue_findings_absent():
+def test_m43_only_advances_conflict_gap_outputs_and_keeps_later_outputs_deferred():
     foundation, matrices, chronology = synthetic_sources()
     synthesis = build_case_synthesis(foundation, matrices, chronology)
     assert synthesis.conflicts == ()
-    assert synthesis.gaps == ()
+    assert synthesis.gaps
     assert synthesis.risks == ()
     assert synthesis.priority_questions == ()
     assert all(item.finding_type is not FindingType.CROSS_ISSUE_FEATURE for item in synthesis.findings)
     assert all(item.scope is FindingScope.ELEMENT for item in synthesis.findings)
+    gap_ids = {item.gap_id for item in synthesis.gaps}
     for position in synthesis.issue_positions:
+        assert set(position.gap_ids).issubset(gap_ids)
         assert position.conflict_ids == ()
-        assert position.gap_ids == ()
         assert position.risk_ids == ()
 
 
@@ -433,12 +436,20 @@ def test_summary_is_deterministic_templated_and_contains_exact_proposition_text(
     assert finding.summary.endswith(f"the frozen proposition is established by the current evidence: {proposition.text}")
 
 
-def test_existing_upstream_gap_and_dispute_ids_do_not_trigger_m43_outputs():
+def test_existing_upstream_gap_and_dispute_ids_do_not_independently_trigger_m43_types():
     foundation, matrices, chronology = synthetic_sources()
     assert any(element.evidential_gap_ids for issue in matrices.issue_matrix for element in issue.element_records)
     assert any(element.disputed_matter_ids for issue in matrices.issue_matrix for element in issue.element_records)
     synthesis = build_case_synthesis(foundation, matrices, chronology)
-    assert synthesis.gaps == ()
+    ek_info = next(
+        element
+        for issue in matrices.issue_matrix
+        if issue.issue_definition_id == "EK-001"
+        for element in issue.element_records
+        if element.element_id == "EK-INFORMATION"
+    )
+    assert ek_info.evidential_gap_ids
+    assert not any(item.element_id == "EK-INFORMATION" for item in synthesis.gaps)
     assert synthesis.conflicts == ()
 
 
@@ -449,10 +460,12 @@ def test_m3_multi_issue_event_does_not_trigger_cross_issue_synthesis():
     assert not any(item.finding_type is FindingType.CROSS_ISSUE_FEATURE for item in synthesis.findings)
 
 
-def test_builder_public_contract_returns_valid_case_synthesis_without_future_outputs():
+def test_builder_public_contract_returns_valid_case_synthesis_without_m44_outputs():
     foundation, matrices, chronology = synthetic_sources()
     synthesis = build_case_synthesis(foundation, matrices, chronology)
     assert synthesis.case_id == foundation.case_id
     assert synthesis.source_lineage.foundation_synthesis_id == foundation.synthesis_id
     assert {item.issue_analysis_id for item in synthesis.issue_positions} == set(foundation.source_issue_analysis_ids)
-    assert synthesis.conflicts == synthesis.gaps == synthesis.risks == synthesis.priority_questions == ()
+    assert synthesis.risks == ()
+    assert synthesis.priority_questions == ()
+    assert all(item.finding_type is not FindingType.CROSS_ISSUE_FEATURE for item in synthesis.findings)

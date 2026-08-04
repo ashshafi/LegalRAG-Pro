@@ -1,9 +1,12 @@
-"""Deterministic Sprint 2.4 Milestone 4.2 whole-case synthesis.
+"""Deterministic Sprint 2.4 M4.2/M4.3 whole-case synthesis.
 
-M4.2 is deliberately narrow.  It derives only issue positions, direct
-proposition/element findings and an overall analytical-development state from
-frozen M1/M2/M3 durable objects.  It does not retrieve evidence, invoke an LLM,
-create conflicts/gaps/risks/questions, or reinterpret frozen legal state.
+M4.2 derives issue positions, direct proposition/element findings and the
+overall analytical-development state.  M4.3 additionally materialises only the
+four derivations authorised by its frozen v1.1 contract: missing evidence,
+insufficient evidence, unresolved propositions, and narrow assertion-level
+timing conflicts.  The builder remains offline, provenance preserving, and
+fail-closed; it does not retrieve evidence, invoke an LLM, create risks or
+priority questions, or reconstruct discarded conflict semantics.
 """
 
 from __future__ import annotations
@@ -20,28 +23,37 @@ from case_analysis.m2.matrices import (
     IssueMatrixRecord,
 )
 from case_analysis.m2.matrix_validation import validate_case_matrices
-from case_analysis.m3.models import CaseChronology
+from case_analysis.m3.event_identity import aggregate_timing
+from case_analysis.m3.models import CaseChronology, EventAssertion, TimingStatus
 from case_analysis.validation import validate_foundation
-from legal_analysis.enums import Confidence
+from legal_analysis.enums import Confidence, Materiality
 from legal_analysis.evidence_assessment import PropositionAssessmentStatus
 from legal_analysis.legal_analysis import ElementAnalysisStatus
 
 from .identity import (
     derive_case_synthesis_id,
+    derive_conflict_id,
     derive_finding_id,
+    derive_gap_id,
     fingerprint_case_chronology,
     fingerprint_case_matrices,
 )
 from .models import (
     AnalyticalBasis,
     CaseSynthesis,
+    ConflictType,
     ElementRef,
+    EvidenceGap,
     EvidenceUseRef,
+    EventAssertionRef,
+    EvidentialGapRef,
     FindingScope,
     FindingStatus,
     FindingType,
+    GapType,
     IssuePosition,
     IssuePositionStatus,
+    MaterialConflict,
     OverallState,
     PropositionRef,
     SynthesisFinding,
@@ -357,6 +369,247 @@ def _insufficient_element_finding(
     )
 
 
+
+def _uses_by_element(matrices: CaseMatrices) -> dict[tuple[str, str], tuple[EvidenceUse, ...]]:
+    grouped: dict[tuple[str, str], list[EvidenceUse]] = defaultdict(list)
+    for record in matrices.evidence_matrix:
+        for use in record.uses:
+            grouped[(use.issue_analysis_id, use.element_id)].append(use)
+    return {
+        identity: tuple(sorted(uses, key=lambda item: item.identity))
+        for identity, uses in grouped.items()
+    }
+
+
+def _upstream_gap_refs(
+    issue_analysis_id: str,
+    element: IssueElementRecord,
+) -> tuple[SynthesisProvenanceRef, ...]:
+    return tuple(
+        SynthesisProvenanceRef(
+            EvidentialGapRef(issue_analysis_id, element.element_id, gap_id)
+        )
+        for gap_id in sorted(element.evidential_gap_ids)
+    )
+
+
+def _element_gap(
+    *,
+    synthesis_id: str,
+    issue: IssueMatrixRecord,
+    element: IssueElementRecord,
+    gap_type: GapType,
+) -> EvidenceGap:
+    element_ref = SynthesisProvenanceRef(
+        ElementRef(issue.issue_analysis_id, element.element_id)
+    )
+    provenance_refs = (element_ref, *_upstream_gap_refs(issue.issue_analysis_id, element))
+    if gap_type is GapType.MISSING_EVIDENCE:
+        description = (
+            f"{element.element_name}: no frozen M2 relevant EvidenceUse is present "
+            "for this element."
+        )
+    elif gap_type is GapType.INSUFFICIENT_EVIDENCE:
+        description = (
+            f"{element.element_name}: the frozen analytical record is insufficiently evidenced."
+        )
+    else:
+        raise ValueError(f"Unsupported M4.3 element gap type {gap_type!r}.")
+
+    gap_id = derive_gap_id(
+        synthesis_id=synthesis_id,
+        gap_type=gap_type,
+        scope=FindingScope.ELEMENT,
+        issue_analysis_id=issue.issue_analysis_id,
+        element_id=element.element_id,
+        provenance_refs=provenance_refs,
+    )
+    return EvidenceGap(
+        gap_id=gap_id,
+        gap_type=gap_type,
+        scope=FindingScope.ELEMENT,
+        issue_analysis_id=issue.issue_analysis_id,
+        issue_definition_id=issue.issue_definition_id,
+        issue_definition_version=issue.issue_definition_version,
+        element_id=element.element_id,
+        description=description,
+        materiality=Materiality.MEDIUM,
+        unresolved_question=element.legal_question,
+        provenance_refs=provenance_refs,
+    )
+
+
+def _unresolved_proposition_gap(
+    *,
+    synthesis_id: str,
+    family: _PropositionFamily,
+) -> EvidenceGap:
+    link = family.canonical_link
+    if link.status is not PropositionAssessmentStatus.UNRESOLVED:
+        raise ValueError("UNRESOLVED_PROPOSITION requires frozen UNRESOLVED status.")
+    provenance_refs = family.provenance_refs
+    gap_id = derive_gap_id(
+        synthesis_id=synthesis_id,
+        gap_type=GapType.UNRESOLVED_PROPOSITION,
+        scope=FindingScope.ELEMENT,
+        issue_analysis_id=family.issue.issue_analysis_id,
+        element_id=family.element.element_id,
+        provenance_refs=provenance_refs,
+    )
+    return EvidenceGap(
+        gap_id=gap_id,
+        gap_type=GapType.UNRESOLVED_PROPOSITION,
+        scope=FindingScope.ELEMENT,
+        issue_analysis_id=family.issue.issue_analysis_id,
+        issue_definition_id=family.issue.issue_definition_id,
+        issue_definition_version=family.issue.issue_definition_version,
+        element_id=family.element.element_id,
+        description=(
+            f"{family.element.element_name}: the frozen proposition remains unresolved: "
+            f"{link.text}"
+        ),
+        materiality=Materiality.MEDIUM,
+        unresolved_question=family.element.legal_question,
+        provenance_refs=provenance_refs,
+    )
+
+
+def _derive_gaps(
+    *,
+    synthesis_id: str,
+    matrices: CaseMatrices,
+    families: tuple[_PropositionFamily, ...],
+) -> tuple[EvidenceGap, ...]:
+    uses_by_element = _uses_by_element(matrices)
+    families_by_element: dict[tuple[str, str], list[_PropositionFamily]] = defaultdict(list)
+    for family in families:
+        families_by_element[(family.issue.issue_analysis_id, family.element.element_id)].append(family)
+
+    gaps: list[EvidenceGap] = []
+    for issue in sorted(
+        matrices.issue_matrix,
+        key=lambda item: (
+            item.issue_definition_id,
+            item.issue_definition_version,
+            item.issue_analysis_id,
+        ),
+    ):
+        for element in sorted(issue.element_records, key=lambda item: item.element_id):
+            identity = (issue.issue_analysis_id, element.element_id)
+            uses = uses_by_element.get(identity, ())
+            if not uses:
+                gaps.append(
+                    _element_gap(
+                        synthesis_id=synthesis_id,
+                        issue=issue,
+                        element=element,
+                        gap_type=GapType.MISSING_EVIDENCE,
+                    )
+                )
+                continue
+
+            if element.analysis_status is ElementAnalysisStatus.INSUFFICIENTLY_EVIDENCED:
+                gaps.append(
+                    _element_gap(
+                        synthesis_id=synthesis_id,
+                        issue=issue,
+                        element=element,
+                        gap_type=GapType.INSUFFICIENT_EVIDENCE,
+                    )
+                )
+                continue
+
+            for family in sorted(
+                families_by_element.get(identity, ()),
+                key=lambda item: item.canonical_link.source_proposition_index,
+            ):
+                if family.canonical_link.status is PropositionAssessmentStatus.UNRESOLVED:
+                    gaps.append(
+                        _unresolved_proposition_gap(
+                            synthesis_id=synthesis_id,
+                            family=family,
+                        )
+                    )
+    return tuple(gaps)
+
+
+def _timing_conflict_scope(assertions: tuple[EventAssertion, ...]) -> FindingScope:
+    issue_ids = {item.issue_analysis_id for item in assertions}
+    if len(issue_ids) > 1:
+        return FindingScope.CROSS_ISSUE
+    element_ids = {item.element_id for item in assertions}
+    if len(element_ids) == 1:
+        return FindingScope.ELEMENT
+    return FindingScope.ISSUE
+
+
+def _derive_timing_conflicts(
+    *,
+    synthesis_id: str,
+    chronology: CaseChronology,
+) -> tuple[MaterialConflict, ...]:
+    conflicts: list[MaterialConflict] = []
+    for event in sorted(chronology.events, key=lambda item: item.event_id):
+        # Fail closed if an externally/manual constructed chronology contradicts
+        # the frozen M3 timing aggregation it claims to represent.
+        expected_extent, expected_status = aggregate_timing(event.assertions)
+        if expected_extent != event.canonical_temporal_extent or expected_status is not event.timing_status:
+            raise ValueError(
+                f"Frozen M3 event {event.event_id!r} is inconsistent with M3 timing aggregation."
+            )
+
+        eligible = tuple(
+            assertion
+            for assertion in event.assertions
+            if assertion.temporal_extent is not None
+            and assertion.timing_status in {TimingStatus.ESTABLISHED, TimingStatus.SUPPORTED}
+        )
+        if len(eligible) < 2:
+            continue
+
+        candidate_extent, candidate_status = aggregate_timing(eligible)
+        if candidate_status is not TimingStatus.DISPUTED or candidate_extent is not None:
+            continue
+        if event.timing_status is not TimingStatus.DISPUTED or event.canonical_temporal_extent is not None:
+            continue
+
+        if len(eligible) > 2:
+            raise ValueError(
+                "M4.3 cannot losslessly represent more than two incompatible retained "
+                f"temporal assertions for event {event.event_id!r}."
+            )
+
+        ordered = tuple(sorted(eligible, key=lambda item: item.assertion_id))
+        side_a_refs = (
+            SynthesisProvenanceRef(EventAssertionRef(event.event_id, ordered[0].assertion_id)),
+        )
+        side_b_refs = (
+            SynthesisProvenanceRef(EventAssertionRef(event.event_id, ordered[1].assertion_id)),
+        )
+        scope = _timing_conflict_scope(ordered)
+        conflict_id = derive_conflict_id(
+            synthesis_id=synthesis_id,
+            conflict_type=ConflictType.TIMING_CONFLICT,
+            scope=scope,
+            side_a_refs=side_a_refs,
+            side_b_refs=side_b_refs,
+        )
+        conflicts.append(
+            MaterialConflict(
+                conflict_id=conflict_id,
+                conflict_type=ConflictType.TIMING_CONFLICT,
+                scope=scope,
+                subject=event.normalized_event_core,
+                side_a_refs=side_a_refs,
+                side_b_refs=side_b_refs,
+                materiality=Materiality.MEDIUM,
+                status=FindingStatus.DISPUTED_IN_FROZEN_STATE,
+                related_issue_ids=tuple(sorted({item.issue_analysis_id for item in ordered})),
+            )
+        )
+    return tuple(conflicts)
+
+
 def _overall_state(positions: tuple[IssuePosition, ...]) -> OverallState:
     statuses = {position.position_status for position in positions}
     if IssuePositionStatus.MATERIALLY_DISPUTED in statuses:
@@ -378,15 +631,16 @@ def build_case_synthesis(
     matrices: CaseMatrices,
     chronology: CaseChronology,
 ) -> CaseSynthesis:
-    """Build the deterministic M4.2 synthesis from one frozen M1/M2/M3 state."""
+    """Build the deterministic M4.2/M4.3 synthesis from frozen M1/M2/M3 state."""
 
     _validate_source_preconditions(foundation, matrices, chronology)
     lineage, synthesis_id = _source_lineage(foundation, matrices, chronology)
+    families = _proposition_families(matrices)
 
     findings: list[SynthesisFinding] = []
     finding_ids_by_issue: dict[str, list[str]] = defaultdict(list)
 
-    for family in _proposition_families(matrices):
+    for family in families:
         finding = _proposition_finding(synthesis_id=synthesis_id, family=family)
         if finding is None:
             continue
@@ -411,6 +665,18 @@ def build_case_synthesis(
                 continue
             findings.append(finding)
             finding_ids_by_issue[issue.issue_analysis_id].append(finding.finding_id)
+
+    conflicts = _derive_timing_conflicts(synthesis_id=synthesis_id, chronology=chronology)
+    gaps = _derive_gaps(synthesis_id=synthesis_id, matrices=matrices, families=families)
+
+    conflict_ids_by_issue: dict[str, list[str]] = defaultdict(list)
+    for conflict in conflicts:
+        for issue_analysis_id in conflict.related_issue_ids:
+            conflict_ids_by_issue[issue_analysis_id].append(conflict.conflict_id)
+
+    gap_ids_by_issue: dict[str, list[str]] = defaultdict(list)
+    for gap in gaps:
+        gap_ids_by_issue[gap.issue_analysis_id].append(gap.gap_id)
 
     issue_positions: list[IssuePosition] = []
     for issue in sorted(
@@ -437,8 +703,8 @@ def build_case_synthesis(
                     element.analysis_confidence for element in issue.element_records
                 ),
                 material_finding_ids=tuple(sorted(set(finding_ids_by_issue[issue.issue_analysis_id]))),
-                conflict_ids=(),
-                gap_ids=(),
+                conflict_ids=tuple(sorted(set(conflict_ids_by_issue[issue.issue_analysis_id]))),
+                gap_ids=tuple(sorted(set(gap_ids_by_issue[issue.issue_analysis_id]))),
                 risk_ids=(),
             )
         )
@@ -449,8 +715,8 @@ def build_case_synthesis(
         source_lineage=lineage,
         issue_positions=tuple(issue_positions),
         findings=tuple(findings),
-        conflicts=(),
-        gaps=(),
+        conflicts=conflicts,
+        gaps=gaps,
         risks=(),
         priority_questions=(),
         overall_state=_overall_state(tuple(issue_positions)),
