@@ -33,7 +33,11 @@ from case_analysis.m4.models import (
     RiskType,
 )
 from case_analysis.m4.serialization import dumps_case_synthesis, loads_case_synthesis
-from case_analysis.m4.synthesis import _derive_timing_conflicts, build_case_synthesis
+from case_analysis.m4.synthesis import (
+    _build_m44_semantic_core,
+    _derive_timing_conflicts,
+    build_case_synthesis,
+)
 from case_analysis.m2.matrix_serialization import dumps_case_matrices
 from case_analysis.m3.chronology_serialization import dumps_case_chronology
 from case_analysis.serialization import dumps_case_analysis_foundation
@@ -440,7 +444,7 @@ def test_only_authorised_gap_and_conflict_types_are_generated():
 
 def test_m44_classifies_m43_children_without_cross_issue_findings():
     foundation, matrices, chronology = _timing_conflict_chronology()
-    synthesis = build_case_synthesis(foundation, matrices, chronology)
+    synthesis = _build_m44_semantic_core(foundation, matrices, chronology)
     assert any(item.risk_type is RiskType.TIMING_RISK for item in synthesis.risks)
     assert all(item.risk_type in {RiskType.EVIDENCE_RISK, RiskType.TIMING_RISK} for item in synthesis.risks)
     assert all(item.basis_type is PriorityBasis.MATERIAL_GAP for item in synthesis.priority_questions)

@@ -1,13 +1,11 @@
-"""Deterministic Sprint 2.4 M4.2/M4.3 whole-case synthesis.
+"""Deterministic Sprint 2.4 M4 whole-case synthesis.
 
-M4.2 derives issue positions, direct proposition/element findings and the
-overall analytical-development state. M4.3 materialises the four derivations
-authorised by its frozen v1.1 contract: missing evidence, insufficient evidence,
-unresolved propositions, and narrow assertion-level timing conflicts. M4.4
-classifies those durable deficiencies only as evidence/timing risks and neutral
-material-gap priority questions. The builder remains offline, provenance
-preserving, and fail-closed; it does not retrieve evidence, invoke an LLM, rank
-legal importance, or reconstruct discarded conflict/dependency semantics.
+M4.2 derives issue positions and direct findings, M4.3 materialises the frozen
+conflict/gap subset, M4.4 classifies those deficiencies as neutral risks and
+priority questions, and M4.5 appends only the six authorised higher-order
+evidence-relationship findings. The builder remains offline, provenance
+preserving and fail-closed; it does not rank legal importance, reconstruct
+discarded dependency/conflict semantics, retrieve evidence, or invoke an LLM.
 """
 
 from __future__ import annotations
@@ -28,7 +26,7 @@ from case_analysis.m2.matrix_validation import validate_case_matrices
 from case_analysis.m3.event_identity import aggregate_timing
 from case_analysis.m3.models import CaseChronology, EventAssertion, TimingStatus
 from case_analysis.validation import validate_foundation
-from legal_analysis.enums import Confidence, Materiality
+from legal_analysis.enums import AnalyticalRole, Confidence, Materiality
 from legal_analysis.evidence_assessment import PropositionAssessmentStatus
 from legal_analysis.legal_analysis import ElementAnalysisStatus
 
@@ -83,6 +81,23 @@ _ISSUE_STATUS_BY_ELEMENT = {
     ElementAnalysisStatus.INSUFFICIENTLY_EVIDENCED: IssuePositionStatus.EVIDENCE_INCOMPLETE,
     ElementAnalysisStatus.UNRESOLVED: IssuePositionStatus.UNRESOLVED,
     ElementAnalysisStatus.PARTIALLY_SUPPORTED: IssuePositionStatus.PARTIALLY_SUPPORTED,
+}
+
+
+
+_SUPPORTING_PROPOSITION_STATUSES = {
+    PropositionAssessmentStatus.ESTABLISHED_BY_CURRENT_EVIDENCE,
+    PropositionAssessmentStatus.SUPPORTED_BUT_NOT_ESTABLISHED,
+}
+
+_SUPPORTING_ROLES = {
+    AnalyticalRole.SUPPORTING,
+    AnalyticalRole.CORROBORATIVE,
+}
+
+_SUPPORTING_PARENT_BASES = {
+    AnalyticalBasis.ESTABLISHED_PROPOSITION,
+    AnalyticalBasis.SUPPORTED_PROPOSITION,
 }
 
 _PROPOSITION_FINDING = {
@@ -842,12 +857,375 @@ def _build_m43_semantic_core(
     return synthesis
 
 
-def build_case_synthesis(
+def _evidence_use_confidence(use: EvidenceUse) -> Confidence:
+    """Return the frozen confidence ceiling for one exact EvidenceUse."""
+
+    return _minimum_confidence((use.mapping_confidence, use.assessment_confidence))
+
+
+def _family_is_supporting(family: _PropositionFamily) -> bool:
+    """Return whether one proposition family satisfies the strict v1 support rule."""
+
+    if family.canonical_link.status not in _SUPPORTING_PROPOSITION_STATUSES:
+        return False
+    return bool(family.members) and all(
+        use.analytical_role in _SUPPORTING_ROLES for use, _ in family.members
+    )
+
+
+def _finding_status_for_supporting_family(family: _PropositionFamily) -> FindingStatus:
+    status = family.canonical_link.status
+    if status is PropositionAssessmentStatus.ESTABLISHED_BY_CURRENT_EVIDENCE:
+        return FindingStatus.ESTABLISHED_BY_FROZEN_STATE
+    if status is PropositionAssessmentStatus.SUPPORTED_BUT_NOT_ESTABLISHED:
+        return FindingStatus.SUPPORTED_BY_FROZEN_STATE
+    raise ValueError("M4.5 supporting-family status must be established or supported.")
+
+
+def _element_index(matrices: CaseMatrices) -> dict[tuple[str, str], IssueElementRecord]:
+    return {
+        (issue.issue_analysis_id, element.element_id): element
+        for issue in matrices.issue_matrix
+        for element in issue.element_records
+    }
+
+
+def _derive_multiple_supporting_proposition_findings(
+    *,
+    synthesis_id: str,
+    families: tuple[_PropositionFamily, ...],
+) -> tuple[SynthesisFinding, ...]:
+    """Derive proposition breadth without counting repeated EvidenceUse projections."""
+
+    grouped: dict[tuple[str, str], list[_PropositionFamily]] = defaultdict(list)
+    for family in families:
+        if _family_is_supporting(family):
+            grouped[(family.issue.issue_analysis_id, family.element.element_id)].append(family)
+
+    findings: list[SynthesisFinding] = []
+    for coordinate, members in sorted(grouped.items()):
+        ordered = tuple(
+            sorted(members, key=lambda item: item.canonical_link.source_proposition_index)
+        )
+        family_indexes = {
+            item.canonical_link.source_proposition_index for item in ordered
+        }
+        if len(family_indexes) < 2:
+            continue
+
+        provenance_refs = tuple(
+            ref
+            for family in ordered
+            for ref in family.provenance_refs
+        )
+        statuses = tuple(_finding_status_for_supporting_family(item) for item in ordered)
+        finding_status = (
+            FindingStatus.SUPPORTED_BY_FROZEN_STATE
+            if FindingStatus.SUPPORTED_BY_FROZEN_STATE in statuses
+            else FindingStatus.ESTABLISHED_BY_FROZEN_STATE
+        )
+        confidence = _minimum_confidence(
+            family.canonical_link.confidence for family in ordered
+        )
+        element = ordered[0].element
+        finding_id = derive_finding_id(
+            synthesis_id=synthesis_id,
+            finding_type=FindingType.SUPPORTING_FEATURE,
+            scope=FindingScope.ELEMENT,
+            analytical_bases=(AnalyticalBasis.MULTIPLE_SUPPORTING_PROPOSITIONS,),
+            provenance_refs=provenance_refs,
+        )
+        findings.append(
+            SynthesisFinding(
+                finding_id=finding_id,
+                finding_type=FindingType.SUPPORTING_FEATURE,
+                analytical_bases=(AnalyticalBasis.MULTIPLE_SUPPORTING_PROPOSITIONS,),
+                scope=FindingScope.ELEMENT,
+                summary=(
+                    f"{element.element_name}: multiple distinct frozen supporting "
+                    "proposition families are present for this element."
+                ),
+                status=finding_status,
+                confidence=confidence,
+                provenance_refs=provenance_refs,
+            )
+        )
+    return tuple(findings)
+
+
+def _derive_corroborated_evidence_findings(
+    *,
+    synthesis_id: str,
+    families: tuple[_PropositionFamily, ...],
+) -> tuple[SynthesisFinding, ...]:
+    """Derive source multiplicity for one exact proposition family."""
+
+    findings: list[SynthesisFinding] = []
+    for family in families:
+        if not _family_is_supporting(family):
+            continue
+        evidence_keys = {use.evidence_key for use, _ in family.members}
+        if len(evidence_keys) < 2:
+            continue
+
+        provenance_refs = family.provenance_refs
+        finding_id = derive_finding_id(
+            synthesis_id=synthesis_id,
+            finding_type=FindingType.SUPPORTING_FEATURE,
+            scope=FindingScope.ELEMENT,
+            analytical_bases=(AnalyticalBasis.CORROBORATED_EVIDENCE,),
+            provenance_refs=provenance_refs,
+        )
+        findings.append(
+            SynthesisFinding(
+                finding_id=finding_id,
+                finding_type=FindingType.SUPPORTING_FEATURE,
+                analytical_bases=(AnalyticalBasis.CORROBORATED_EVIDENCE,),
+                scope=FindingScope.ELEMENT,
+                summary=(
+                    f"{family.element.element_name}: this frozen proposition family is "
+                    "represented through multiple distinct canonical evidence sources."
+                ),
+                status=_finding_status_for_supporting_family(family),
+                confidence=family.canonical_link.confidence,
+                provenance_refs=provenance_refs,
+            )
+        )
+    return tuple(findings)
+
+
+def _derive_role_findings(
+    *,
+    synthesis_id: str,
+    matrices: CaseMatrices,
+    role: AnalyticalRole,
+    basis: AnalyticalBasis,
+    summary_label: str,
+) -> tuple[SynthesisFinding, ...]:
+    """Expose one exact frozen analytical role at element scope."""
+
+    grouped: dict[tuple[str, str], list[EvidenceUse]] = defaultdict(list)
+    for record in matrices.evidence_matrix:
+        for use in record.uses:
+            if use.analytical_role is role:
+                grouped[(use.issue_analysis_id, use.element_id)].append(use)
+
+    elements = _element_index(matrices)
+    findings: list[SynthesisFinding] = []
+    for coordinate, members in sorted(grouped.items()):
+        ordered = tuple(sorted(members, key=lambda item: item.identity))
+        element = elements[coordinate]
+        provenance_refs = tuple(
+            SynthesisProvenanceRef(EvidenceUseRef(*use.identity)) for use in ordered
+        )
+        finding_id = derive_finding_id(
+            synthesis_id=synthesis_id,
+            finding_type=FindingType.LIMITING_FEATURE,
+            scope=FindingScope.ELEMENT,
+            analytical_bases=(basis,),
+            provenance_refs=provenance_refs,
+        )
+        findings.append(
+            SynthesisFinding(
+                finding_id=finding_id,
+                finding_type=FindingType.LIMITING_FEATURE,
+                analytical_bases=(basis,),
+                scope=FindingScope.ELEMENT,
+                summary=(
+                    f"{element.element_name}: the frozen evidence matrix contains "
+                    f"evidence uses classified as {summary_label} for this element."
+                ),
+                status=FindingStatus.ESTABLISHED_BY_FROZEN_STATE,
+                confidence=_minimum_confidence(
+                    _evidence_use_confidence(use) for use in ordered
+                ),
+                provenance_refs=provenance_refs,
+            )
+        )
+    return tuple(findings)
+
+
+def _derive_cross_issue_coverage_findings(
+    *,
+    synthesis_id: str,
+    matrices: CaseMatrices,
+) -> tuple[SynthesisFinding, ...]:
+    """Expose shared canonical evidence use across multiple frozen issues."""
+
+    findings: list[SynthesisFinding] = []
+    for record in sorted(matrices.evidence_matrix, key=lambda item: item.evidence_key):
+        issue_ids = {use.issue_analysis_id for use in record.uses}
+        if len(issue_ids) < 2:
+            continue
+        ordered = tuple(sorted(record.uses, key=lambda item: item.identity))
+        provenance_refs = tuple(
+            SynthesisProvenanceRef(EvidenceUseRef(*use.identity)) for use in ordered
+        )
+        finding_id = derive_finding_id(
+            synthesis_id=synthesis_id,
+            finding_type=FindingType.CROSS_ISSUE_FEATURE,
+            scope=FindingScope.CROSS_ISSUE,
+            analytical_bases=(AnalyticalBasis.CROSS_ISSUE_COVERAGE,),
+            provenance_refs=provenance_refs,
+        )
+        findings.append(
+            SynthesisFinding(
+                finding_id=finding_id,
+                finding_type=FindingType.CROSS_ISSUE_FEATURE,
+                analytical_bases=(AnalyticalBasis.CROSS_ISSUE_COVERAGE,),
+                scope=FindingScope.CROSS_ISSUE,
+                summary=(
+                    f"Canonical evidence {record.evidence_key} is used through frozen "
+                    "evidence relationships in multiple issue analyses."
+                ),
+                status=FindingStatus.ESTABLISHED_BY_FROZEN_STATE,
+                confidence=_minimum_confidence(
+                    _evidence_use_confidence(use) for use in ordered
+                ),
+                provenance_refs=provenance_refs,
+            )
+        )
+    return tuple(findings)
+
+
+def _eligible_single_source_parent(finding: SynthesisFinding) -> bool:
+    """Restrict dependency parents to frozen direct M4.2 proposition findings."""
+
+    if finding.finding_type is not FindingType.SUPPORTING_FEATURE:
+        return False
+    if finding.scope is not FindingScope.ELEMENT:
+        return False
+    if len(finding.analytical_bases) != 1:
+        return False
+    if finding.analytical_bases[0] not in _SUPPORTING_PARENT_BASES:
+        return False
+    return bool(finding.provenance_refs) and all(
+        isinstance(ref.target, PropositionRef) for ref in finding.provenance_refs
+    )
+
+
+def _derive_single_source_dependency_findings(
+    *,
+    synthesis_id: str,
+    pre_m45_findings: tuple[SynthesisFinding, ...],
+    matrices: CaseMatrices,
+) -> tuple[SynthesisFinding, ...]:
+    """Derive local dependency only from an immutable pre-M4.5 parent snapshot."""
+
+    elements = _element_index(matrices)
+    findings: list[SynthesisFinding] = []
+    for parent in pre_m45_findings:
+        if not _eligible_single_source_parent(parent):
+            continue
+
+        targets = tuple(ref.target for ref in parent.provenance_refs)
+        evidence_keys = {
+            target.evidence_use_ref.evidence_key
+            for target in targets
+            if isinstance(target, PropositionRef)
+        }
+        if len(evidence_keys) != 1:
+            continue
+        coordinates = {
+            (
+                target.evidence_use_ref.issue_analysis_id,
+                target.evidence_use_ref.element_id,
+            )
+            for target in targets
+            if isinstance(target, PropositionRef)
+        }
+        if len(coordinates) != 1:
+            raise ValueError(
+                "M4.5 eligible supporting parent finding spans more than one element coordinate."
+            )
+        coordinate = next(iter(coordinates))
+        try:
+            element = elements[coordinate]
+        except KeyError as exc:
+            raise ValueError(
+                f"M4.5 parent finding references unknown element coordinate {coordinate!r}."
+            ) from exc
+
+        finding_id = derive_finding_id(
+            synthesis_id=synthesis_id,
+            finding_type=FindingType.LIMITING_FEATURE,
+            scope=FindingScope.ELEMENT,
+            analytical_bases=(AnalyticalBasis.DEPENDENCY_ON_SINGLE_EVIDENCE_SOURCE,),
+            provenance_refs=parent.provenance_refs,
+        )
+        findings.append(
+            SynthesisFinding(
+                finding_id=finding_id,
+                finding_type=FindingType.LIMITING_FEATURE,
+                analytical_bases=(AnalyticalBasis.DEPENDENCY_ON_SINGLE_EVIDENCE_SOURCE,),
+                scope=FindingScope.ELEMENT,
+                summary=(
+                    f"{element.element_name}: this frozen supporting finding resolves to "
+                    "one canonical evidence source in its complete material provenance."
+                ),
+                status=parent.status,
+                confidence=parent.confidence,
+                provenance_refs=parent.provenance_refs,
+                related_finding_ids=(parent.finding_id,),
+            )
+        )
+    return tuple(findings)
+
+
+def _derive_m45_findings(
+    *,
+    synthesis_id: str,
+    matrices: CaseMatrices,
+    pre_m45_findings: tuple[SynthesisFinding, ...],
+) -> tuple[SynthesisFinding, ...]:
+    """Derive exactly the six higher-order finding forms authorised by M4.5 v1.0."""
+
+    families = _proposition_families(matrices)
+    additions = (
+        *_derive_multiple_supporting_proposition_findings(
+            synthesis_id=synthesis_id,
+            families=families,
+        ),
+        *_derive_corroborated_evidence_findings(
+            synthesis_id=synthesis_id,
+            families=families,
+        ),
+        *_derive_role_findings(
+            synthesis_id=synthesis_id,
+            matrices=matrices,
+            role=AnalyticalRole.ADVERSE,
+            basis=AnalyticalBasis.ADVERSE_EVIDENCE,
+            summary_label="adverse",
+        ),
+        *_derive_role_findings(
+            synthesis_id=synthesis_id,
+            matrices=matrices,
+            role=AnalyticalRole.CONFLICTING,
+            basis=AnalyticalBasis.CONFLICTING_EVIDENCE,
+            summary_label="conflicting",
+        ),
+        *_derive_cross_issue_coverage_findings(
+            synthesis_id=synthesis_id,
+            matrices=matrices,
+        ),
+        *_derive_single_source_dependency_findings(
+            synthesis_id=synthesis_id,
+            pre_m45_findings=pre_m45_findings,
+            matrices=matrices,
+        ),
+    )
+    ids = tuple(item.finding_id for item in additions)
+    if len(ids) != len(set(ids)):
+        raise ValueError("M4.5 derivation produced duplicate finding identities.")
+    return tuple(additions)
+
+
+def _build_m44_semantic_core(
     foundation: CaseAnalysisFoundation,
     matrices: CaseMatrices,
     chronology: CaseChronology,
 ) -> CaseSynthesis:
-    """Build deterministic M4.2-M4.4 synthesis from frozen M1/M2/M3 state."""
+    """Build the complete frozen M4.4 semantic core before M4.5 findings."""
 
     core = _build_m43_semantic_core(foundation, matrices, chronology)
     risks = _derive_risks(
@@ -877,6 +1255,36 @@ def build_case_synthesis(
         issue_positions=issue_positions,
         risks=risks,
         priority_questions=priority_questions,
+    )
+    validate_case_synthesis(
+        synthesis,
+        foundation=foundation,
+        matrices=matrices,
+        chronology=chronology,
+    )
+    return synthesis
+
+
+def build_case_synthesis(
+    foundation: CaseAnalysisFoundation,
+    matrices: CaseMatrices,
+    chronology: CaseChronology,
+) -> CaseSynthesis:
+    """Build deterministic M4.2-M4.5 synthesis from frozen M1/M2/M3 state."""
+
+    core = _build_m44_semantic_core(foundation, matrices, chronology)
+
+    # Snapshot the complete pre-M4.5 finding set before deriving any M4.5 finding.
+    # The single-source rule can therefore never recurse through M4.5 output.
+    pre_m45_findings = core.findings
+    additions = _derive_m45_findings(
+        synthesis_id=core.synthesis_id,
+        matrices=matrices,
+        pre_m45_findings=pre_m45_findings,
+    )
+    synthesis = replace(
+        core,
+        findings=(*pre_m45_findings, *additions),
     )
     validate_case_synthesis(
         synthesis,

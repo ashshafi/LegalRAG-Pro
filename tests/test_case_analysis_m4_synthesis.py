@@ -11,6 +11,8 @@ from case_analysis.m3.models import CaseChronology
 from case_analysis.m4.models import (
     AnalyticalBasis,
     ElementRef,
+    EvidenceUseRef,
+    EventRef,
     FindingScope,
     FindingStatus,
     FindingType,
@@ -22,7 +24,7 @@ from case_analysis.m4.models import (
     RiskType,
 )
 from case_analysis.m4.serialization import dumps_case_synthesis, loads_case_synthesis
-from case_analysis.m4.synthesis import build_case_synthesis
+from case_analysis.m4.synthesis import _build_m44_semantic_core, build_case_synthesis
 from case_analysis.serialization import dumps_case_analysis_foundation
 from case_analysis.m2.matrix_serialization import dumps_case_matrices
 from case_analysis_m2_helpers import evidence, make_m5_result
@@ -186,7 +188,7 @@ def test_issue_position_confidence_is_weakest_material_element(confidences, expe
 def test_proposition_status_maps_to_exact_direct_finding(source_status, finding_type, basis, finding_status):
     foundation, matrices, chronology = _one_issue_sources(propositions=(_proposition(source_status),))
     synthesis = build_case_synthesis(foundation, matrices, chronology)
-    proposition_findings = [item for item in synthesis.findings if any(isinstance(ref.target, PropositionRef) for ref in item.provenance_refs)]
+    proposition_findings = [item for item in synthesis.findings if item.analytical_bases == (basis,)]
     assert len(proposition_findings) == 1
     finding = proposition_findings[0]
     assert finding.finding_type is finding_type
@@ -309,7 +311,7 @@ def test_issue_position_material_findings_never_cross_issue_boundary():
 
 def test_m44_only_advances_risk_priority_outputs_over_m43_children():
     foundation, matrices, chronology = synthetic_sources()
-    synthesis = build_case_synthesis(foundation, matrices, chronology)
+    synthesis = _build_m44_semantic_core(foundation, matrices, chronology)
     assert synthesis.conflicts == ()
     assert synthesis.gaps
     assert len(synthesis.risks) == len(synthesis.gaps)
@@ -460,14 +462,17 @@ def test_existing_upstream_gap_and_dispute_ids_do_not_independently_trigger_m43_
     assert synthesis.conflicts == ()
 
 
-def test_m3_multi_issue_event_does_not_trigger_cross_issue_synthesis():
+def test_m3_multi_issue_event_does_not_independently_trigger_cross_issue_synthesis():
     foundation, matrices, chronology = synthetic_sources()
     assert any(len(event.related_issue_analysis_ids) > 1 for event in chronology.events)
     synthesis = build_case_synthesis(foundation, matrices, chronology)
-    assert not any(item.finding_type is FindingType.CROSS_ISSUE_FEATURE for item in synthesis.findings)
+    cross_issue = [item for item in synthesis.findings if item.finding_type is FindingType.CROSS_ISSUE_FEATURE]
+    assert cross_issue
+    assert all(all(isinstance(ref.target, EvidenceUseRef) for ref in item.provenance_refs) for item in cross_issue)
+    assert all(not any(isinstance(ref.target, EventRef) for ref in item.provenance_refs) for item in cross_issue)
 
 
-def test_builder_public_contract_returns_valid_case_synthesis_with_only_m44_authorised_outputs():
+def test_builder_public_contract_returns_valid_case_synthesis_with_only_m45_authorised_outputs():
     foundation, matrices, chronology = synthetic_sources()
     synthesis = build_case_synthesis(foundation, matrices, chronology)
     assert synthesis.case_id == foundation.case_id
@@ -476,4 +481,17 @@ def test_builder_public_contract_returns_valid_case_synthesis_with_only_m44_auth
     assert all(item.risk_type is RiskType.EVIDENCE_RISK for item in synthesis.risks)
     assert all(item.basis_type is PriorityBasis.MATERIAL_GAP for item in synthesis.priority_questions)
     assert all(item.priority is PriorityLevel.MEDIUM for item in synthesis.priority_questions)
-    assert all(item.finding_type is not FindingType.CROSS_ISSUE_FEATURE for item in synthesis.findings)
+    authorised = {
+        AnalyticalBasis.ESTABLISHED_PROPOSITION,
+        AnalyticalBasis.SUPPORTED_PROPOSITION,
+        AnalyticalBasis.DISPUTED_PROPOSITION,
+        AnalyticalBasis.UNRESOLVED_PROPOSITION,
+        AnalyticalBasis.INSUFFICIENT_EVIDENCE,
+        AnalyticalBasis.MULTIPLE_SUPPORTING_PROPOSITIONS,
+        AnalyticalBasis.CORROBORATED_EVIDENCE,
+        AnalyticalBasis.ADVERSE_EVIDENCE,
+        AnalyticalBasis.CONFLICTING_EVIDENCE,
+        AnalyticalBasis.CROSS_ISSUE_COVERAGE,
+        AnalyticalBasis.DEPENDENCY_ON_SINGLE_EVIDENCE_SOURCE,
+    }
+    assert all(set(item.analytical_bases).issubset(authorised) for item in synthesis.findings)

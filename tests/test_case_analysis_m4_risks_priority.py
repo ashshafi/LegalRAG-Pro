@@ -20,6 +20,7 @@ from case_analysis.m4.models import (
 from case_analysis.m4.serialization import dumps_case_synthesis, loads_case_synthesis
 from case_analysis.m4.synthesis import (
     _build_m43_semantic_core,
+    _build_m44_semantic_core,
     _derive_priority_questions,
     _derive_risks,
     build_case_synthesis,
@@ -277,14 +278,14 @@ def test_issue_positions_link_exactly_the_risks_whose_affected_issue_set_contain
 def test_m44_preserves_frozen_m43_semantic_core_byte_identically():
     foundation, matrices, chronology = synthetic_sources()
     frozen_core = _build_m43_semantic_core(foundation, matrices, chronology)
-    synthesis = build_case_synthesis(foundation, matrices, chronology)
+    synthesis = _build_m44_semantic_core(foundation, matrices, chronology)
     projected_core = _semantic_core(synthesis)
     assert dumps_case_synthesis(projected_core) == dumps_case_synthesis(frozen_core)
 
 
 def test_m44_preserves_synthesis_findings_conflicts_gaps_and_overall_state_under_risk_question_projection():
     foundation, matrices, chronology = _timing_conflict_sources()
-    synthesis = build_case_synthesis(foundation, matrices, chronology)
+    synthesis = _build_m44_semantic_core(foundation, matrices, chronology)
     core = _semantic_core(synthesis)
     assert synthesis.synthesis_id == core.synthesis_id
     assert synthesis.findings == core.findings
