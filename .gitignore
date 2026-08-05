@@ -35,3 +35,5 @@ data/
 
 # Confidential case documents
 docs/*.pdf
+# Immutable source evidence store
+source_evidence_store/
