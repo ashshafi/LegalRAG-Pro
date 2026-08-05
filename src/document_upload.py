@@ -81,7 +81,7 @@ def upload_case_pdf(
         case_id: Stable internal UUID of the active case.
         docs_folder: LegalRAG document storage directory.
         indexer: Optional injected index function for tests. Production uses
-            :func:`index_documents.index_pdf`.
+            :func:`source_evidence.ingestion.index_case_pdf_source_bound`.
 
     Returns:
         Details of the saved and indexed document.
@@ -129,15 +129,23 @@ def upload_case_pdf(
                 f"Could not save '{safe_filename}' to the LegalRAG docs folder."
             ) from exc
 
-    if indexer is None:
-        # Import lazily so unit tests do not initialise OpenAI/Chroma just by
-        # importing this service.
-        from index_documents import index_pdf
-
-        indexer = index_pdf
-
     try:
-        chunks_indexed = int(indexer(save_path, case_id=cleaned_case_id))
+        if indexer is None:
+            # Import lazily so unit tests do not initialise OpenAI/Chroma just by
+            # importing this service.
+            from source_evidence.identity import sha256_bytes
+            from source_evidence.ingestion import index_case_pdf_source_bound
+
+            chunks_indexed = int(
+                index_case_pdf_source_bound(
+                    save_path,
+                    case_id=cleaned_case_id,
+                    expected_original_sha256=sha256_bytes(content),
+                )
+            )
+        else:
+            # Preserve the frozen injected-indexer contract exactly.
+            chunks_indexed = int(indexer(save_path, case_id=cleaned_case_id))
     except Exception as exc:
         LOGGER.exception(
             "Indexing failed for uploaded PDF %s in case %s.",
