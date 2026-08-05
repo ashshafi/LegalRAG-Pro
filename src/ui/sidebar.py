@@ -15,7 +15,6 @@ def _show_case_upload(active_case_id: str | None, docs: list[str]) -> None:
     """Display the case-aware PDF upload control."""
 
     st.sidebar.subheader("➕ Add document")
-
     if active_case_id is None:
         st.sidebar.caption(
             "Create or select a case before uploading a PDF."
@@ -31,7 +30,6 @@ def _show_case_upload(active_case_id: str | None, docs: list[str]) -> None:
 
     if uploaded_file is None:
         return
-
     if uploaded_file.name in docs:
         st.sidebar.warning(
             "A document with this filename is already indexed in the active case."
@@ -42,14 +40,12 @@ def _show_case_upload(active_case_id: str | None, docs: list[str]) -> None:
     st.sidebar.caption(
         f"{uploaded_file.name} · {size_mb:.2f} MB · will be indexed to the active case"
     )
-
     if not st.sidebar.button(
         "📥 Upload and Index",
         key=f"index_case_pdf_{active_case_id}_{nonce}",
         use_container_width=True,
     ):
         return
-
     try:
         with st.sidebar:
             with st.spinner("Uploading and indexing PDF..."):
@@ -67,7 +63,6 @@ def _show_case_upload(active_case_id: str | None, docs: list[str]) -> None:
             "The document could not be uploaded. Check the application log for details."
         )
         return
-
     st.sidebar.success(
         f"Indexed {result.filename} ({result.chunks_indexed} chunks)."
     )
@@ -77,9 +72,12 @@ def _show_case_upload(active_case_id: str | None, docs: list[str]) -> None:
     st.rerun()
 
 
-def show_sidebar(active_case_id: str | None = None):
+def show_sidebar(
+    active_case_id: str | None = None,
+    *,
+    reports_available: bool = False,
+):
     """Display document selection and tribunal tools.
-
     When a case is active, only documents indexed/assigned to that case are
     displayed. With no active case the historic global document listing remains
     available for backwards compatibility.
@@ -89,7 +87,6 @@ def show_sidebar(active_case_id: str | None = None):
 
     try:
         from document_manager import get_documents
-
         docs = get_documents(active_case_id)
     except Exception:
         LOGGER.exception("Unable to load indexed document metadata.")
@@ -97,7 +94,6 @@ def show_sidebar(active_case_id: str | None = None):
         st.sidebar.warning("Indexed documents could not be loaded.")
 
     selected_documents: list[str] = []
-
     if active_case_id is not None and not docs:
         st.sidebar.info(
             "No documents are assigned to this case yet. "
@@ -105,7 +101,6 @@ def show_sidebar(active_case_id: str | None = None):
         )
     elif not docs:
         st.sidebar.info("No indexed documents found.")
-
     for filename in docs:
         if st.sidebar.checkbox(
             filename,
@@ -121,43 +116,51 @@ def show_sidebar(active_case_id: str | None = None):
     st.sidebar.title("⚖ Tribunal Tools")
 
     tools_disabled = active_case_id is not None and not docs
-
     timeline_clicked = st.sidebar.button(
         "📅 Timeline",
         use_container_width=True,
         disabled=tools_disabled,
     )
+    if timeline_clicked:
+        st.session_state["m55_main_view"] = "assistant"
 
-    st.sidebar.button(
+    evidence_clicked = st.sidebar.button(
         "📚 Evidence Explorer",
         use_container_width=True,
         disabled=tools_disabled,
     )
 
-    st.sidebar.button(
+    people_clicked = st.sidebar.button(
         "👤 People Explorer",
         use_container_width=True,
         disabled=tools_disabled,
     )
-
-    st.sidebar.button(
+    compare_clicked = st.sidebar.button(
         "📑 Compare Documents",
         use_container_width=True,
         disabled=tools_disabled,
     )
+    if evidence_clicked or people_clicked or compare_clicked:
+        st.session_state["m55_main_view"] = "assistant"
 
-    st.sidebar.button(
+    reports_clicked = st.sidebar.button(
         "📄 Reports",
         use_container_width=True,
-        disabled=tools_disabled,
+        disabled=not reports_available,
+        help=(
+            None
+            if reports_available
+            else "A validated frozen report projection is required for the active case."
+        ),
     )
+    if reports_clicked:
+        st.session_state["m55_main_view"] = "reports"
 
     st.sidebar.divider()
     st.sidebar.title("📊 Status")
 
     st.sidebar.success("OpenAI Connected")
     st.sidebar.success("Chroma Connected")
-
     if active_case_id is not None:
         st.sidebar.info(f"{len(docs)} document(s) in active case")
     else:
