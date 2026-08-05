@@ -13,7 +13,6 @@ LOGGER = logging.getLogger(__name__)
 
 def _show_case_upload(active_case_id: str | None, docs: list[str]) -> None:
     """Display the case-aware PDF upload control."""
-
     st.sidebar.subheader("➕ Add document")
     if active_case_id is None:
         st.sidebar.caption(
@@ -27,7 +26,6 @@ def _show_case_upload(active_case_id: str | None, docs: list[str]) -> None:
         type=["pdf"],
         key=f"case_pdf_upload_{active_case_id}_{nonce}",
     )
-
     if uploaded_file is None:
         return
     if uploaded_file.name in docs:
@@ -35,7 +33,6 @@ def _show_case_upload(active_case_id: str | None, docs: list[str]) -> None:
             "A document with this filename is already indexed in the active case."
         )
         return
-
     size_mb = uploaded_file.size / (1024 * 1024)
     st.sidebar.caption(
         f"{uploaded_file.name} · {size_mb:.2f} MB · will be indexed to the active case"
@@ -66,7 +63,6 @@ def _show_case_upload(active_case_id: str | None, docs: list[str]) -> None:
     st.sidebar.success(
         f"Indexed {result.filename} ({result.chunks_indexed} chunks)."
     )
-
     # A new uploader key clears the completed upload on rerun.
     st.session_state["case_upload_nonce"] = nonce + 1
     st.rerun()
@@ -82,7 +78,6 @@ def show_sidebar(
     displayed. With no active case the historic global document listing remains
     available for backwards compatibility.
     """
-
     st.sidebar.title("📚 Documents")
 
     try:
@@ -92,7 +87,6 @@ def show_sidebar(
         LOGGER.exception("Unable to load indexed document metadata.")
         docs = []
         st.sidebar.warning("Indexed documents could not be loaded.")
-
     selected_documents: list[str] = []
     if active_case_id is not None and not docs:
         st.sidebar.info(
@@ -108,7 +102,6 @@ def show_sidebar(
             key=f"document_{active_case_id or 'legacy'}_{filename}",
         ):
             selected_documents.append(filename)
-
     st.sidebar.divider()
     _show_case_upload(active_case_id, docs)
 
@@ -122,27 +115,41 @@ def show_sidebar(
         disabled=tools_disabled,
     )
     if timeline_clicked:
+        st.session_state["m6_workspace_view"] = None
         st.session_state["m55_main_view"] = "assistant"
-
+    workspace_clicked = st.sidebar.button(
+        "🧭 Workspace",
+        use_container_width=True,
+        disabled=not reports_available,
+        help=(
+            None
+            if reports_available
+            else "A validated frozen report projection is required for the active case."
+        ),
+    )
+    if workspace_clicked:
+        st.session_state["m6_workspace_view"] = "traceability"
     evidence_clicked = st.sidebar.button(
         "📚 Evidence Explorer",
         use_container_width=True,
-        disabled=tools_disabled,
+        disabled=not reports_available,
     )
-
     people_clicked = st.sidebar.button(
         "👤 People Explorer",
         use_container_width=True,
-        disabled=tools_disabled,
+        disabled=not reports_available,
     )
     compare_clicked = st.sidebar.button(
         "📑 Compare Documents",
         use_container_width=True,
-        disabled=tools_disabled,
+        disabled=not reports_available,
     )
-    if evidence_clicked or people_clicked or compare_clicked:
-        st.session_state["m55_main_view"] = "assistant"
-
+    if evidence_clicked:
+        st.session_state["m6_workspace_view"] = "evidence"
+    if people_clicked:
+        st.session_state["m6_workspace_view"] = "people"
+    if compare_clicked:
+        st.session_state["m6_workspace_view"] = "comparison"
     reports_clicked = st.sidebar.button(
         "📄 Reports",
         use_container_width=True,
@@ -154,11 +161,11 @@ def show_sidebar(
         ),
     )
     if reports_clicked:
+        st.session_state["m6_workspace_view"] = None
         st.session_state["m55_main_view"] = "reports"
 
     st.sidebar.divider()
     st.sidebar.title("📊 Status")
-
     st.sidebar.success("OpenAI Connected")
     st.sidebar.success("Chroma Connected")
     if active_case_id is not None:

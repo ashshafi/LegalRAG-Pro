@@ -11,10 +11,10 @@ from ui.chat import show_chat
 from ui.header import show_header
 from ui.reports import show_report_viewer, synchronise_report_session_state
 from ui.sidebar import show_sidebar
+from ui.workspace import show_workspace, synchronise_workspace_session_state
 
 
 LOGGER = logging.getLogger(__name__)
-
 st.set_page_config(
     page_title="LegalRAG Pro",
     page_icon="⚖️",
@@ -26,7 +26,6 @@ show_header()
 
 active_case = show_case_selector()
 active_case_id = active_case.case_id if active_case is not None else None
-
 report_projection = None
 report_provider_error: ReportProjectionProviderError | None = None
 if active_case_id is not None:
@@ -39,8 +38,8 @@ if active_case_id is not None:
             active_case_id,
             type(exc).__name__,
         )
-
 synchronise_report_session_state(active_case_id, report_projection)
+synchronise_workspace_session_state(active_case_id, report_projection)
 reports_available = (
     active_case_id is not None
     and report_projection is not None
@@ -74,8 +73,11 @@ else:
     st.info(
         "Create a case in the sidebar to use case-isolated document retrieval."
     )
-
-if st.session_state.get("m55_main_view", "assistant") == "reports":
+if st.session_state.get("m6_workspace_view") in {
+    "traceability", "evidence", "chronology", "people", "comparison"
+}:
+    show_workspace(active_case_id, report_projection)
+elif st.session_state.get("m55_main_view", "assistant") == "reports":
     show_report_viewer(
         active_case_id,
         report_projection,

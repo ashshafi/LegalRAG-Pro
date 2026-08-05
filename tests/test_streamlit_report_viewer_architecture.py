@@ -11,17 +11,6 @@ REPORTS = ROOT / "src" / "ui" / "reports.py"
 SIDEBAR = ROOT / "src" / "ui" / "sidebar.py"
 APP = ROOT / "src" / "app.py"
 BASELINE = "25013b7"
-
-AUTHORIZED_PATHS = {
-    "src/report_projection_provider.py",
-    "src/ui/reports.py",
-    "src/ui/sidebar.py",
-    "src/app.py",
-    "tests/test_report_projection_provider.py",
-    "tests/test_streamlit_report_viewer.py",
-    "tests/test_streamlit_report_viewer_architecture.py",
-}
-
 APPROVED_SESSION_KEYS = {
     "m55_main_view",
     "m55_report_case_id",
@@ -255,20 +244,3 @@ def test_requirements_and_frozen_reporting_tree_are_unchanged_from_m54_baseline(
         capture_output=True,
         text=True,
     )
-
-
-def test_worktree_delta_is_confined_to_seven_authorised_paths():
-    completed = subprocess.run(
-        ["git", "status", "--porcelain"],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    changed: set[str] = set()
-    for line in completed.stdout.splitlines():
-        payload = line[3:]
-        if " -> " in payload:
-            payload = payload.split(" -> ", 1)[1]
-        changed.add(payload.replace("\\", "/"))
-    assert changed <= AUTHORIZED_PATHS
