@@ -11,6 +11,10 @@ from ui.chat import show_chat
 from ui.header import show_header
 from ui.reports import show_report_viewer, synchronise_report_session_state
 from ui.sidebar import show_sidebar
+from ui.source_evidence import (
+    show_source_evidence,
+    synchronise_source_evidence_session_state,
+)
 from ui.workspace import show_workspace, synchronise_workspace_session_state
 
 
@@ -40,6 +44,7 @@ if active_case_id is not None:
         )
 synchronise_report_session_state(active_case_id, report_projection)
 synchronise_workspace_session_state(active_case_id, report_projection)
+synchronise_source_evidence_session_state(active_case_id, report_projection)
 reports_available = (
     active_case_id is not None
     and report_projection is not None
@@ -73,7 +78,9 @@ else:
     st.info(
         "Create a case in the sidebar to use case-isolated document retrieval."
     )
-if st.session_state.get("m6_workspace_view") in {
+if st.session_state.get("m7_source_evidence_view", False):
+    show_source_evidence(active_case_id, report_projection)
+elif st.session_state.get("m6_workspace_view") in {
     "traceability", "evidence", "chronology", "people", "comparison"
 }:
     show_workspace(active_case_id, report_projection)

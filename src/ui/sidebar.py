@@ -115,6 +115,7 @@ def show_sidebar(
         disabled=tools_disabled,
     )
     if timeline_clicked:
+        st.session_state["m7_source_evidence_view"] = False
         st.session_state["m6_workspace_view"] = None
         st.session_state["m55_main_view"] = "assistant"
     workspace_clicked = st.sidebar.button(
@@ -128,6 +129,7 @@ def show_sidebar(
         ),
     )
     if workspace_clicked:
+        st.session_state["m7_source_evidence_view"] = False
         st.session_state["m6_workspace_view"] = "traceability"
     evidence_clicked = st.sidebar.button(
         "📚 Evidence Explorer",
@@ -145,11 +147,28 @@ def show_sidebar(
         disabled=not reports_available,
     )
     if evidence_clicked:
+        st.session_state["m7_source_evidence_view"] = False
         st.session_state["m6_workspace_view"] = "evidence"
     if people_clicked:
+        st.session_state["m7_source_evidence_view"] = False
         st.session_state["m6_workspace_view"] = "people"
     if compare_clicked:
+        st.session_state["m7_source_evidence_view"] = False
         st.session_state["m6_workspace_view"] = "comparison"
+    source_evidence_clicked = st.sidebar.button(
+        "🔎 Source Evidence",
+        use_container_width=True,
+        disabled=not reports_available,
+        help=(
+            None
+            if reports_available
+            else "A validated frozen report projection is required for the active case."
+        ),
+    )
+    if source_evidence_clicked:
+        st.session_state["m7_source_evidence_view"] = True
+        st.session_state["m6_workspace_view"] = None
+        st.session_state["m55_main_view"] = "assistant"
     reports_clicked = st.sidebar.button(
         "📄 Reports",
         use_container_width=True,
@@ -161,6 +180,7 @@ def show_sidebar(
         ),
     )
     if reports_clicked:
+        st.session_state["m7_source_evidence_view"] = False
         st.session_state["m6_workspace_view"] = None
         st.session_state["m55_main_view"] = "reports"
 
