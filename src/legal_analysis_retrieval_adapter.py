@@ -11,8 +11,11 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from evidence_semantics import enrich_evidence_semantics
-from retriever import retrieve
+from source_evidence.identity import canonical_uuid
+from source_evidence.verified_retrieval import (
+    SourceBoundRetrievalVerificationError,
+    verify_source_bound_retrieval_results,
+)
 
 
 def retrieve_for_legal_analysis(
@@ -22,15 +25,28 @@ def retrieve_for_legal_analysis(
     *,
     case_id: str | None = None,
 ) -> dict[str, Any]:
-    """Retrieve case-scoped evidence and add the frozen M4 semantic metadata."""
+    """Retrieve case-scoped evidence and admit only fully source-verified candidates."""
+    try:
+        canonical_case_id = canonical_uuid(case_id, field_name="case_id")  # type: ignore[arg-type]
+    except (TypeError, ValueError, AttributeError) as exc:
+        raise SourceBoundRetrievalVerificationError(
+            "Structured legal-analysis retrieval requires a canonical case_id."
+        ) from exc
+
+    from evidence_semantics import enrich_evidence_semantics
+    from retriever import retrieve
 
     results = retrieve(
         question,
         selected_documents,
         n_results=n_results,
-        case_id=case_id,
+        case_id=canonical_case_id,
     )
-    return enrich_evidence_semantics(results)
+    enriched = enrich_evidence_semantics(results)
+    return verify_source_bound_retrieval_results(
+        enriched,
+        case_id=canonical_case_id,
+    )
 
 
 __all__ = ["retrieve_for_legal_analysis"]
