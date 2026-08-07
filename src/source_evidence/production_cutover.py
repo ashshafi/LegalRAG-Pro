@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import errno
 import json
+import ntpath
 import logging
 import os
 import stat
@@ -465,6 +466,142 @@ def _same_volume(
     return len(devices) == 1
 
 
+def _verified_windows_controller_launcher_pid(
+    *,
+    items: tuple[dict[str, object], ...],
+    current_pid: int,
+    launcher_executable: str,
+    base_executable: str,
+) -> int | None:
+    """Return the PID of a proven Windows venv launcher parent.
+
+    A Windows virtual-environment launcher can remain alive as the
+    direct parent of the actual base interpreter. Only that exact,
+    verified controller relationship may be ignored by the offline
+    production process gate.
+    """
+
+    def path_key(
+        value: object,
+    ) -> str | None:
+        if not isinstance(value, str):
+            return None
+
+        value = value.strip()
+
+        if not value:
+            return None
+
+        return ntpath.normcase(
+            ntpath.normpath(
+                value
+            )
+        )
+
+    def is_python_process(
+        item: dict[str, object],
+    ) -> bool:
+        name = item.get("Name")
+
+        if not isinstance(name, str):
+            return False
+
+        return name.casefold() in {
+            "python",
+            "python.exe",
+            "pythonw",
+            "pythonw.exe",
+            "py",
+            "py.exe",
+        }
+
+    launcher_key = path_key(
+        launcher_executable
+    )
+
+    base_key = path_key(
+        base_executable
+    )
+
+    if (
+        launcher_key is None
+        or base_key is None
+        or launcher_key == base_key
+    ):
+        return None
+
+    current = next(
+        (
+            item
+            for item in items
+            if item.get("ProcessId")
+            == current_pid
+        ),
+        None,
+    )
+
+    if (
+        current is None
+        or not is_python_process(current)
+        or path_key(
+            current.get("ExecutablePath")
+        )
+        != base_key
+    ):
+        return None
+
+    parent_pid = current.get(
+        "ParentProcessId"
+    )
+
+    if (
+        not isinstance(parent_pid, int)
+        or parent_pid <= 0
+    ):
+        return None
+
+    parent = next(
+        (
+            item
+            for item in items
+            if item.get("ProcessId")
+            == parent_pid
+        ),
+        None,
+    )
+
+    if (
+        parent is None
+        or not is_python_process(parent)
+        or path_key(
+            parent.get("ExecutablePath")
+        )
+        != launcher_key
+    ):
+        return None
+
+    current_command = current.get(
+        "CommandLine"
+    )
+
+    parent_command = parent.get(
+        "CommandLine"
+    )
+
+    if (
+        not isinstance(current_command, str)
+        or not current_command
+        or not isinstance(parent_command, str)
+        or not parent_command
+        or current_command != parent_command
+        or launcher_executable.casefold()
+        not in current_command.casefold()
+    ):
+        return None
+
+    return parent_pid
+
+
 def _active_runtime_processes() -> tuple[str, ...]:
     """Return other Python/Streamlit processes on Windows."""
 
@@ -479,30 +616,44 @@ def _active_runtime_processes() -> tuple[str, ...]:
 
     current_pid = os.getpid()
 
-    script = f"""
+    launcher_executable = sys.executable
+
+    base_executable = (
+        getattr(
+            sys,
+            "_base_executable",
+            None,
+        )
+        or launcher_executable
+    )
+
+    script = r"""
 $ErrorActionPreference = 'Stop'
-$CurrentPythonPid = {current_pid}
 $ProbePid = $PID
 
 $Items = @(
     Get-CimInstance Win32_Process |
-    Where-Object {{
-        $_.ProcessId -ne $CurrentPythonPid -and
+    Where-Object {
         $_.ProcessId -ne $ProbePid -and
         (
-            $_.Name -match '^(python|pythonw|py)(\\.exe)?$' -or
+            $_.Name -match '^(python|pythonw|py)(\.exe)?$' -or
             (
                 $_.CommandLine -and
                 $_.CommandLine -match '(?i)streamlit'
             )
         )
-    }} |
-    Select-Object ProcessId, Name, CommandLine
+    } |
+    Select-Object `
+        ProcessId, `
+        ParentProcessId, `
+        Name, `
+        ExecutablePath, `
+        CommandLine
 )
 
-if ($Items.Count -gt 0) {{
+if ($Items.Count -gt 0) {
     $Items | ConvertTo-Json -Compress
-}}
+}
 """
 
     completed = subprocess.run(
@@ -542,11 +693,46 @@ if ($Items.Count -gt 0) {{
             ),
         ) from exc
 
-    items = (
+    raw_items = (
         parsed
         if isinstance(parsed, list)
         else [parsed]
     )
+
+    if not all(
+        isinstance(item, dict)
+        for item in raw_items
+    ):
+        raise ProductionCutoverError(
+            ProductionCutoverBlocker.PROCESS_GATE_FAILED,
+            detail=(
+                "PowerShell process probe returned "
+                "invalid process records"
+            ),
+        )
+
+    items: tuple[
+        dict[str, object],
+        ...,
+    ] = tuple(raw_items)
+
+    launcher_pid = (
+        _verified_windows_controller_launcher_pid(
+            items=items,
+            current_pid=current_pid,
+            launcher_executable=launcher_executable,
+            base_executable=base_executable,
+        )
+    )
+
+    ignored_pids = {
+        current_pid,
+    }
+
+    if launcher_pid is not None:
+        ignored_pids.add(
+            launcher_pid
+        )
 
     return tuple(
         (
@@ -555,6 +741,8 @@ if ($Items.Count -gt 0) {{
             f"Command={item.get('CommandLine')}"
         )
         for item in items
+        if item.get("ProcessId")
+        not in ignored_pids
     )
 
 

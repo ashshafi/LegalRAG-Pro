@@ -1465,3 +1465,208 @@ def test_import_does_not_initialize_chromadb() -> None:
         completed.returncode
         == 0
     ), completed.stderr
+def test_verified_windows_controller_launcher_pid_accepts_exact_chain() -> None:
+    launcher = (
+        r"C:\repo\.venv\Scripts\python.exe"
+    )
+    base = (
+        r"C:\Python\python.exe"
+    )
+    command = (
+        f'"{launcher}" -'
+    )
+
+    items = (
+        {
+            "ProcessId": 200,
+            "ParentProcessId": 100,
+            "Name": "python.exe",
+            "ExecutablePath": base,
+            "CommandLine": command,
+        },
+        {
+            "ProcessId": 100,
+            "ParentProcessId": 50,
+            "Name": "python.exe",
+            "ExecutablePath": launcher,
+            "CommandLine": command,
+        },
+    )
+
+    assert (
+        cutover
+        ._verified_windows_controller_launcher_pid(
+            items=items,
+            current_pid=200,
+            launcher_executable=launcher,
+            base_executable=base,
+        )
+        == 100
+    )
+
+
+@pytest.mark.parametrize(
+    (
+        "current_executable",
+        "parent_executable",
+        "parent_command",
+        "base_executable",
+    ),
+    (
+        (
+            r"C:\Python\other.exe",
+            r"C:\repo\.venv\Scripts\python.exe",
+            r'"C:\repo\.venv\Scripts\python.exe" -',
+            r"C:\Python\python.exe",
+        ),
+        (
+            r"C:\Python\python.exe",
+            r"C:\other\python.exe",
+            r'"C:\repo\.venv\Scripts\python.exe" -',
+            r"C:\Python\python.exe",
+        ),
+        (
+            r"C:\Python\python.exe",
+            r"C:\repo\.venv\Scripts\python.exe",
+            r'"C:\repo\.venv\Scripts\python.exe" other.py',
+            r"C:\Python\python.exe",
+        ),
+        (
+            r"C:\Python\python.exe",
+            r"C:\repo\.venv\Scripts\python.exe",
+            r'"C:\repo\.venv\Scripts\python.exe" -',
+            r"C:\repo\.venv\Scripts\python.exe",
+        ),
+    ),
+)
+def test_verified_windows_controller_launcher_pid_rejects_unproven_parent(
+    current_executable: str,
+    parent_executable: str,
+    parent_command: str,
+    base_executable: str,
+) -> None:
+    launcher = (
+        r"C:\repo\.venv\Scripts\python.exe"
+    )
+    command = (
+        f'"{launcher}" -'
+    )
+
+    items = (
+        {
+            "ProcessId": 200,
+            "ParentProcessId": 100,
+            "Name": "python.exe",
+            "ExecutablePath": current_executable,
+            "CommandLine": command,
+        },
+        {
+            "ProcessId": 100,
+            "ParentProcessId": 50,
+            "Name": "python.exe",
+            "ExecutablePath": parent_executable,
+            "CommandLine": parent_command,
+        },
+    )
+
+    assert (
+        cutover
+        ._verified_windows_controller_launcher_pid(
+            items=items,
+            current_pid=200,
+            launcher_executable=launcher,
+            base_executable=base_executable,
+        )
+        is None
+    )
+
+
+def test_active_runtime_processes_filters_only_verified_controller_chain(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    launcher = (
+        r"C:\repo\.venv\Scripts\python.exe"
+    )
+    base = (
+        r"C:\Python\python.exe"
+    )
+    command = (
+        f'"{launcher}" -'
+    )
+
+    payload = cutover.json.dumps(
+        [
+            {
+                "ProcessId": 200,
+                "ParentProcessId": 100,
+                "Name": "python.exe",
+                "ExecutablePath": base,
+                "CommandLine": command,
+            },
+            {
+                "ProcessId": 100,
+                "ParentProcessId": 50,
+                "Name": "python.exe",
+                "ExecutablePath": launcher,
+                "CommandLine": command,
+            },
+            {
+                "ProcessId": 999,
+                "ParentProcessId": 50,
+                "Name": "python.exe",
+                "ExecutablePath": (
+                    r"C:\other\python.exe"
+                ),
+                "CommandLine": "external.py",
+            },
+        ]
+    )
+
+    monkeypatch.setattr(
+        cutover.os,
+        "name",
+        "nt",
+    )
+
+    monkeypatch.setattr(
+        cutover.os,
+        "getpid",
+        lambda: 200,
+    )
+
+    monkeypatch.setattr(
+        cutover.sys,
+        "executable",
+        launcher,
+    )
+
+    monkeypatch.setattr(
+        cutover.sys,
+        "_base_executable",
+        base,
+    )
+
+    monkeypatch.setattr(
+        cutover.subprocess,
+        "run",
+        lambda *args, **kwargs: (
+            subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout=payload,
+                stderr="",
+            )
+        ),
+    )
+
+    assert (
+        cutover
+        ._active_runtime_processes()
+        == (
+            (
+                "PID=999 "
+                "Name=python.exe "
+                "Command=external.py"
+            ),
+        )
+    )
