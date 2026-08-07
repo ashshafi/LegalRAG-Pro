@@ -248,7 +248,7 @@ print("__PFCR2_GET__" + json.dumps({
     "ids": result.get("ids"),
     "documents": result.get("documents"),
     "metadatas": result.get("metadatas"),
-}, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False))
+}, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False))
 '''
         env = dict(os.environ)
         env["PYTHONDONTWRITEBYTECODE"] = "1"
@@ -314,7 +314,7 @@ def build_production_source_bound_shadow(
         backup_root=backup_root,
         production_mode=production_store is None,
     )
-    docs_root, preflight_root, shadow_root, active_root, backup = paths
+    docs_root, preflight_root, shadow_root, active_root, backup, observation_root = paths
     target_store = production_store if production_store is not None else SourceEvidenceStore()
     if production_store is not None:
         production_store_tree = (_project_root() / "source_evidence_store").resolve(strict=False)
@@ -330,10 +330,28 @@ def build_production_source_bound_shadow(
 
     _require_absent_or_empty(preflight_root, field_name="preflight_staging_root")
     _require_absent_or_empty(backup, field_name="backup_root")
+    _require_absent_or_empty(observation_root, field_name="active_db_observation_root")
     _validate_shadow_runtime(shadow_root)
 
-    # Frozen PFCR1 is rerun from a truly fresh staging root before production M2 writes.
-    active_collection = _SubprocessCollection(active_root)
+    # PFCR2.1: Chroma may rewrite persistent bytes even for observational opens.
+    # Therefore fresh PFCR1 must never open the protected active DB directly.
+    observation_db_root = observation_root / "active_db"
+    _copy_observation_tree_exact(
+        active_root,
+        observation_db_root,
+        active_pre,
+    )
+    observation_pre = _build_tree_manifest(observation_db_root, require_exists=True)
+    if observation_pre.entries != active_pre.entries:
+        raise ProductionShadowBuildError("active_db_observation_copy_failed")
+
+    # Verify the protected active DB remained exact during snapshot construction.
+    if _build_tree_manifest(active_root, require_exists=True) != active_pre:
+        raise ProductionShadowBuildError(ProductionShadowBuildBlocker.PREFLIGHT_CHANGED_ACTIVE_DB.value)
+
+    # Frozen PFCR1 is rerun from a truly fresh staging root against the verified
+    # disposable observation snapshot before any production M2 writes.
+    active_collection = _SubprocessCollection(observation_db_root)
     previous_no_bytecode = os.environ.get("PYTHONDONTWRITEBYTECODE")
     os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
     try:
@@ -355,6 +373,7 @@ def build_production_source_bound_shadow(
         case_id=canonical_case,
         hm1_report_id=hm1_report.historical_migration_report_id,
     )
+    observation_post = _build_tree_manifest(observation_db_root, require_exists=True)
 
     # Prove the rehearsal observation did not change any protected production tree.
     active_after_preflight = _build_tree_manifest(active_root, require_exists=True)
@@ -596,6 +615,8 @@ def build_production_source_bound_shadow(
         report=report,
         manifests={
             "active_db_pre": active_pre,
+            "active_db_observation_pre": observation_pre,
+            "active_db_observation_post": observation_post,
             "active_db_backup": backup_manifest,
             "docs_pre": docs_pre,
             "report_projections_pre": reports_pre,
@@ -641,13 +662,17 @@ def _validate_paths(
     active_db_root: Path,
     backup_root: Path,
     production_mode: bool,
-) -> tuple[Path, Path, Path, Path, Path]:
+) -> tuple[Path, Path, Path, Path, Path, Path]:
     project = _project_root().resolve(strict=False)
     docs = Path(current_documents_root).expanduser().resolve(strict=False)
     preflight = Path(preflight_staging_root).expanduser().resolve(strict=False)
     shadow = Path(shadow_generation_root).expanduser().resolve(strict=False)
     active = Path(active_db_root).expanduser().resolve(strict=False)
     backup = Path(backup_root).expanduser().resolve(strict=False)
+    try:
+        observation = preflight.with_name(preflight.name + ".active-db-observation")
+    except ValueError as exc:
+        raise ProductionShadowBuildError(ProductionShadowBuildBlocker.PATH_UNSAFE.value) from exc
 
     if production_mode:
         if docs != (project / "docs").resolve(strict=False):
@@ -655,7 +680,7 @@ def _validate_paths(
         if active != (project / "db").resolve(strict=False):
             raise ProductionShadowBuildError(ProductionShadowBuildBlocker.PATH_UNSAFE.value)
 
-    external = (preflight, shadow, backup)
+    external = (preflight, shadow, backup, observation)
     for value in external:
         if _same_or_below(value, project):
             raise ProductionShadowBuildError(ProductionShadowBuildBlocker.PATH_UNSAFE.value)
@@ -677,7 +702,7 @@ def _validate_paths(
         raise ProductionShadowBuildError(ProductionShadowBuildBlocker.PATH_UNSAFE.value)
     if not _same_filesystem(active, shadow):
         raise ProductionShadowBuildError(ProductionShadowBuildBlocker.PATH_UNSAFE.value)
-    return docs, preflight, shadow, active, backup
+    return docs, preflight, shadow, active, backup, observation
 
 
 def _same_or_below(path: Path, root: Path) -> bool:
@@ -974,6 +999,27 @@ def _preflight_production_slots(plan: Sequence[_PlanDocument], store: SourceEvid
                 raise ProductionShadowBuildError(
                     ProductionShadowBuildBlocker.EXISTING_FULL_CHAIN_BINDING_MISMATCH.value
                 )
+
+
+def _copy_observation_tree_exact(
+    source: Path,
+    destination: Path,
+    manifest: _TreeManifest,
+) -> None:
+    """Copy a verified active-DB observation snapshot without reusing backup hooks."""
+
+    failure = "active_db_observation_copy_failed"
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.exists():
+        raise ProductionShadowBuildError(failure)
+    destination.mkdir()
+    for entry in manifest.entries:
+        src = source / Path(entry.relative_path)
+        dst = destination / Path(entry.relative_path)
+        if _is_link_like(src) or not src.is_file():
+            raise ProductionShadowBuildError(failure)
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(src, dst)
 
 
 def _copy_tree_exact(source: Path, destination: Path, manifest: _TreeManifest) -> None:

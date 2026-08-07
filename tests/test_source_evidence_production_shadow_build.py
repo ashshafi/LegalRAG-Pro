@@ -415,6 +415,65 @@ def test_successful_build_is_additive_and_carries_715_30_semantics(tmp_path, mon
     assert (tree.backup / "active_db" / "chroma.sqlite3").read_bytes() == b"legacy-db"
 
 
+def test_fresh_pfcr1_uses_verified_observation_copy_not_active_db(tmp_path, monkeypatch):
+    tree = _tree(tmp_path)
+    fresh, _ = _configure_success(monkeypatch, tree)
+    observed = {}
+
+    def rehearse(**kwargs):
+        adapter = kwargs["active_collection"]
+        observed["root"] = adapter._db_root
+        assert adapter._db_root != tree.active.resolve(strict=False)
+        assert (adapter._db_root / "chroma.sqlite3").read_bytes() == b"legacy-db"
+        (adapter._db_root / "chroma.sqlite3").write_bytes(b"normalized-by-chroma")
+        return fresh
+
+    monkeypatch.setattr(pfcr2, "rehearse_prospective_reingestion", rehearse)
+    report = _run(monkeypatch, tree)
+
+    expected_observation = tree.preflight.with_name(tree.preflight.name + ".active-db-observation") / "active_db"
+    assert observed["root"] == expected_observation.resolve(strict=False)
+    assert (tree.active / "chroma.sqlite3").read_bytes() == b"legacy-db"
+    assert report.active_db_unchanged is True
+    assert report.shadow_complete_for_pfcr3 is True
+
+    audit = tree.backup / "audit"
+    observation_pre = json.loads((audit / "active_db_observation_pre.json").read_text(encoding="utf-8"))
+    observation_post = json.loads((audit / "active_db_observation_post.json").read_text(encoding="utf-8"))
+    assert observation_pre["tree_sha256"] != observation_post["tree_sha256"]
+
+
+def test_subprocess_collection_uses_ascii_safe_unicode_transport(tmp_path, monkeypatch):
+    captured = {}
+
+    def run(command, **kwargs):
+        captured["script"] = command[2]
+        captured["env"] = kwargs["env"]
+        payload = {
+            "ids": ["row-1"],
+            "documents": ["two thirds \u2154"],
+            "metadatas": [{"file": "evidence.pdf"}],
+        }
+        stdout = "__PFCR2_GET__" + json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        )
+        assert stdout.isascii()
+        return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(pfcr2.subprocess, "run", run)
+    result = pfcr2._SubprocessCollection(tmp_path / "db").get(
+        include=["documents", "metadatas"]
+    )
+
+    assert "ensure_ascii=True" in captured["script"]
+    assert captured["env"]["PYTHONDONTWRITEBYTECODE"] == "1"
+    assert result["documents"] == ["two thirds \u2154"]
+
+
 def test_fresh_pfcr1_id_mismatch_fails_before_production_store_creation(tmp_path, monkeypatch):
     tree = _tree(tmp_path)
     monkeypatch.setattr(pfcr2, "_project_root", lambda: tree.project)
@@ -842,6 +901,32 @@ def test_external_roots_must_not_overlap(tmp_path, monkeypatch):
     tree.backup = tree.shadow / "backup"
     with pytest.raises(ProductionShadowBuildError, match="path_unsafe"):
         _run(monkeypatch, tree)
+
+
+def test_derived_observation_root_must_not_overlap_external_roots(tmp_path, monkeypatch):
+    tree = _tree(tmp_path)
+    monkeypatch.setattr(pfcr2, "_project_root", lambda: tree.project)
+    tree.shadow = tree.preflight.with_name(tree.preflight.name + ".active-db-observation")
+    with pytest.raises(ProductionShadowBuildError, match="path_unsafe"):
+        _run(monkeypatch, tree)
+
+
+def test_nonempty_observation_root_fails_before_pfcr1(tmp_path, monkeypatch):
+    tree = _tree(tmp_path)
+    monkeypatch.setattr(pfcr2, "_project_root", lambda: tree.project)
+    observation = tree.preflight.with_name(tree.preflight.name + ".active-db-observation")
+    observation.mkdir()
+    (observation / "sentinel.bin").write_bytes(b"occupied")
+    called = False
+
+    def rehearse(**kwargs):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(pfcr2, "rehearse_prospective_reingestion", rehearse)
+    with pytest.raises(ProductionShadowBuildError, match="active_db_observation_root must be absent or empty"):
+        _run(monkeypatch, tree)
+    assert called is False
 
 
 def test_production_mode_requires_exact_project_docs_and_db(tmp_path, monkeypatch):
