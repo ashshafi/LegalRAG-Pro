@@ -425,6 +425,7 @@ def build_production_source_bound_shadow(
 
     document_results: list[ProductionShadowDocumentResult] = []
     build_blockers: list[str] = []
+    verified_manifests: list[SourceDocumentManifest] = []
 
     for item in plan:
         m4_result = _run_production_m4_ingestion(
@@ -450,11 +451,15 @@ def build_production_source_bound_shadow(
                 blockers.append(str(exc))
 
             if not blockers:
+                # The inactive shadow is cumulative across the document loop.
+                # Verify the exact set accumulated so far; otherwise rows from
+                # earlier verified documents are falsely classified as unexpected.
+                verified_manifests.append(item.manifest)
                 inspection = _inspect_inactive_shadow(
                     case_id=canonical_case,
                     shadow_db_root=runtime_root / "db",
                     store_root=target_store.root,
-                    manifests=(item.manifest,),
+                    manifests=tuple(verified_manifests),
                 )
                 shadow_verified = (
                     inspection.missing_row_count == 0

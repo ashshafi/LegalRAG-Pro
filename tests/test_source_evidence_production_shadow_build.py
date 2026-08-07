@@ -380,6 +380,117 @@ def _configure_success(monkeypatch, tree, *, keys=("key-1",), report_id=APPROVED
     return fresh, plan_holder
 
 
+def _configure_multi_document_success(monkeypatch, tree, documents):
+    """Configure a cumulative-shadow success path for two or more documents."""
+
+    if len(documents) < 2:
+        raise AssertionError("multi-document fixture requires at least two documents")
+
+    rehearsals = []
+    total_rows = 0
+    for pdf_path, keys in documents:
+        single = _fresh_report(pdf_path=pdf_path, keys=keys)
+        rehearsals.append(single.documents[0])
+        total_rows += len(keys)
+
+    fresh = replace(
+        _fresh_report(pdf_path=documents[0][0], keys=documents[0][1]),
+        current_document_count=len(documents),
+        documents_capture_ready=len(documents),
+        prospective_manifest_count=len(documents),
+        prospective_row_count=total_rows,
+        exact_shadow_row_count=total_rows,
+        documents=tuple(rehearsals),
+    )
+    plan_holder = {}
+    shadow_ids: set[str] = set()
+
+    monkeypatch.setattr(pfcr2, "_project_root", lambda: tree.project)
+    monkeypatch.setattr(pfcr2, "rehearse_prospective_reingestion", lambda **kwargs: fresh)
+
+    def build_plan(*, case_id, fresh_report, documents_root, store):
+        plan = []
+        for rehearsal, (pdf_path, keys) in zip(
+            fresh_report.documents,
+            documents,
+            strict=True,
+        ):
+            manifest, bindings = _publish_graph(store, pdf_path, keys=keys)
+            normalized = replace(
+                rehearsal,
+                source_document_instance_id=manifest.source_document_instance_id,
+                source_snapshot_id=manifest.source_snapshot_id,
+                current_pdf_sha256=manifest.original_blob_sha256,
+                current_pdf_byte_length=manifest.original_byte_length,
+                prospective_evidence_keys=keys,
+                prospective_row_count=len(keys),
+            )
+            plan.append(
+                pfcr2._PlanDocument(
+                    normalized,
+                    pdf_path,
+                    manifest,
+                    bindings,
+                )
+            )
+        plan_holder["plan"] = tuple(plan)
+        return tuple(plan)
+
+    monkeypatch.setattr(pfcr2, "_build_disposable_plan", build_plan)
+
+    def run_m4(**kwargs):
+        pdf_path = Path(kwargs["pdf_path"]).resolve(strict=True)
+        item = next(
+            candidate
+            for candidate in plan_holder["plan"]
+            if candidate.pdf_path.resolve(strict=True) == pdf_path
+        )
+        keys = pfcr2._manifest_evidence_keys(item.manifest)
+        _publish_graph(
+            SourceEvidenceStore(kwargs["store_root"]),
+            item.pdf_path,
+            keys=keys,
+        )
+        shadow_ids.update(keys)
+        db = Path(kwargs["runtime_root"]) / "db"
+        db.mkdir(parents=True, exist_ok=True)
+        (db / "chroma.sqlite3").write_bytes(b"inactive-shadow")
+        return pfcr2._M4RunResult(True, len(keys), None)
+
+    monkeypatch.setattr(pfcr2, "_run_production_m4_ingestion", run_m4)
+
+    def inspect(**kwargs):
+        manifests = tuple(kwargs["manifests"])
+        expected = {
+            key
+            for manifest in manifests
+            for key in pfcr2._manifest_evidence_keys(manifest)
+        }
+        missing = tuple(sorted(expected - shadow_ids))
+        unexpected = tuple(sorted(shadow_ids - expected))
+        actual = tuple(sorted(shadow_ids))
+        per_document = {
+            manifest.source_document_instance_id: set(
+                pfcr2._manifest_evidence_keys(manifest)
+            ).issubset(shadow_ids)
+            for manifest in manifests
+        }
+        return pfcr2._ShadowInspection(
+            exact_row_count=len(expected & shadow_ids),
+            missing_row_count=len(missing),
+            conflicting_row_count=0,
+            unexpected_row_ids=unexpected,
+            legacy_row_ids=(),
+            foreign_case_row_ids=(),
+            actual_row_ids=actual,
+            per_document_verified=per_document,
+        )
+
+    monkeypatch.setattr(pfcr2, "_inspect_inactive_shadow", inspect)
+    monkeypatch.setattr(pfcr2, "_safe_final_shadow_inspection", inspect)
+    return fresh, plan_holder, shadow_ids
+
+
 def _run(monkeypatch, tree, **kwargs):
     return build_production_source_bound_shadow(
         case_id=CASE_ID,
@@ -413,6 +524,38 @@ def test_successful_build_is_additive_and_carries_715_30_semantics(tmp_path, mon
     assert (tree.active / "chroma.sqlite3").read_bytes() == b"legacy-db"
     assert tree.pdf.read_bytes() == PDF_BYTES
     assert (tree.backup / "active_db" / "chroma.sqlite3").read_bytes() == b"legacy-db"
+
+
+def test_multi_document_shadow_verification_uses_cumulative_manifests(tmp_path, monkeypatch):
+    tree = _tree(tmp_path)
+    second_pdf = tree.docs / "evidence-b.pdf"
+    second_pdf.write_bytes(PDF_BYTES + b"second\n")
+    documents = (
+        (tree.pdf, ("a-1", "a-2", "a-3")),
+        (second_pdf, ("b-1", "b-2")),
+    )
+    _, holder, shadow_ids = _configure_multi_document_success(
+        monkeypatch,
+        tree,
+        documents,
+    )
+
+    report = _run(monkeypatch, tree)
+
+    assert len(holder["plan"]) == 2
+    assert shadow_ids == {"a-1", "a-2", "a-3", "b-1", "b-2"}
+    assert len(report.documents) == 2
+    assert [item.shadow_verified for item in report.documents] == [True, True]
+    assert [item.blockers for item in report.documents] == [(), ()]
+    assert report.production_manifest_count == 2
+    assert report.production_prospective_row_count == 5
+    assert report.shadow_exact_row_count == 5
+    assert report.shadow_missing_row_count == 0
+    assert report.shadow_unexpected_row_count == 0
+    assert report.shadow_exact_set_verified is True
+    assert report.all_documents_production_verified is True
+    assert report.shadow_complete_for_pfcr3 is True
+    assert report.blockers == ()
 
 
 def test_fresh_pfcr1_uses_verified_observation_copy_not_active_db(tmp_path, monkeypatch):
@@ -672,6 +815,53 @@ def test_different_full_chain_binding_blocks_before_backup(tmp_path, monkeypatch
     with pytest.raises(ProductionShadowBuildError, match="existing_full_chain_binding_mismatch"):
         _run(monkeypatch, tree)
     assert not tree.backup.exists()
+
+
+def test_partial_exact_source_store_retry_reuses_existing_graphs_and_continues(
+    tmp_path,
+    monkeypatch,
+):
+    tree = _tree(tmp_path)
+    second_pdf = tree.docs / "evidence-b.pdf"
+    third_pdf = tree.docs / "evidence-c.pdf"
+    second_pdf.write_bytes(PDF_BYTES + b"second\n")
+    third_pdf.write_bytes(PDF_BYTES + b"third\n")
+    documents = (
+        (tree.pdf, ("a-1", "a-2", "a-3")),
+        (second_pdf, ("b-1", "b-2")),
+        (third_pdf, ("c-1",)),
+    )
+    _configure_multi_document_success(monkeypatch, tree, documents)
+
+    # Mirror the governed production state after a prior fail-closed attempt:
+    # the first two source graphs already exist exactly; the third is absent.
+    _publish_graph(tree.store, tree.pdf, keys=documents[0][1])
+    _publish_graph(tree.store, second_pdf, keys=documents[1][1])
+    pre = pfcr2._build_tree_manifest(tree.store.root, require_exists=True)
+
+    report = _run(monkeypatch, tree)
+    post = pfcr2._build_tree_manifest(tree.store.root, require_exists=True)
+
+    pre_by_path = {entry.relative_path: entry for entry in pre.entries}
+    post_by_path = {entry.relative_path: entry for entry in post.entries}
+    assert pre_by_path
+    assert all(post_by_path.get(path) == entry for path, entry in pre_by_path.items())
+    assert report.preexisting_source_store_file_count == len(pre.entries)
+    assert report.modified_preexisting_source_store_file_count == 0
+    assert report.deleted_preexisting_source_store_file_count == 0
+    assert report.new_source_store_file_count > 0
+    assert len(report.documents) == 3
+    assert all(item.production_manifest_verified for item in report.documents)
+    assert all(item.production_bindings_verified for item in report.documents)
+    assert all(item.shadow_verified for item in report.documents)
+    assert report.production_manifest_count == 3
+    assert report.production_prospective_row_count == 6
+    assert report.shadow_exact_row_count == 6
+    assert report.shadow_missing_row_count == 0
+    assert report.shadow_unexpected_row_count == 0
+    assert report.source_store_append_only_valid is True
+    assert report.shadow_complete_for_pfcr3 is True
+    assert report.blockers == ()
 
 
 def test_exact_existing_full_chain_is_idempotently_allowed(tmp_path, monkeypatch):

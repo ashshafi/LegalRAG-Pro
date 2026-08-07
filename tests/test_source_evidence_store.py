@@ -226,10 +226,13 @@ def test_constructor_is_side_effect_free_and_injected_root_is_exact(tmp_path: Pa
 
 
 def test_default_root_is_project_relative_without_creation() -> None:
-    value = SourceEvidenceStore()
     expected = Path(__file__).resolve().parents[1] / "source_evidence_store" / "v1"
+    existed_before = expected.exists()
+
+    value = SourceEvidenceStore()
+
     assert value.root == expected
-    assert not expected.exists()
+    assert expected.exists() is existed_before
 
 
 def test_put_blob_uses_content_addressed_layout_and_round_trips(tmp_path: Path) -> None:
