@@ -8,6 +8,7 @@ from report_projection_provider import (
 )
 from ui.cases import show_case_selector
 from ui.chat import show_chat
+from ui.document_upload import show_document_upload
 from ui.header import show_header
 from ui.reports import show_report_viewer, synchronise_report_session_state
 from ui.sidebar import show_sidebar
@@ -30,6 +31,8 @@ show_header()
 
 active_case = show_case_selector()
 active_case_id = active_case.case_id if active_case is not None else None
+
+show_document_upload(active_case_id)
 report_projection = None
 report_provider_error: ReportProjectionProviderError | None = None
 if active_case_id is not None:
