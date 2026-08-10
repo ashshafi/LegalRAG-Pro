@@ -6,8 +6,60 @@ import streamlit as st
 
 from evidence_display import build_evidence_heading
 from features.timeline import extract_timeline_events, sort_events
-from legalrag import ask
+from evidence_reference_bridge import ask_with_reference_findings
 from ui.timeline import show_timeline
+
+
+def _show_reference_findings(result: dict) -> None:
+    warning = result.get("evidence_reference_resolution_warning")
+    payload = result.get("evidence_reference_resolution")
+
+    if warning:
+        st.warning(str(warning))
+        return
+    if not isinstance(payload, dict):
+        return
+
+    receipt = payload.get("receipt")
+    findings = payload.get("findings")
+    if not isinstance(receipt, dict) or not isinstance(findings, list) or not findings:
+        return
+
+    st.divider()
+    st.subheader("🔗 Referenced Evidence")
+    st.caption(
+        "Reference-resolution coverage: "
+        f"{receipt.get('documents_completely_expanded', 0)}/"
+        f"{len(receipt.get('searched_document_ids', []))} governed documents · "
+        "whole case corpus complete: "
+        f"{'yes' if receipt.get('case_corpus_complete') else 'no'}"
+    )
+
+    for index, finding in enumerate(findings, start=1):
+        if not isinstance(finding, dict):
+            continue
+        status = str(finding.get("status", "UNRESOLVED_REFERENCE"))
+        reference_text = str(finding.get("reference_text", ""))
+        with st.expander(f"Reference {index} — {status}", expanded=False):
+            st.text(f"Referenced item: {reference_text}")
+            st.text(f"Status: {status}")
+            matched_docs = finding.get("matched_document_ids") or []
+            matched_keys = finding.get("matched_evidence_keys") or []
+            st.text(
+                "Matched governed document IDs: "
+                + (", ".join(str(value) for value in matched_docs) if matched_docs else "none")
+            )
+            st.text(
+                "Matched governed evidence keys: "
+                + (", ".join(str(value) for value in matched_keys) if matched_keys else "none")
+            )
+            st.text(f"Deterministic basis: {finding.get('basis', '')}")
+
+    if receipt.get("case_corpus_complete"):
+        st.caption(
+            "POSSIBLE_REFERENCED_BUT_NOT_LOCATED means no governed match was found "
+            "after complete case-corpus inspection; it does not prove the item never existed."
+        )
 
 
 def show_chat(
@@ -57,7 +109,7 @@ def show_chat(
             return
 
         with st.spinner("Searching evidence..."):
-            result = ask(
+            result = ask_with_reference_findings(
                 question,
                 selected_documents,
                 case_id=active_case_id,
@@ -72,6 +124,8 @@ def show_chat(
 
         st.subheader("📄 Answer")
         st.write(result["answer"])
+
+        _show_reference_findings(result)
 
         st.divider()
         st.subheader("📚 Evidence")

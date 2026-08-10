@@ -10,6 +10,10 @@ from ui.cases import show_case_selector
 from ui.chat import show_chat
 from ui.document_details import show_document_details
 from ui.document_register import show_document_register
+from ui.evidence_inspection import (
+    show_evidence_inspection,
+    synchronise_evidence_inspection_session_state,
+)
 from ui.document_upload import show_document_upload
 from ui.header import show_header
 from ui.reports import show_report_viewer, synchronise_report_session_state
@@ -34,6 +38,7 @@ show_header()
 active_case = show_case_selector()
 active_case_id = active_case.case_id if active_case is not None else None
 
+synchronise_evidence_inspection_session_state(active_case_id)
 show_document_upload(active_case_id)
 show_document_details(active_case_id)
 show_document_register(active_case_id)
@@ -85,7 +90,9 @@ else:
     st.info(
         "Create a case in the sidebar to use case-isolated document retrieval."
     )
-if st.session_state.get("m7_source_evidence_view", False):
+if st.session_state.get("u8_evidence_inspection_view", False):
+    show_evidence_inspection(active_case_id)
+elif st.session_state.get("m7_source_evidence_view", False):
     show_source_evidence(active_case_id, report_projection)
 elif st.session_state.get("m6_workspace_view") in {
     "traceability", "evidence", "chronology", "people", "comparison"

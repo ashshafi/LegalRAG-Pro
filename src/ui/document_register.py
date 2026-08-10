@@ -18,6 +18,8 @@ CatalogService = Callable[[str], tuple[DocumentCatalogEntry, ...]]
 _EMPTY_TEXT = "No governed documents are available for this case."
 _FAILURE_TEXT = "The governed document register could not be loaded safely."
 _NO_MATCH_TEXT = "No governed documents match that filename filter."
+_U8_VIEW_KEY = "u8_evidence_inspection_view"
+_U8_DOCUMENT_KEY = "u8_evidence_inspection_document_id"
 
 
 def _matches_filename(entry: DocumentCatalogEntry, query: str) -> bool:
@@ -40,6 +42,34 @@ def _entry_line(entry: DocumentCatalogEntry) -> str:
         f"methods: {methods} | "
         f"doc: {entry.source_document_instance_id[:8]} | "
         f"sha256: {entry.original_blob_sha256[:12]}"
+    )
+
+
+def _open_evidence_inspection(source_document_instance_id: str) -> None:
+    """Select one governed document using only the U8 navigation namespace."""
+
+    st.session_state[_U8_DOCUMENT_KEY] = source_document_instance_id
+    st.session_state[_U8_VIEW_KEY] = True
+
+
+def _show_inspect_action(
+    *,
+    active_case_id: str,
+    entry: DocumentCatalogEntry,
+) -> None:
+    """Render the U8 action when the active Streamlit surface supports buttons."""
+
+    button = getattr(st, "button", None)
+    if button is None:
+        return
+    button(
+        "Inspect Evidence",
+        key=(
+            "u8_document_register_inspect::"
+            f"{active_case_id}::{entry.source_document_instance_id}"
+        ),
+        on_click=_open_evidence_inspection,
+        args=(entry.source_document_instance_id,),
     )
 
 
@@ -87,6 +117,7 @@ def show_document_register(
 
         for entry in filtered:
             st.text(_entry_line(entry))
+            _show_inspect_action(active_case_id=active_case_id, entry=entry)
 
 
 __all__ = ["show_document_register"]
