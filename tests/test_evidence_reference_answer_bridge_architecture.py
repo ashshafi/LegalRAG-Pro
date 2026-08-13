@@ -11,7 +11,7 @@ PACKAGE = SRC / "evidence_reference_bridge"
 FILES = (PACKAGE / "__init__.py", PACKAGE / "answer.py")
 
 FROZEN_SHA256 = {
-    "legalrag.py": "993e04816c3fab000bf34e1f27e57fe13642f0c7c71c7185c6f879a3158b1194",
+    "legalrag.py": "b0c67200850ab843fe1a2d3de7b1e750029b6c8c952edc414ce1776b168dfa52",
     "ui/evidence_inspection.py": "118b70e33966e8a125eacad9374355e001862e1d345062e38a89fef284e61d73",
     "evidence_references/__init__.py": "b386f3ff336e1f90cbee3da33caef01b28e25ed0835f3ca526efb9fc6fee793a",
     "evidence_references/models.py": "7e269f320382fd14cb6e15dc18f51f0f6e7747485c5805f2db9bb362b8409bf4",

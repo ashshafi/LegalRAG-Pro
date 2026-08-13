@@ -56,6 +56,10 @@ _GOVERNED_FAILURE_ANSWER = (
     "I could not establish a complete governed evidence set for this question. "
     "No corpus-level negative finding has been made."
 )
+_GOVERNED_ANALYTICAL_FAILURE_ANSWER = (
+    "I could not validate the governed analytical constraint for this answer. "
+    "No analytically governed answer has been presented."
+)
 
 
 def ask(
@@ -73,6 +77,12 @@ def ask(
     """
 
     governed_evidence = None
+    analytical_mode = None
+    analytical_reason = None
+    analytical_authority_id = None
+    analytical_activation_id = None
+    analytical_context = None
+    validated_analytical_answer = None
 
     if case_id is not None:
         try:
@@ -100,11 +110,78 @@ def ask(
             }
 
         results = enrich_evidence_semantics(governed_evidence.answer_results)
-        prompt = build_governed_answer_prompt(
+        base_prompt = build_governed_answer_prompt(
             question=question,
             evidence=governed_evidence,
             enriched_results=results,
         )
+
+        # B15 is deliberately lazy-imported inside the case-scoped branch so the
+        # legacy/no-case path does not acquire new analytical runtime dependencies.
+        from governed_analytical_authority.provider import (
+            GovernedAnalyticalAuthorityProviderError,
+            load_active_governed_analytical_authority,
+        )
+        from governed_answer_authority import (
+            AnalyticalAuthorityMode,
+            GovernedAnswerAuthorityError,
+            answer_statement_bindings_payload,
+            build_constrained_governed_answer_prompt,
+            build_runtime_authority_context,
+            route_question_to_active_authority,
+            validate_answer_statement_bindings,
+        )
+
+        try:
+            active_authority = load_active_governed_analytical_authority(case_id)
+            if active_authority is None:
+                analytical_mode = AnalyticalAuthorityMode.ABSENT
+                analytical_reason = (
+                    "No active governed analytical authority is available for this case."
+                )
+                prompt = base_prompt
+            else:
+                analytical_authority_id = active_authority.manifest.authority_id
+                analytical_activation_id = active_authority.active_pointer.activation_id
+                routing = route_question_to_active_authority(
+                    question=question,
+                    case_id=case_id,
+                    authority=active_authority,
+                )
+                analytical_reason = routing.reason
+                if routing.mode is AnalyticalAuthorityMode.UNAVAILABLE:
+                    analytical_mode = AnalyticalAuthorityMode.UNAVAILABLE
+                    prompt = base_prompt
+                else:
+                    analytical_mode = AnalyticalAuthorityMode.APPLIED
+                    inspected_evidence_keys = tuple(
+                        _first_query_row(results.get("ids"))
+                    )
+                    analytical_context = build_runtime_authority_context(
+                        authority=active_authority,
+                        routing=routing,
+                        inspected_evidence_keys=inspected_evidence_keys,
+                    )
+                    prompt = build_constrained_governed_answer_prompt(
+                        base_prompt=base_prompt,
+                        context=analytical_context,
+                    )
+        except (
+            GovernedAnalyticalAuthorityProviderError,
+            GovernedAnswerAuthorityError,
+            ValueError,
+        ):
+            LOGGER.exception(
+                "Governed analytical authority validation failed for case %s.",
+                case_id,
+            )
+            return _analytical_failure_payload(
+                results=results,
+                governed_evidence=governed_evidence,
+                authority_id=analytical_authority_id,
+                activation_id=analytical_activation_id,
+                mode="invalid_authority",
+            )
     else:
         results = retrieve(
             question,
@@ -124,10 +201,34 @@ def ask(
         input=prompt,
     )
 
+    if case_id is not None and analytical_mode is not None:
+        if analytical_mode.value == "applied":
+            try:
+                validated_analytical_answer = validate_answer_statement_bindings(
+                    raw_output=response.output_text,
+                    context=analytical_context,
+                )
+            except GovernedAnswerAuthorityError:
+                LOGGER.exception(
+                    "Generated analytical answer bindings failed validation for case %s.",
+                    case_id,
+                )
+                return _analytical_failure_payload(
+                    results=results,
+                    governed_evidence=governed_evidence,
+                    authority_id=analytical_authority_id,
+                    activation_id=analytical_activation_id,
+                    mode="invalid_analytical_output",
+                )
+
     sources = _build_sources(results)
 
     payload = {
-        "answer": response.output_text,
+        "answer": (
+            validated_analytical_answer.answer
+            if validated_analytical_answer is not None
+            else response.output_text
+        ),
         "sources": sources,
         "search_results": results,
     }
@@ -137,9 +238,52 @@ def ask(
                 "retrieval_mode": governed_evidence.search_mode.value,
                 "semantic_discovery_receipt": governed_evidence.semantic_receipt,
                 "evidence_search_receipt": governed_evidence.search_result.receipt,
+                "analytical_authority_mode": (
+                    analytical_mode.value if analytical_mode is not None else None
+                ),
+                "analytical_authority_reason": analytical_reason,
+                "analytical_authority_id": analytical_authority_id,
+                "analytical_activation_id": analytical_activation_id,
             }
         )
+        if validated_analytical_answer is not None:
+            payload.update(
+                {
+                    "answer_statement_bindings": answer_statement_bindings_payload(
+                        validated_analytical_answer.bindings
+                    ),
+                    "relied_evidence_keys": list(
+                        validated_analytical_answer.relied_evidence_keys
+                    ),
+                }
+            )
     return payload
+
+
+def _analytical_failure_payload(
+    *,
+    results: dict,
+    governed_evidence,
+    authority_id: str | None,
+    activation_id: str | None,
+    mode: str,
+) -> dict:
+    """Return an analytical fail-closed result without replacing U8 retrieval state."""
+
+    return {
+        "answer": _GOVERNED_ANALYTICAL_FAILURE_ANSWER,
+        "sources": _build_sources(results),
+        "search_results": results,
+        "retrieval_mode": governed_evidence.search_mode.value,
+        "semantic_discovery_receipt": governed_evidence.semantic_receipt,
+        "evidence_search_receipt": governed_evidence.search_result.receipt,
+        "analytical_authority_mode": mode,
+        "analytical_authority_reason": "Governed analytical validation failed closed.",
+        "analytical_authority_id": authority_id,
+        "analytical_activation_id": activation_id,
+        "answer_statement_bindings": [],
+        "relied_evidence_keys": [],
+    }
 
 
 def _build_sources(results: dict) -> list[dict]:

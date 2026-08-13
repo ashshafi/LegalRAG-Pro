@@ -69,7 +69,7 @@ FROZEN_EXPECTED_SHA256 = {
     "ui/evidence_inspection.py": "118b70e33966e8a125eacad9374355e001862e1d345062e38a89fef284e61d73",
     "evidence_answer/__init__.py": "1be8ae0674594c93e46ad6fd9dbffb4f32003816ada5c7afb2a05c447f4b2184",
     "evidence_answer/governed_retrieval.py": "8dae58a06d63007064dd5c6a09fe266913fa607034b55c4db7e4f6ae47fd8159",
-    "legalrag.py": "993e04816c3fab000bf34e1f27e57fe13642f0c7c71c7185c6f879a3158b1194",
+    "legalrag.py": "b0c67200850ab843fe1a2d3de7b1e750029b6c8c952edc414ce1776b168dfa52",
 }
 
 
