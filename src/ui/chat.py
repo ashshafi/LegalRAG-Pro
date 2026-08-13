@@ -62,6 +62,132 @@ def _show_reference_findings(result: dict) -> None:
         )
 
 
+def _field(payload, name: str, default=None):
+    """Read one presentation field from a mapping or immutable receipt object."""
+    if isinstance(payload, dict):
+        return payload.get(name, default)
+    return getattr(payload, name, default)
+
+
+def _display_value(value):
+    """Return the serial display value of an enum-like presentation field."""
+    return getattr(value, "value", value)
+
+
+def _show_governed_answer_provenance(result: dict) -> None:
+    """Render only already-validated B15 statement/reliance metadata."""
+    if result.get("analytical_authority_mode") != "applied":
+        return
+
+    bindings = result.get("answer_statement_bindings")
+    relied_evidence_keys = result.get("relied_evidence_keys")
+    if (
+        not isinstance(bindings, list)
+        or not bindings
+        or not isinstance(relied_evidence_keys, list)
+        or any(not isinstance(binding, dict) for binding in bindings)
+        or any(not isinstance(key, str) or not key for key in relied_evidence_keys)
+    ):
+        return
+
+    for binding in bindings:
+        refs = binding.get("source_proposition_refs")
+        evidence_keys = binding.get("evidence_keys")
+        if (
+            not isinstance(binding.get("statement_id"), str)
+            or not isinstance(binding.get("text"), str)
+            or not isinstance(binding.get("source_status"), str)
+            or not isinstance(refs, list)
+            or not refs
+            or any(not isinstance(ref, dict) for ref in refs)
+            or not isinstance(evidence_keys, list)
+            or not evidence_keys
+            or any(not isinstance(key, str) or not key for key in evidence_keys)
+        ):
+            return
+
+    st.divider()
+    st.subheader("🧭 Governed Answer Provenance")
+    authority_id = result.get("analytical_authority_id")
+    activation_id = result.get("analytical_activation_id")
+    reason = result.get("analytical_authority_reason")
+    st.caption(
+        "Analytical authority: applied"
+        + (f" · authority: {authority_id}" if authority_id else "")
+        + (f" · activation: {activation_id}" if activation_id else "")
+    )
+    if reason:
+        st.caption(f"Authority routing: {reason}")
+
+    for index, binding in enumerate(bindings, start=1):
+        source_status = binding["source_status"]
+        with st.expander(
+            f"Validated statement {index} — {source_status}",
+            expanded=False,
+        ):
+            st.text(f"Statement ID: {binding['statement_id']}")
+            st.write(binding["text"])
+            st.text(f"Frozen source status: {source_status}")
+            st.text("Source proposition coordinates:")
+            for ref in binding["source_proposition_refs"]:
+                st.text(
+                    "- "
+                    f"{ref.get('issue_analysis_id', '')} / "
+                    f"{ref.get('element_id', '')} / "
+                    f"proposition {ref.get('source_proposition_index', '')}"
+                )
+            st.text("Exact relied evidence keys for this statement:")
+            for evidence_key in binding["evidence_keys"]:
+                st.text(f"- {evidence_key}")
+
+    st.caption(
+        "Exact relied-upon evidence keys from validated B15 bindings; "
+        "not inferred from inspected sources or answer text."
+    )
+    for evidence_key in relied_evidence_keys:
+        st.text(f"Relied evidence: {evidence_key}")
+
+
+def _show_evidence_coverage(result: dict) -> None:
+    """Render the existing U8 search receipt as coverage, never as reliance."""
+    receipt = result.get("evidence_search_receipt")
+    if receipt is None:
+        return
+
+    st.divider()
+    st.subheader("📊 Coverage")
+    st.caption(
+        "Governed evidence-search coverage. This records what was inspected; "
+        "it does not identify what the answer relied upon."
+    )
+    st.text(
+        "Search mode: "
+        f"{_display_value(_field(receipt, 'search_mode', 'unknown'))}"
+        " · completion: "
+        f"{_display_value(_field(receipt, 'completion', 'unknown'))}"
+        " · whole case corpus complete: "
+        f"{'yes' if _field(receipt, 'case_corpus_complete', False) else 'no'}"
+    )
+    st.text(
+        "Inspected: "
+        f"{_field(receipt, 'documents_completely_expanded', '?')} documents · "
+        f"{_field(receipt, 'pages_inspected', '?')} pages · "
+        f"{_field(receipt, 'chunks_inspected', '?')} chunks"
+    )
+    st.text(
+        "Case corpus: "
+        f"{_field(receipt, 'case_document_count', '?')} documents · "
+        f"{_field(receipt, 'case_page_count', '?')} pages · "
+        f"{_field(receipt, 'case_chunk_count', '?')} chunks"
+    )
+    st.text(
+        "Negative-finding scope: "
+        f"{_display_value(_field(receipt, 'negative_finding_scope', 'none'))}"
+        " · permitted: "
+        f"{'yes' if _field(receipt, 'negative_finding_permitted', False) else 'no'}"
+    )
+
+
 def show_chat(
     selected_documents,
     timeline_clicked,
@@ -125,10 +251,19 @@ def show_chat(
         st.subheader("📄 Answer")
         st.write(result["answer"])
 
+        _show_governed_answer_provenance(result)
+
         _show_reference_findings(result)
 
         st.divider()
-        st.subheader("📚 Evidence")
+        if result.get("evidence_search_receipt") is not None:
+            st.subheader("📚 Inspected Evidence")
+            st.caption(
+                "Evidence inspected by the governed U8 answer search; "
+                "this is not the relied-upon subset."
+            )
+        else:
+            st.subheader("📚 Evidence")
 
         for source in result["sources"]:
             with st.expander(build_evidence_heading(source)):
@@ -177,6 +312,8 @@ def show_chat(
                         f"Container classification: {document_label}"
                     )
                 st.write(source["text"])
+
+        _show_evidence_coverage(result)
 
     if st.session_state.show_timeline:
         if st.session_state.last_result is None:
