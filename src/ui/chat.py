@@ -188,6 +188,102 @@ def _show_evidence_coverage(result: dict) -> None:
     )
 
 
+_CHAT_HISTORY_KEY = "conversation_turn_history"
+_NO_ACTIVE_CASE_HISTORY_KEY = "__no_active_case__"
+
+
+def _history_scope_key(active_case_id: str | None) -> str:
+    """Return the session-local history partition for the active case."""
+    if isinstance(active_case_id, str) and active_case_id:
+        return active_case_id
+    return _NO_ACTIVE_CASE_HISTORY_KEY
+
+
+def _valid_history_turn(turn) -> bool:
+    """Return whether a stored presentation turn has the minimum safe shape."""
+    if not isinstance(turn, dict):
+        return False
+    question = turn.get("question")
+    result = turn.get("result")
+    return (
+        isinstance(question, str)
+        and bool(question)
+        and isinstance(result, dict)
+        and "answer" in result
+    )
+
+
+def _history_store() -> dict[str, list[dict]]:
+    """Return validated session-local history storage, failing closed if malformed."""
+    store = st.session_state.get(_CHAT_HISTORY_KEY)
+    if not isinstance(store, dict):
+        store = {}
+        st.session_state[_CHAT_HISTORY_KEY] = store
+    return store
+
+
+def _history_for_case(active_case_id: str | None) -> list[dict]:
+    """Return only valid turns for the active case without cross-case fallback."""
+    store = _history_store()
+    scope_key = _history_scope_key(active_case_id)
+    turns = store.get(scope_key)
+    if turns is None:
+        return []
+    if not isinstance(turns, list) or any(not _valid_history_turn(turn) for turn in turns):
+        store[scope_key] = []
+        return []
+    return turns
+
+
+def _append_history_turn(
+    *,
+    question: str,
+    result: dict,
+    active_case_id: str | None,
+) -> None:
+    """Append one completed governed turn to presentation-only session history."""
+    if not question or not isinstance(result, dict) or "answer" not in result:
+        return
+    store = _history_store()
+    scope_key = _history_scope_key(active_case_id)
+    turns = _history_for_case(active_case_id)
+    if scope_key not in store:
+        store[scope_key] = turns
+    turns.append({"question": question, "result": result})
+
+
+def _show_conversation_history(active_case_id: str | None) -> None:
+    """Render prior completed turns without using them as answer context."""
+    turns = _history_for_case(active_case_id)
+    if not turns:
+        return
+
+    current_result = None
+    if (
+        st.session_state.get("last_result_case_id") == active_case_id
+        and st.session_state.get("last_result") is not None
+    ):
+        current_result = st.session_state.get("last_result")
+
+    visible_turns = turns
+    if current_result is not None and turns[-1].get("result") is current_result:
+        visible_turns = turns[:-1]
+    if not visible_turns:
+        return
+
+    st.subheader("🗂 Conversation History")
+    st.caption(
+        "Session-local history for this case only. Previous turns are presentation-only "
+        "and are never supplied to retrieval, prompts, or analytical authority."
+    )
+    for index, turn in enumerate(visible_turns, start=1):
+        with st.expander(f"Turn {index} — {turn['question']}", expanded=False):
+            st.text("Question:")
+            st.write(turn["question"])
+            st.text("Answer:")
+            st.write(turn["result"]["answer"])
+
+
 def show_chat(
     selected_documents,
     timeline_clicked,
@@ -208,6 +304,7 @@ def show_chat(
         st.session_state.last_result_case_id = active_case_id
 
     if st.session_state.last_result_case_id != active_case_id:
+        st.session_state.last_question = ""
         st.session_state.last_result = None
         st.session_state.show_timeline = False
         st.session_state.last_result_case_id = active_case_id
@@ -216,6 +313,8 @@ def show_chat(
         st.session_state.show_timeline = True
 
     st.header("💬 AI Assistant")
+
+    _show_conversation_history(active_case_id)
 
     question = st.text_input(
         "Ask a legal question",
@@ -244,6 +343,11 @@ def show_chat(
         st.session_state.last_question = question
         st.session_state.last_result = result
         st.session_state.last_result_case_id = active_case_id
+        _append_history_turn(
+            question=question,
+            result=result,
+            active_case_id=active_case_id,
+        )
 
     if st.session_state.last_result is not None:
         result = st.session_state.last_result
