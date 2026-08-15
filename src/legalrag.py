@@ -125,6 +125,7 @@ def ask(
         from governed_answer_authority import (
             AnalyticalAuthorityMode,
             GovernedAnswerAuthorityError,
+            GovernedAnswerBindingError,
             answer_statement_bindings_payload,
             build_constrained_governed_answer_prompt,
             build_runtime_authority_context,
@@ -208,17 +209,25 @@ def ask(
                     raw_output=response.output_text,
                     context=analytical_context,
                 )
-            except GovernedAnswerAuthorityError:
+            except GovernedAnswerAuthorityError as exc:
                 LOGGER.exception(
                     "Generated analytical answer bindings failed validation for case %s.",
                     case_id,
                 )
+                validation_error = type(exc).__name__
+                if isinstance(exc, GovernedAnswerBindingError):
+                    validation_message = " ".join(str(exc).split())[:240]
+                    if validation_message:
+                        validation_error = (
+                            f"{validation_error}: {validation_message}"
+                        )
                 return _analytical_failure_payload(
                     results=results,
                     governed_evidence=governed_evidence,
                     authority_id=analytical_authority_id,
                     activation_id=analytical_activation_id,
                     mode="invalid_analytical_output",
+                    validation_error=validation_error,
                 )
 
     sources = _build_sources(results)
@@ -267,10 +276,11 @@ def _analytical_failure_payload(
     authority_id: str | None,
     activation_id: str | None,
     mode: str,
+    validation_error: str | None = None,
 ) -> dict:
     """Return an analytical fail-closed result without replacing U8 retrieval state."""
 
-    return {
+    payload = {
         "answer": _GOVERNED_ANALYTICAL_FAILURE_ANSWER,
         "sources": _build_sources(results),
         "search_results": results,
@@ -284,6 +294,9 @@ def _analytical_failure_payload(
         "answer_statement_bindings": [],
         "relied_evidence_keys": [],
     }
+    if validation_error:
+        payload["analytical_validation_error"] = validation_error
+    return payload
 
 
 def _build_sources(results: dict) -> list[dict]:

@@ -5,7 +5,7 @@ import pytest
 import governed_analytical_authority.provider as authority_provider
 import governed_answer_authority as answer_authority
 from governed_analytical_authority.provider import GovernedAnalyticalAuthorityProviderError
-from governed_answer_authority import GovernedAnswerAuthorityError
+from governed_answer_authority import GovernedAnswerAuthorityError, GovernedAnswerBindingError
 from governed_answer_authority.models import (
     AnalyticalAuthorityMode,
     AuthorityRoutingResult,
@@ -140,6 +140,7 @@ def test_applied_authority_returns_only_validated_rendered_answer(monkeypatch, l
     assert result["analytical_authority_mode"] == "applied"
     assert result["relied_evidence_keys"] == [EVIDENCE_KEY]
     assert result["search_results"]["ids"] == [[EVIDENCE_KEY]]
+    assert "analytical_validation_error" not in result
 
 
 def test_invalid_provider_fails_closed_before_openai(monkeypatch, legalrag_module):
@@ -155,6 +156,7 @@ def test_invalid_provider_fails_closed_before_openai(monkeypatch, legalrag_modul
     assert client.responses.calls == []
     assert result["retrieval_mode"] == "document_complete"
     assert result["analytical_authority_mode"] == "invalid_authority"
+    assert "analytical_validation_error" not in result
 
 
 def test_invalid_binding_fails_closed_and_never_returns_raw_output(monkeypatch, legalrag_module):
@@ -183,13 +185,28 @@ def test_invalid_binding_fails_closed_and_never_returns_raw_output(monkeypatch, 
     monkeypatch.setattr(
         answer_authority,
         "validate_answer_statement_bindings",
-        lambda **kwargs: (_ for _ in ()).throw(GovernedAnswerAuthorityError("invalid")),
+        lambda **kwargs: (_ for _ in ()).throw(
+            GovernedAnswerBindingError(
+                "Analytical output is not strict JSON."
+            )
+        ),
     )
     result = legalrag.ask("Question", case_id=CASE_ID)
     assert client.responses.calls == ["CONSTRAINED"]
+    assert result["answer"] == legalrag._GOVERNED_ANALYTICAL_FAILURE_ANSWER
     assert result["answer"] != "Governed answer"
     assert result["retrieval_mode"] == "document_complete"
     assert result["analytical_authority_mode"] == "invalid_analytical_output"
+    assert result["analytical_authority_reason"] == (
+        "Governed analytical validation failed closed."
+    )
+    assert result["answer_statement_bindings"] == []
+    assert result["relied_evidence_keys"] == []
+    assert result["analytical_validation_error"] == (
+        "GovernedAnswerBindingError: "
+        "Analytical output is not strict JSON."
+    )
+    assert "Governed answer" not in result["analytical_validation_error"]
 
 
 @pytest.fixture
