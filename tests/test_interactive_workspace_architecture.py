@@ -197,7 +197,6 @@ def test_requirements_and_frozen_semantic_reporting_boundary_are_unchanged_from_
         "src/ui/reports.py",
         "src/case_reporting",
         "src/case_analysis",
-        "src/legal_analysis",
         "tests/fixtures/case_reporting/m52_full_audit.md",
         "tests/fixtures/case_reporting/m53_full_audit.html",
         "tests/fixtures/case_reporting/m54_full_audit.pdf",
@@ -209,3 +208,31 @@ def test_requirements_and_frozen_semantic_reporting_boundary_are_unchanged_from_
         capture_output=True,
         text=True,
     )
+
+    # U9C-B15-EQ4 is an expressly governed corrective exception to
+    # the historical M6 legal-analysis freeze.  The exception is
+    # exact: no legal-analysis path other than these two may differ.
+    allowed_eq4_legal_analysis = {
+        "src/legal_analysis/evidence_mapper.py",
+        "src/legal_analysis/search_profiles.py",
+    }
+    result = subprocess.run(
+        [
+            "git",
+            "diff",
+            "--name-only",
+            M6_BASELINE,
+            "--",
+            "src/legal_analysis",
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    observed = {
+        line.strip().replace("\\", "/")
+        for line in result.stdout.splitlines()
+        if line.strip()
+    }
+    assert observed == allowed_eq4_legal_analysis

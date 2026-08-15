@@ -176,7 +176,7 @@ INITIAL_ELEMENT_SEARCH_PROFILES: Final[tuple[ElementSearchProfile, ...]] = (
         "DA-001", "DA-DISABILITY",
         "Locate records describing the claimant's disability, diagnosis, symptoms, duration or functional effects at the relevant time.",
         ("disability", "diagnosis", "psychiatric", "mental health", "symptoms", "condition", "incapacity", "functional"),
-        phrases=("long term", "long-term", "psychiatric condition"),
+        phrases=("psychiatric condition",),
         sources=_MEDICAL + _CLAIMANT,
     ),
     _p(
@@ -196,9 +196,9 @@ INITIAL_ELEMENT_SEARCH_PROFILES: Final[tuple[ElementSearchProfile, ...]] = (
     _p(
         "DA-001", "DA-CAUSATION",
         "Locate evidence connecting the alleged treatment to sickness absence, incapacity, symptoms, capability or another matter arising from disability.",
-        ("because", "due to", "reason", "absence", "sickness", "incapacity", "capability", "result", "arising"),
+        ("because", "due to", "absence", "sickness", "incapacity", "capability", "result", "arising"),
         phrases=("because of", "due to", "as a result of", "arising from"),
-        required=("because", "due to", "reason", "result", "arising"),
+        required=("because of", "due to", "as a result of", "arising from"),
         sources=_EMPLOYER + _RESPONDENT + _CLAIMANT,
     ),
     _p(
@@ -219,7 +219,7 @@ INITIAL_ELEMENT_SEARCH_PROFILES: Final[tuple[ElementSearchProfile, ...]] = (
     _p(
         "DA-001", "DA-TIMING",
         "Locate the date or period of each alleged unfavourable act or treatment and related communications.",
-        ("date", "on", "since", "until", "period", "decision", "letter", "email", "capability", "demotion", "benefit"),
+        ("date", "since", "until", "period", "decision", "letter", "email", "capability", "demotion", "benefit"),
         phrases=("dated", "on 17 july 2026", "since 2005"),
         sources=_EMPLOYER + _CLAIMANT + _RESPONDENT,
     ),
@@ -228,16 +228,16 @@ INITIAL_ELEMENT_SEARCH_PROFILES: Final[tuple[ElementSearchProfile, ...]] = (
     _p(
         "EK-001", "EK-INFORMATION",
         "Locate records describing the claimant's disability-related condition, symptoms, diagnosis, incapacity or functional effects existing at the material time.",
-        ("disability", "diagnosis", "psychiatric", "mental health", "symptoms", "condition", "incapacity", "functional", "sickness"),
-        phrases=("psychiatric condition", "long-term sickness", "long term incapacity"),
+        ("disability", "diagnosis", "psychiatric", "mental health", "symptoms", "condition", "incapacity", "functional"),
+        phrases=("psychiatric condition", "long term incapacity"),
         sources=_MEDICAL + _CLAIMANT,
     ),
     _p(
         "EK-001", "EK-RECIPIENT",
         "Locate communications identifying CACI managers, HR or other personnel who received, discussed, copied or had access to relevant health information.",
-        ("to:", "cc:", "manager", "human resources", "hr", "director", "received", "sent", "copied", "discussed", "caci"),
+        ("to:", "cc:", "manager", "human resources", "hr", "director", "received", "sent", "copied", "discussed"),
         phrases=("head of hr", "hr director", "discussed with", "sent to", "copied to"),
-        required=("to:", "cc:", "manager", "human resources", "hr", "director", "received", "sent", "copied", "discussed"),
+        required=("health", "medical", "disability", "diagnosis", "psychiatric", "occupational health", "recommendation", "symptoms", "condition", "incapacity"),
         sources=_EMPLOYER + _MEDICAL,
     ),
     _p(
@@ -251,7 +251,7 @@ INITIAL_ELEMENT_SEARCH_PROFILES: Final[tuple[ElementSearchProfile, ...]] = (
     _p(
         "EK-001", "EK-CONSTRUCTIVE-KNOWLEDGE",
         "Locate facts that may bear on what CACI could reasonably have been expected to know, including prolonged absence, insurer/OH involvement and rehabilitation activity.",
-        ("absence", "long-term", "incapacity", "unum", "insurer", "occupational health", "rehabilitation", "return to work", "medical", "sickness"),
+        ("incapacity", "unum", "insurer", "occupational health", "rehabilitation", "return to work", "medical"),
         phrases=("long-term absence", "long term absence", "return to work", "occupational health", "rehabilitation plan"),
         sources=_EMPLOYER + _MEDICAL,
     ),
@@ -279,7 +279,7 @@ INITIAL_ELEMENT_SEARCH_PROFILES: Final[tuple[ElementSearchProfile, ...]] = (
     _p(
         "EK-001", "EK-UNRESOLVED",
         "Locate material showing that propositions about CACI's knowledge are disputed, asserted, inferential or not directly acknowledged.",
-        ("dispute", "disputed", "assert", "claim", "aware", "knew", "no evidence", "not established", "denied", "inference"),
+        ("dispute", "disputed", "assert", "aware", "knew", "no evidence", "not established", "denied", "inference"),
         phrases=("not established", "no direct evidence", "the respondent denies", "caci knew"),
         sources=_CLAIMANT + _RESPONDENT + _EMPLOYER,
     ),

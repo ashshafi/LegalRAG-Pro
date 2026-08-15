@@ -205,3 +205,115 @@ class EvidenceMapperTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_eq4_word_boundary_blocks_embedded_short_signal() -> None:
+    from legal_analysis.evidence_mapper import (
+        _RetrievalRow,
+        assess_element_relevance,
+        evidence_reference_from_retrieval,
+    )
+    from legal_analysis.search_profiles import ElementSearchProfile
+
+    profile = ElementSearchProfile(
+        issue_definition_id="DA-001",
+        issue_definition_version="1.0",
+        element_id="DA-TIMING",
+        search_objective="Boundary regression.",
+        search_terms=("on",),
+    )
+    row = _RetrievalRow(
+        "boundary",
+        "The decision was recorded.",
+        {
+            "file": "Decision.pdf",
+            "page": 1,
+        },
+    )
+    evidence = evidence_reference_from_retrieval(row)
+
+    relevance, confidence, _ = assess_element_relevance(
+        evidence=evidence,
+        raw_text=row.text,
+        profile=profile,
+    )
+
+    assert relevance.value == "not_relevant"
+    assert confidence.value == "low"
+
+
+def test_eq4_overlapping_phrase_and_terms_do_not_double_score() -> None:
+    from legal_analysis.evidence_mapper import (
+        _RetrievalRow,
+        assess_element_relevance,
+        evidence_reference_from_retrieval,
+    )
+    from legal_analysis.search_profiles import ElementSearchProfile
+
+    profile = ElementSearchProfile(
+        issue_definition_id="DA-001",
+        issue_definition_version="1.0",
+        element_id="DA-SOMETHING-ARISING",
+        search_objective="Overlap regression.",
+        search_terms=("sickness", "absence"),
+        strong_phrases=("sickness absence",),
+    )
+    row = _RetrievalRow(
+        "overlap",
+        "The record refers to sickness absence.",
+        {
+            "file": "Record.pdf",
+            "page": 1,
+        },
+    )
+    evidence = evidence_reference_from_retrieval(row)
+
+    relevance, confidence, _ = assess_element_relevance(
+        evidence=evidence,
+        raw_text=row.text,
+        profile=profile,
+    )
+
+    assert relevance.value == "relevant"
+    assert confidence.value == "medium"
+
+
+def test_eq4_required_gate_is_boundary_aware() -> None:
+    from legal_analysis.enums import EvidenceSourceType
+    from legal_analysis.evidence_mapper import (
+        _RetrievalRow,
+        assess_element_relevance,
+        evidence_reference_from_retrieval,
+    )
+    from legal_analysis.search_profiles import ElementSearchProfile
+
+    profile = ElementSearchProfile(
+        issue_definition_id="DA-001",
+        issue_definition_version="1.0",
+        element_id="DA-CAUSATION",
+        search_objective="Required-signal boundary regression.",
+        search_terms=("absence",),
+        required_any=("reason",),
+        source_type_hints=(
+            EvidenceSourceType.CLAIMANT_CORRESPONDENCE,
+        ),
+    )
+    row = _RetrievalRow(
+        "required-boundary",
+        "The reasonable absence policy applied.",
+        {
+            "file": "Correspondence.pdf",
+            "page": 1,
+            "semantic_source_type": "claimant_correspondence",
+        },
+    )
+    evidence = evidence_reference_from_retrieval(row)
+
+    relevance, confidence, _ = assess_element_relevance(
+        evidence=evidence,
+        raw_text=row.text,
+        profile=profile,
+    )
+
+    assert relevance.value != "relevant"
+    assert confidence.value == "low"

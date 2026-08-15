@@ -302,6 +302,133 @@ def evidence_reference_from_retrieval(row: _RetrievalRow) -> EvidenceReference:
     )
 
 
+def _signal_spans(
+    haystack: str,
+    signal: str,
+) -> tuple[tuple[int, int], ...]:
+    """Return boundary-aware spans for one normalised lexical signal."""
+
+    normalised_signal = _normalise(signal)
+
+    if not normalised_signal:
+        return ()
+
+    escaped = re.escape(
+        normalised_signal
+    )
+
+    prefix = (
+        r"(?<!\w)"
+        if normalised_signal[0].isalnum()
+        else ""
+    )
+
+    suffix = (
+        r"(?!\w)"
+        if normalised_signal[-1].isalnum()
+        else ""
+    )
+
+    pattern = re.compile(
+        prefix + escaped + suffix,
+        flags=re.IGNORECASE,
+    )
+
+    return tuple(
+        (match.start(), match.end())
+        for match in pattern.finditer(
+            haystack
+        )
+    )
+
+
+def _spans_overlap(
+    left: tuple[int, int],
+    right: tuple[int, int],
+) -> bool:
+    """Return whether two half-open lexical spans overlap."""
+
+    return (
+        left[0] < right[1]
+        and right[0] < left[1]
+    )
+
+
+def _independent_signal_hits(
+    *,
+    haystack: str,
+    signals: tuple[str, ...],
+    occupied_spans: tuple[tuple[int, int], ...] = (),
+) -> tuple[
+    tuple[str, ...],
+    tuple[tuple[int, int], ...],
+]:
+    """Select deterministic non-overlapping lexical signals.
+
+    Longer signals are selected before shorter overlapping signals.
+    Each configured signal contributes at most one scoring hit.
+    """
+
+    spans_by_signal = {
+        signal: _signal_spans(
+            haystack,
+            signal,
+        )
+        for signal in signals
+    }
+
+    selected: set[str] = set()
+    occupied = list(
+        occupied_spans
+    )
+
+    ordered = sorted(
+        signals,
+        key=lambda value: (
+            -len(_normalise(value)),
+            value,
+        ),
+    )
+
+    for signal in ordered:
+
+        spans = spans_by_signal[
+            signal
+        ]
+
+        for span in spans:
+
+            if any(
+                _spans_overlap(
+                    span,
+                    existing,
+                )
+                for existing in occupied
+            ):
+                continue
+
+            selected.add(
+                signal
+            )
+
+            occupied.append(
+                span
+            )
+
+            break
+
+    return (
+        tuple(
+            signal
+            for signal in signals
+            if signal in selected
+        ),
+        tuple(
+            occupied
+        ),
+    )
+
+
 def assess_element_relevance(
     *,
     evidence: EvidenceReference,
@@ -310,60 +437,126 @@ def assess_element_relevance(
 ) -> tuple[EvidenceRelevance, Confidence, str]:
     """Deterministically assess relevance to one controlled element."""
 
+    # Lexical relevance is derived from the evidence excerpt itself.
+    # Filename/author metadata remain provenance, not extra semantic
+    # scoring tokens.
     haystack = _normalise(
-        " ".join(
-            part
-            for part in (
-                evidence.document_name,
-                evidence.author or "",
-                raw_text,
-            )
-            if part
+        raw_text
+    )
+
+    phrase_hits, phrase_spans = (
+        _independent_signal_hits(
+            haystack=haystack,
+            signals=profile.strong_phrases,
         )
     )
-    term_hits = tuple(term for term in profile.search_terms if term in haystack)
-    phrase_hits = tuple(phrase for phrase in profile.strong_phrases if phrase in haystack)
-    required_hits = tuple(item for item in profile.required_any if item in haystack)
-    source_hint = evidence.source_type in profile.source_type_hints
 
-    if profile.required_any and not required_hits:
-        # A source-type match or one general term can make the candidate worth
-        # preserving for inspection, but cannot satisfy a profile with an
-        # explicit factual gate (e.g. direct knowledge/causation).
-        if source_hint and (term_hits or phrase_hits):
+    term_hits, _ = (
+        _independent_signal_hits(
+            haystack=haystack,
+            signals=profile.search_terms,
+            occupied_spans=phrase_spans,
+        )
+    )
+
+    required_hits = tuple(
+        item
+        for item in profile.required_any
+        if _signal_spans(
+            haystack,
+            item,
+        )
+    )
+
+    source_hint = (
+        evidence.source_type
+        in profile.source_type_hints
+    )
+
+    if (
+        profile.required_any
+        and not required_hits
+    ):
+        if (
+            source_hint
+            and (
+                term_hits
+                or phrase_hits
+            )
+        ):
             return (
                 EvidenceRelevance.POTENTIALLY_RELEVANT,
                 Confidence.LOW,
                 "Potentially relevant by source/context, but the profile's required factual signal is absent.",
             )
+
         return (
             EvidenceRelevance.NOT_RELEVANT,
             Confidence.LOW,
             "The excerpt does not contain the profile's required factual signal.",
         )
 
-    score = len(term_hits) + (3 * len(phrase_hits)) + (1 if source_hint else 0)
-    if score >= 5 or (phrase_hits and source_hint):
-        signal = phrase_hits[0] if phrase_hits else term_hits[0]
+    score = (
+        len(term_hits)
+        + (
+            3
+            * len(
+                phrase_hits
+            )
+        )
+        + (
+            1
+            if source_hint
+            else 0
+        )
+    )
+
+    if score >= 5:
+
+        signal = (
+            phrase_hits[0]
+            if phrase_hits
+            else term_hits[0]
+        )
+
         return (
             EvidenceRelevance.RELEVANT,
             Confidence.HIGH,
             f"Directly matches the element search profile through '{signal}' and corroborating context.",
         )
+
     if score >= 2:
-        signal = phrase_hits[0] if phrase_hits else term_hits[0]
+
+        signal = (
+            phrase_hits[0]
+            if phrase_hits
+            else term_hits[0]
+        )
+
         return (
             EvidenceRelevance.RELEVANT,
             Confidence.MEDIUM,
             f"Matches the element search profile through '{signal}' and related context.",
         )
+
     if score == 1:
-        signal = term_hits[0] if term_hits else "source type"
+
+        signal = (
+            term_hits[0]
+            if term_hits
+            else (
+                phrase_hits[0]
+                if phrase_hits
+                else "source type"
+            )
+        )
+
         return (
             EvidenceRelevance.POTENTIALLY_RELEVANT,
             Confidence.LOW,
             f"Only a limited element-relevance signal was found ({signal}).",
         )
+
     return (
         EvidenceRelevance.NOT_RELEVANT,
         Confidence.LOW,

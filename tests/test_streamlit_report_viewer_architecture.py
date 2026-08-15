@@ -231,7 +231,6 @@ def test_requirements_and_frozen_reporting_tree_are_unchanged_from_m54_baseline(
     )
     frozen_paths = [
         "src/case_analysis",
-        "src/legal_analysis",
         "src/case_reporting",
         "tests/fixtures/case_reporting/m52_full_audit.md",
         "tests/fixtures/case_reporting/m53_full_audit.html",
@@ -244,3 +243,31 @@ def test_requirements_and_frozen_reporting_tree_are_unchanged_from_m54_baseline(
         capture_output=True,
         text=True,
     )
+
+    # U9C-B15-EQ4 is an expressly governed corrective exception to
+    # the historical M5.4 legal-analysis freeze.  Preserve the
+    # freeze for every other legal-analysis path.
+    allowed_eq4_legal_analysis = {
+        "src/legal_analysis/evidence_mapper.py",
+        "src/legal_analysis/search_profiles.py",
+    }
+    result = subprocess.run(
+        [
+            "git",
+            "diff",
+            "--name-only",
+            BASELINE,
+            "--",
+            "src/legal_analysis",
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    observed = {
+        line.strip().replace("\\", "/")
+        for line in result.stdout.splitlines()
+        if line.strip()
+    }
+    assert observed == allowed_eq4_legal_analysis

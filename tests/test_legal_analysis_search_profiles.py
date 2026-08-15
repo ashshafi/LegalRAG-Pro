@@ -82,3 +82,94 @@ class SearchProfileTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_eq4_profiles_exclude_proved_generic_false_positive_signals() -> None:
+    from legal_analysis.search_profiles import (
+        DEFAULT_ELEMENT_SEARCH_PROFILE_REGISTRY,
+    )
+
+    registry = DEFAULT_ELEMENT_SEARCH_PROFILE_REGISTRY
+
+    disability = registry.get_profile(
+        "DA-001",
+        "1.0",
+        "DA-DISABILITY",
+    )
+    assert "long term" not in disability.strong_phrases
+    assert "long-term" not in disability.strong_phrases
+
+    causation = registry.get_profile(
+        "DA-001",
+        "1.0",
+        "DA-CAUSATION",
+    )
+    assert "reason" not in causation.search_terms
+    assert causation.required_any == (
+        "because of",
+        "due to",
+        "as a result of",
+        "arising from",
+    )
+
+    timing = registry.get_profile(
+        "DA-001",
+        "1.0",
+        "DA-TIMING",
+    )
+    assert "on" not in timing.search_terms
+
+    information = registry.get_profile(
+        "EK-001",
+        "1.0",
+        "EK-INFORMATION",
+    )
+    assert "sickness" not in information.search_terms
+    assert (
+        "long-term sickness"
+        not in information.strong_phrases
+    )
+
+    recipient = registry.get_profile(
+        "EK-001",
+        "1.0",
+        "EK-RECIPIENT",
+    )
+    assert "caci" not in recipient.search_terms
+    for generic in (
+        "hr",
+        "director",
+        "sent",
+        "manager",
+    ):
+        assert generic not in recipient.required_any
+    for health_signal in (
+        "health",
+        "medical",
+        "disability",
+        "diagnosis",
+    ):
+        assert health_signal in recipient.required_any
+
+    constructive = registry.get_profile(
+        "EK-001",
+        "1.0",
+        "EK-CONSTRUCTIVE-KNOWLEDGE",
+    )
+    for generic in (
+        "absence",
+        "long-term",
+        "sickness",
+    ):
+        assert generic not in constructive.search_terms
+    assert (
+        "long-term absence"
+        in constructive.strong_phrases
+    )
+
+    unresolved = registry.get_profile(
+        "EK-001",
+        "1.0",
+        "EK-UNRESOLVED",
+    )
+    assert "claim" not in unresolved.search_terms

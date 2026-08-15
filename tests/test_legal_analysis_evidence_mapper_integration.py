@@ -269,3 +269,128 @@ class FrozenQueryAcceptanceTests(unittest.TestCase):
         self.assertEqual([item.chunk_id for item in treatment.neutral_evidence], ["da-treatment"])
         self.assertIsNone(treatment.legal_analysis)
         self.assertIsNone(treatment.assessment)
+
+
+def test_eq4_appendix_d_payslip_request_does_not_contaminate_unrelated_elements() -> None:
+    from uuid import uuid4
+
+    from legal_analysis.evidence_mapper import ElementEvidenceMapper
+    from legal_analysis.selector import DeterministicIssueSelector
+
+    appendix_text = """2. Evidence of Request and Response
+(a) Email from Joanna Eaton, Payroll Manager - 4 September 2025
+Hello Ash,
+I understand from our HR director that you have requested copies of your last 12
+payslips. Please find attached, along with P60s from 2021-2025.
+Kind regards,
+Jo Eaton, Payroll Manager.
+(b) Claimant's Reply - 6 September 2025
+Dear Joanna,
+Thank you for sending through the copies of my last 12 payslips and P60s for
+2021-2025.
+As I am currently on long-term sickness absence, I do not have access to my company
+email account. For this reason, I would be grateful if you could ensure that my monthly
+payslips are sent directly to my personal email address.
+Kind regards,
+Arshad Shafi."""
+
+    class AppendixDRetriever:
+        def __call__(
+            self,
+            question,
+            selected_documents=None,
+            n_results=10,
+            *,
+            case_id=None,
+        ):
+            return {
+                "ids": [["appendix-d-1-1"]],
+                "documents": [[appendix_text]],
+                "metadatas": [[{
+                    "file": "Appendix D - Payslip Request Letter (Aug 2025) & Provided Payslips (2024-25).pdf",
+                    "page": 1,
+                    "case_id": case_id,
+                    "semantic_source_type": "claimant_correspondence",
+                }]],
+                "distances": [[0.1]],
+            }
+
+    retriever = AppendixDRetriever()
+
+    knowledge_question = (
+        "What evidence shows CACI knew about my disability?"
+    )
+    knowledge_case = str(uuid4())
+    knowledge_selection = (
+        DeterministicIssueSelector().select(
+            knowledge_question,
+            case_id=knowledge_case,
+        )
+    )
+    knowledge_result = ElementEvidenceMapper(
+        retrieval_callable=retriever
+    ).map_primary_issue(
+        case_id=knowledge_case,
+        user_question=knowledge_question,
+        selection=knowledge_selection,
+    )
+
+    knowledge_by_id = {
+        element.element_id: element
+        for element in knowledge_result.analysis.elements
+    }
+
+    for element_id in (
+        "EK-INFORMATION",
+        "EK-RECIPIENT",
+        "EK-CONSTRUCTIVE-KNOWLEDGE",
+        "EK-UNRESOLVED",
+    ):
+        assert (
+            knowledge_by_id[element_id].neutral_evidence
+            == ()
+        )
+
+    discrimination_question = (
+        "Was I treated unfavourably because of disability-related absence?"
+    )
+    discrimination_case = str(uuid4())
+    discrimination_selection = (
+        DeterministicIssueSelector().select(
+            discrimination_question,
+            case_id=discrimination_case,
+        )
+    )
+    discrimination_result = ElementEvidenceMapper(
+        retrieval_callable=retriever
+    ).map_primary_issue(
+        case_id=discrimination_case,
+        user_question=discrimination_question,
+        selection=discrimination_selection,
+    )
+
+    discrimination_by_id = {
+        element.element_id: element
+        for element in discrimination_result.analysis.elements
+    }
+
+    for element_id in (
+        "DA-DISABILITY",
+        "DA-CAUSATION",
+    ):
+        assert (
+            discrimination_by_id[element_id].neutral_evidence
+            == ()
+        )
+
+    # The excerpt really does state long-term sickness absence.
+    # The repair must not suppress legitimate multi-element factual
+    # use merely to cure unrelated proposition contamination.
+    assert any(
+        evidence.chunk_id == "appendix-d-1-1"
+        for evidence in (
+            discrimination_by_id[
+                "DA-SOMETHING-ARISING"
+            ].neutral_evidence
+        )
+    )
