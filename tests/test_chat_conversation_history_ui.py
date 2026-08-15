@@ -85,11 +85,23 @@ class FakeStreamlit:
     def info(self, text):
         self.writes.append(str(text))
 
-    def text_input(self, label, *, value=""):
-        self.text_input_values.append(str(value))
+    def text_input(self, label, *, value="", key=None):
+        if key is None:
+            current = value
+        else:
+            if key not in self.session_state:
+                self.session_state[key] = value
+            current = self.session_state[key]
+
+        self.text_input_values.append(str(current))
+
         if self._questions:
-            return self._questions.pop(0)
-        return value
+            submitted = self._questions.pop(0)
+            if key is not None:
+                self.session_state[key] = submitted
+            return submitted
+
+        return current
 
     def button(self, label):
         if self._buttons:

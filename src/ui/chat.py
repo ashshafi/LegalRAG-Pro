@@ -7,6 +7,7 @@ import streamlit as st
 from evidence_display import build_evidence_heading
 from features.timeline import extract_timeline_events, sort_events
 from evidence_reference_bridge import ask_with_reference_findings
+from follow_up_context import resolve_follow_up_question
 from ui.timeline import show_timeline
 
 
@@ -190,6 +191,7 @@ def _show_evidence_coverage(result: dict) -> None:
 
 _CHAT_HISTORY_KEY = "conversation_turn_history"
 _NO_ACTIVE_CASE_HISTORY_KEY = "__no_active_case__"
+_QUESTION_INPUT_KEY = "legal_question_input"
 
 
 def _history_scope_key(active_case_id: str | None) -> str:
@@ -273,8 +275,12 @@ def _show_conversation_history(active_case_id: str | None) -> None:
 
     st.subheader("🗂 Conversation History")
     st.caption(
-        "Session-local history for this case only. Previous turns are presentation-only "
-        "and are never supplied to retrieval, prompts, or analytical authority."
+        "Session-local history for this case only. Prior completed turns are not legal or "
+        "evidential authority; their rendered results are presentation-only. For an active "
+        "case, a bounded same-case excerpt may be used only to resolve a context-dependent "
+        "follow-up into a standalone current question. That question then follows the normal "
+        "governed answer/retrieval path; prior-result metadata, evidence, provenance, and "
+        "authority are not inherited."
     )
     for index, turn in enumerate(visible_turns, start=1):
         with st.expander(f"Turn {index} — {turn['question']}", expanded=False):
@@ -307,6 +313,7 @@ def show_chat(
         st.session_state.last_question = ""
         st.session_state.last_result = None
         st.session_state.show_timeline = False
+        st.session_state.pop(_QUESTION_INPUT_KEY, None)
         st.session_state.last_result_case_id = active_case_id
 
     if timeline_clicked:
@@ -318,7 +325,7 @@ def show_chat(
 
     question = st.text_input(
         "Ask a legal question",
-        value=st.session_state.last_question,
+        key=_QUESTION_INPUT_KEY,
     )
 
     if st.button("🔍 Ask"):
@@ -333,6 +340,14 @@ def show_chat(
             )
             return
 
+        submitted_question = question
+        if active_case_id is not None:
+            question = resolve_follow_up_question(
+                question,
+                _history_for_case(active_case_id),
+                active_case_id=active_case_id,
+            )
+
         with st.spinner("Searching evidence..."):
             result = ask_with_reference_findings(
                 question,
@@ -340,11 +355,11 @@ def show_chat(
                 case_id=active_case_id,
             )
 
-        st.session_state.last_question = question
+        st.session_state.last_question = submitted_question
         st.session_state.last_result = result
         st.session_state.last_result_case_id = active_case_id
         _append_history_turn(
-            question=question,
+            question=submitted_question,
             result=result,
             active_case_id=active_case_id,
         )
