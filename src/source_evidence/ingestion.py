@@ -112,8 +112,11 @@ class _Runtime:
 def _load_runtime() -> _Runtime:
     """Load external services lazily so module import remains side-effect free."""
 
-    from config import chroma_client, collection, openai_client
+    from config import get_chroma_client, get_collection, openai_client
     from models import EMBEDDING_MODEL
+
+    chroma_client = get_chroma_client()
+    collection = get_collection()
 
     collection_name = getattr(collection, "name", None)
     if collection_name != _GOVERNED_COLLECTION_NAME:

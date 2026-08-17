@@ -1192,3 +1192,35 @@ def test_real_chroma_159_process_termination_during_large_add_is_recoverable(
         collection=collection,
     ).exact_present_count == len(rows)
     client.close()
+
+
+def test_load_runtime_uses_lazy_config_accessors(monkeypatch):
+    import sys
+    import types
+
+    fake_client = FakeChromaClient()
+    fake_collection = FakeCollection()
+    fake_openai = FakeOpenAI()
+    calls = []
+    fake_config = types.ModuleType("config")
+
+    def get_chroma_client():
+        calls.append("client")
+        return fake_client
+
+    def get_collection():
+        calls.append("collection")
+        return fake_collection
+
+    fake_config.get_chroma_client = get_chroma_client
+    fake_config.get_collection = get_collection
+    fake_config.openai_client = fake_openai
+    monkeypatch.setitem(sys.modules, "config", fake_config)
+
+    runtime = ingestion._load_runtime()
+
+    assert calls == ["client", "collection"]
+    assert runtime.chroma_client is fake_client
+    assert runtime.collection is fake_collection
+    assert runtime.openai_client is fake_openai
+    assert runtime.collection_name == "legal_documents"

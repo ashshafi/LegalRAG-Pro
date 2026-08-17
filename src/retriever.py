@@ -5,7 +5,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from case_management.retrieval_scope import build_retrieval_filter
-from config import collection, openai_client
+import config as _config
+from config import openai_client
 from chunk_provenance import enrich_chunk_provenance
 from evidence_classification import enrich_retrieval_metadata
 from evidence_reranking import rerank_for_primary_sources
@@ -51,6 +52,9 @@ def retrieve(
     }
     if where is not None:
         query_kwargs["where"] = where
+
+    get_collection = getattr(_config, "get_collection", None)
+    collection = get_collection() if callable(get_collection) else _config.collection
 
     raw_results = collection.query(**query_kwargs)
     classified_results = enrich_retrieval_metadata(raw_results)

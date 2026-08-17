@@ -1173,26 +1173,7 @@ def test_real_chroma_159_disposable_shadow_exact_set_and_legacy_conflict(tmp_pat
     runtime_root = tmp_path / "runtime"
     runtime_root.mkdir()
     (runtime_root / "config.py").write_text(
-        """from types import SimpleNamespace
-import chromadb
-
-
-class _DeterministicEmbeddings:
-    def create(self, *, model, input):
-        return SimpleNamespace(
-            data=[SimpleNamespace(embedding=[0.125, 0.25, 0.5, 1.0])]
-        )
-
-
-class _DeterministicOpenAI:
-    def __init__(self):
-        self.embeddings = _DeterministicEmbeddings()
-
-
-openai_client = _DeterministicOpenAI()
-chroma_client = chromadb.PersistentClient(path="db")
-collection = chroma_client.get_or_create_collection(name="legal_documents")
-""",
+        'from functools import lru_cache\nfrom types import SimpleNamespace\nimport chromadb\n\n\nclass _DeterministicEmbeddings:\n    def create(self, *, model, input):\n        return SimpleNamespace(\n            data=[SimpleNamespace(embedding=[0.125, 0.25, 0.5, 1.0])]\n        )\n\n\nclass _DeterministicOpenAI:\n    def __init__(self):\n        self.embeddings = _DeterministicEmbeddings()\n\n\nopenai_client = _DeterministicOpenAI()\n\n\n@lru_cache(maxsize=1)\ndef get_chroma_client():\n    return chromadb.PersistentClient(path="db")\n\n\n@lru_cache(maxsize=1)\ndef get_collection():\n    return get_chroma_client().get_or_create_collection(\n        name="legal_documents"\n    )\n',
         encoding="utf-8",
     )
     pdf = tmp_path / "evidence.pdf"
