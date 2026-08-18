@@ -1,6 +1,7 @@
 import logging
 
 import streamlit as st
+from authentication import require_private_access
 
 from report_projection_provider import (
     ReportProjectionProviderError,
@@ -32,6 +33,8 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+require_private_access()
+
 
 show_header()
 

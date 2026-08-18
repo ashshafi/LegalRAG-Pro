@@ -80,10 +80,21 @@ def test_config_import_is_chroma_side_effect_free_and_accessors_cache(monkeypatc
 
 def test_app_auth_call_remains_before_first_ui_statement():
     tree = ast.parse((SRC / "app.py").read_text(encoding="utf-8"))
-    auth_lines = [
-        node.lineno
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call) and dotted(node.func).endswith("require_private_access")
+    top_level_calls = [
+        (index, dotted(node.value.func))
+        for index, node in enumerate(tree.body)
+        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
     ]
-    assert auth_lines
-    assert min(auth_lines) == 44
+    page_config_indexes = [
+        index
+        for index, name in top_level_calls
+        if name == "st.set_page_config"
+    ]
+    auth_indexes = [
+        index
+        for index, name in top_level_calls
+        if name.endswith("require_private_access")
+    ]
+    assert len(page_config_indexes) == 1
+    assert len(auth_indexes) == 1
+    assert auth_indexes[0] == page_config_indexes[0] + 1

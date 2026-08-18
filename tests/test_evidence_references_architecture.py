@@ -64,12 +64,12 @@ FROZEN_EXPECTED_SHA256 = {
     "evidence_search/__init__.py": "c8906c73562c357fb1d35cc254444acf20385c9c7bec3e6a554e67eeca6bd716",
     "evidence_search/models.py": "205c2ba437b0dc9d6047ab48553b7562860dd7ef8d6bb75e7ff20d91008e4e75",
     "evidence_search/orchestrator.py": "81c2623f7c5322a335d1a82207368aabf5bfe2d45cde235f0f3bd56b2217ba0e",
-    "app.py": "9ae3a64146897ba58d9398f2ea949fb992001a663677059d1643686dc4170e8b",
+    "app.py": "9a47a80b62a1ea0257ac7899f788bab6779fb2f0d37f3122c8a54f3619a8f0df",
     "ui/document_register.py": "98f104daa2388f537dbd4d9007df3c7c685737f70a1c301d2c08b65f9d473d90",
     "ui/evidence_inspection.py": "118b70e33966e8a125eacad9374355e001862e1d345062e38a89fef284e61d73",
     "evidence_answer/__init__.py": "1be8ae0674594c93e46ad6fd9dbffb4f32003816ada5c7afb2a05c447f4b2184",
     "evidence_answer/governed_retrieval.py": "8dae58a06d63007064dd5c6a09fe266913fa607034b55c4db7e4f6ae47fd8159",
-    "legalrag.py": "b0c67200850ab843fe1a2d3de7b1e750029b6c8c952edc414ce1776b168dfa52",
+    "legalrag.py": "01177675a514092055f5eb37725b69fb6f7ab10db42421242e3167d3bb76b648",
 }
 
 
