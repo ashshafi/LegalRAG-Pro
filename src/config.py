@@ -8,7 +8,17 @@ import chromadb
 load_dotenv()
 
 # OpenAI client
-openai_client = OpenAI()
+@lru_cache(maxsize=1)
+def get_openai_client():
+    return OpenAI()
+
+
+class _LazyOpenAIClient:
+    def __getattr__(self, name):
+        return getattr(get_openai_client(), name)
+
+
+openai_client = _LazyOpenAIClient()
 
 
 @lru_cache(maxsize=1)

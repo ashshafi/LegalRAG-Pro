@@ -40,6 +40,7 @@ def test_config_has_no_module_scope_chroma_open():
     ]
     assert not any(name.endswith("PersistentClient") for name in calls)
     assert not any(name.endswith("get_or_create_collection") for name in calls)
+    assert not any(name.endswith("OpenAI") for name in calls)
 
 
 def test_config_import_is_chroma_side_effect_free_and_accessors_cache(monkeypatch):
@@ -47,7 +48,12 @@ def test_config_import_is_chroma_side_effect_free_and_accessors_cache(monkeypatc
     fake_dotenv = types.ModuleType("dotenv")
     fake_dotenv.load_dotenv = lambda: None
     fake_openai = types.ModuleType("openai")
-    fake_openai.OpenAI = type("FakeOpenAI", (), {})
+    class FakeOpenAI:
+        def __init__(self):
+            calls.append(("openai",))
+            self.responses = object()
+
+    fake_openai.OpenAI = FakeOpenAI
     fake_chromadb = types.ModuleType("chromadb")
 
     class FakeCollection:
@@ -76,6 +82,15 @@ def test_config_import_is_chroma_side_effect_free_and_accessors_cache(monkeypatc
     assert module.get_chroma_client() is module.get_chroma_client()
     assert module.get_collection() is module.get_collection()
     assert calls == [("client", "db"), ("collection", "legal_documents")]
+
+    responses = module.openai_client.responses
+    assert responses is module.openai_client.responses
+    assert module.get_openai_client() is module.get_openai_client()
+    assert calls == [
+        ("client", "db"),
+        ("collection", "legal_documents"),
+        ("openai",),
+    ]
 
 
 def test_app_auth_call_remains_before_first_ui_statement():
