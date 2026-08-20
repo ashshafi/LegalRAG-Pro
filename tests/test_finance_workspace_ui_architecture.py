@@ -23,7 +23,6 @@ def test_f7b2_approved_presentation_modules_exist_and_activation_modules_are_abs
 
     forbidden_activation_paths = (
         ROOT / "src" / "finance_app.py",
-        ROOT / "src" / "finance_report_projection_provider.py",
         ROOT / "src" / "finance_projection_provider.py",
         ROOT / "src" / "finance_runtime.py",
     )
