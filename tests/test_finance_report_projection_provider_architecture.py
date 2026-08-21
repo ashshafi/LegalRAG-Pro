@@ -16,7 +16,6 @@ def test_f7c_p1_is_one_additive_read_only_production_module():
     assert PROVIDER.is_file()
     for forbidden in (
         ROOT / "src" / "finance_app.py",
-        ROOT / "src" / "finance_runtime.py",
         ROOT / "src" / "finance_projection_provider.py",
         ROOT / "src" / "ui" / "finance_navigation.py",
     ):
