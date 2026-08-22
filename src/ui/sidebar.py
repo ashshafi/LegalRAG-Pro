@@ -99,6 +99,18 @@ def show_sidebar(
         st.session_state["m6_workspace_view"] = None
         st.session_state["m55_main_view"] = "assistant"
 
+    finance_clicked = st.sidebar.button(
+        "💹 Finance",
+        disabled=active_case_id is None,
+    )
+    if finance_clicked:
+        set_matter_overview_view(st.session_state, False)
+        st.session_state["ppr3_legal_issue_dashboard_view"] = False
+        st.session_state["u8_evidence_inspection_view"] = False
+        st.session_state["m7_source_evidence_view"] = False
+        st.session_state["m6_workspace_view"] = None
+        st.session_state["m55_main_view"] = "finance"
+
     st.sidebar.title("📚 Documents")
 
     try:

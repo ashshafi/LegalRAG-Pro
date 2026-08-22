@@ -43,6 +43,9 @@ st.set_page_config(
 
 require_private_access()
 
+from finance_case_binding.provider import load_active_finance_case_binding
+from ui.finance_workspace_entrypoint import show_finance_workspace
+
 show_header()
 
 active_case = show_case_selector()
@@ -114,6 +117,15 @@ elif st.session_state.get("m6_workspace_view") in {
     "traceability", "evidence", "chronology", "people", "comparison"
 }:
     show_workspace(active_case_id, report_projection)
+elif st.session_state.get("m55_main_view", "assistant") == "finance":
+    if active_case_id is None:
+        st.info("Select an active matter to use Finance.")
+    else:
+        finance_binding = load_active_finance_case_binding(active_case_id)
+        if finance_binding is None:
+            st.info("No active Finance workspace is bound to this matter.")
+        else:
+            show_finance_workspace(workspace_id=finance_binding.workspace_id)
 elif st.session_state.get("m55_main_view", "assistant") == "reports":
     show_report_viewer(
         active_case_id,
