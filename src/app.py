@@ -45,6 +45,7 @@ require_private_access()
 
 from finance_case_binding.provider import load_active_finance_case_binding
 from ui.finance_workspace_entrypoint import show_finance_workspace
+from ui.finance_binding_manager import show_finance_binding_manager
 
 show_header()
 
@@ -124,6 +125,7 @@ elif st.session_state.get("m55_main_view", "assistant") == "finance":
         finance_binding = load_active_finance_case_binding(active_case_id)
         if finance_binding is None:
             st.info("No active Finance workspace is bound to this matter.")
+            show_finance_binding_manager(case_id=active_case_id)
         else:
             show_finance_workspace(workspace_id=finance_binding.workspace_id)
 elif st.session_state.get("m55_main_view", "assistant") == "reports":
