@@ -179,3 +179,21 @@ def load_active_finance_case_binding(case_id: str) -> FinanceCaseActiveBinding |
 
     state = _load_active_state(case_id)
     return None if state is None else state[0]
+
+def load_finance_case_binding_rollback_workspace_ids(case_id: str) -> tuple[str, ...]:
+    """Load backend-valid rollback workspace IDs without exposing activation receipts."""
+
+    state = _load_active_state(case_id)
+    if state is None:
+        return ()
+
+    chain = state[2]
+    seen: set[str] = set()
+    workspace_ids: list[str] = []
+    for receipt in chain[1:]:
+        workspace_id = receipt.new_workspace_id
+        if workspace_id in seen:
+            continue
+        seen.add(workspace_id)
+        workspace_ids.append(workspace_id)
+    return tuple(workspace_ids)

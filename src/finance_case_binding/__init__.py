@@ -8,7 +8,11 @@ from .models import (
     FinanceCaseBindingActivationAction,
     FinanceCaseBindingActivationReceipt,
 )
-from .provider import FinanceCaseBindingProviderError, load_active_finance_case_binding
+from .provider import (
+    FinanceCaseBindingProviderError,
+    load_active_finance_case_binding,
+    load_finance_case_binding_rollback_workspace_ids,
+)
 
 __all__ = [
     "FINANCE_CASE_BINDING_ACTIVATION_SCHEMA_VERSION",
@@ -20,4 +24,5 @@ __all__ = [
     "FinanceCaseBindingProviderError",
     "activate_finance_case_binding",
     "load_active_finance_case_binding",
+    "load_finance_case_binding_rollback_workspace_ids",
 ]
