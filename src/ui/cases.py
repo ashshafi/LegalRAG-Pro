@@ -30,10 +30,10 @@ def show_case_selector(repository: CaseRepository | None = None) -> Case | None:
     repo = repository or CaseRepository()
     cases = repo.list_all()
 
-    st.sidebar.title("🗂 Cases")
+    st.sidebar.title("🗂 Matters")
 
     if not cases:
-        st.sidebar.info("No cases yet. Create your first case below.")
+        st.sidebar.info("No matters yet. Create your first matter below.")
         _show_create_case_form(repo)
         st.session_state.pop(ACTIVE_CASE_KEY, None)
         st.sidebar.divider()
@@ -45,7 +45,7 @@ def show_case_selector(repository: CaseRepository | None = None) -> Case | None:
     selected_index = case_ids.index(active_case_id)
 
     selected_case_id = st.sidebar.selectbox(
-        "Active case",
+        "Active matter",
         options=case_ids,
         index=selected_index,
         format_func=lambda case_id: _case_label(case_by_id[case_id]),
@@ -55,12 +55,12 @@ def show_case_selector(repository: CaseRepository | None = None) -> Case | None:
     active_case = case_by_id[selected_case_id]
 
     if active_case.case_number:
-        st.sidebar.caption(f"Case no. {active_case.case_number}")
+        st.sidebar.caption(f"Reference: {active_case.case_number}")
 
-    with st.sidebar.expander("➕ Create case"):
+    with st.sidebar.expander("➕ Create matter"):
         _show_create_case_form(repo, embedded=True)
 
-    with st.sidebar.expander("✏️ Edit active case"):
+    with st.sidebar.expander("✏️ Edit active matter"):
         _show_edit_case_form(repo, active_case)
 
     with st.sidebar.expander("📥 Assign legacy documents"):
@@ -101,12 +101,12 @@ def _show_create_case_form(
 
     form_key = "create_case_embedded" if embedded else "create_case_empty"
     with st.form(form_key, clear_on_submit=True):
-        name = st.text_input("Case name", key=f"{form_key}_name")
-        case_number = st.text_input("Case number", key=f"{form_key}_number")
+        name = st.text_input("Matter name", key=f"{form_key}_name")
+        case_number = st.text_input("Reference", key=f"{form_key}_number")
         claimant = st.text_input("Claimant", key=f"{form_key}_claimant")
         respondent = st.text_input("Respondent", key=f"{form_key}_respondent")
         submitted = st.form_submit_button(
-            "Create case",
+            "Create matter",
             use_container_width=True,
         )
 
@@ -126,7 +126,7 @@ def _show_create_case_form(
         return
     except Exception:
         LOGGER.exception("Unable to create case.")
-        st.error("The case could not be created.")
+        st.error("The matter could not be created.")
         return
 
     st.session_state[ACTIVE_CASE_KEY] = case.case_id
@@ -139,9 +139,9 @@ def _show_edit_case_form(repository: CaseRepository, case: Case) -> None:
 
     form_key = f"edit_case_{case.case_id}"
     with st.form(form_key):
-        name = st.text_input("Case name", value=case.name)
+        name = st.text_input("Matter name", value=case.name)
         case_number = st.text_input(
-            "Case number",
+            "Reference",
             value=case.case_number or "",
         )
         claimant = st.text_input("Claimant", value=case.claimant or "")
@@ -173,10 +173,10 @@ def _show_edit_case_form(repository: CaseRepository, case: Case) -> None:
         return
     except Exception:
         LOGGER.exception("Unable to update case %s.", case.case_id)
-        st.error("The case could not be updated.")
+        st.error("The matter could not be updated.")
         return
 
-    st.success("Case updated.")
+    st.success("Matter updated.")
     st.rerun()
 
 
@@ -224,7 +224,7 @@ def _show_legacy_assignment(case: Case) -> None:
     )
 
     if st.button(
-        "Assign to active case",
+        "Assign to active matter",
         disabled=not confirmed or plan.chunk_count == 0,
         use_container_width=True,
         key=f"assign_legacy_{case.case_id}_{filename}",

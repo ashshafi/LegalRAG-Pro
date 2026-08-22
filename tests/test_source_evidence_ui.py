@@ -266,7 +266,7 @@ def test_sidebar_source_route_and_other_tool_exclusivity(monkeypatch):
     monkeypatch.setattr(sidebar, "st", fake)
     monkeypatch.setitem(sys.modules, "document_manager", _document_manager_module())
 
-    fake.sidebar.buttons["🔎 Source Evidence"] = True
+    fake.sidebar.buttons["🔗 Sources & Provenance"] = True
     sidebar.show_sidebar(active_case_id=CASE_ID, reports_available=True)
     assert fake.session_state["m7_source_evidence_view"] is True
     assert fake.session_state["m6_workspace_view"] is None

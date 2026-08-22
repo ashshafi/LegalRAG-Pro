@@ -14,11 +14,11 @@ from document_upload import (
 
 UploadService = Callable[..., DocumentUploadResult]
 
-_NO_ACTIVE_CASE_TEXT = "Select or create a case to add documents."
+_NO_ACTIVE_CASE_TEXT = "Select or create a matter to add documents."
 _NO_FILE_TEXT = "Choose a PDF document before adding it."
 _PROGRESS_TEXT = "Adding document and verifying evidence…"
-_SUCCESS_TEXT = "Document added to the selected case."
-_REUSE_TEXT = "An identical existing PDF was safely reused for the selected case."
+_SUCCESS_TEXT = "Document added to the selected matter."
+_REUSE_TEXT = "An identical existing PDF was safely reused for the selected matter."
 _FAILURE_TEXT = (
     "The document could not be added. No existing document was overwritten. "
     "Check that the file is a valid PDF and try again. If a different PDF "
@@ -49,7 +49,7 @@ def show_document_upload(
                 key=uploader_key,
             )
             submitted = st.form_submit_button(
-                "Add document to case",
+                "Add document to matter",
                 use_container_width=True,
             )
 

@@ -2,6 +2,8 @@ import logging
 
 import streamlit as st
 
+from authentication import require_private_access
+
 from report_projection_provider import (
     ReportProjectionProviderError,
     load_active_case_report_projection,
@@ -16,6 +18,12 @@ from ui.evidence_inspection import (
 )
 from ui.document_upload import show_document_upload
 from ui.header import show_header
+from ui.legal_issue_dashboard import show_legal_issue_dashboard
+from ui.matter_overview import (
+    is_matter_overview_active,
+    show_matter_overview,
+    synchronise_matter_overview_session_state,
+)
 from ui.reports import show_report_viewer, synchronise_report_session_state
 from ui.sidebar import show_sidebar
 from ui.source_evidence import (
@@ -32,6 +40,8 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+require_private_access()
 
 show_header()
 
@@ -57,6 +67,10 @@ if active_case_id is not None:
 synchronise_report_session_state(active_case_id, report_projection)
 synchronise_workspace_session_state(active_case_id, report_projection)
 synchronise_source_evidence_session_state(active_case_id, report_projection)
+synchronise_matter_overview_session_state(
+    active_case_id,
+    session_state=st.session_state,
+)
 reports_available = (
     active_case_id is not None
     and report_projection is not None
@@ -74,7 +88,7 @@ if active_case_id is not None and not reports_available:
         )
     else:
         st.sidebar.caption(
-            "No frozen report projection is available for the active case."
+            "No frozen report projection is available for the active matter."
         )
 if active_case is not None:
     case_reference = (
@@ -83,15 +97,17 @@ if active_case is not None:
         else ""
     )
     st.caption(
-        f"Active case: {active_case.name}{case_reference} "
+        f"Active matter: {active_case.name}{case_reference} "
         f"· Status: {active_case.status.title()}"
     )
 else:
     st.info(
-        "Create a case in the sidebar to use case-isolated document retrieval."
+        "Create a matter in the sidebar to use matter-scoped document retrieval."
     )
 if st.session_state.get("u8_evidence_inspection_view", False):
     show_evidence_inspection(active_case_id)
+elif st.session_state.get("ppr3_legal_issue_dashboard_view", False):
+    show_legal_issue_dashboard(active_case_id)
 elif st.session_state.get("m7_source_evidence_view", False):
     show_source_evidence(active_case_id, report_projection)
 elif st.session_state.get("m6_workspace_view") in {
@@ -103,6 +119,13 @@ elif st.session_state.get("m55_main_view", "assistant") == "reports":
         active_case_id,
         report_projection,
         provider_error=report_provider_error,
+    )
+elif is_matter_overview_active(st.session_state):
+    show_matter_overview(
+        active_case,
+        report_projection,
+        provider_error=report_provider_error,
+        selected_document_count=len(selected_documents),
     )
 else:
     show_chat(

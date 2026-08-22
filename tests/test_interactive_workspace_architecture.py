@@ -172,12 +172,14 @@ def test_sidebar_signature_and_two_value_contract_remain_frozen():
     returns = [node for node in ast.walk(function) if isinstance(node, ast.Return)]
     assert any(isinstance(node.value, ast.Tuple) and len(node.value.elts) == 2 for node in returns)
     source = SIDEBAR.read_text(encoding="utf-8")
-    for label in ("🧭 Workspace", "📚 Evidence Explorer", "👤 People Explorer", "📑 Compare Documents"):
+    for label in ("🧠 Analysis", "🔎 Evidence", "👥 People"):
         assert label in source
     assert 'st.session_state["m6_workspace_view"] = "traceability"' in source
     assert 'st.session_state["m6_workspace_view"] = "evidence"' in source
     assert 'st.session_state["m6_workspace_view"] = "people"' in source
-    assert 'st.session_state["m6_workspace_view"] = "comparison"' in source
+    workspace = WORKSPACE.read_text(encoding="utf-8")
+    assert "Projection Evidence-Use Comparison" in workspace
+    assert "📑 Compare Documents" not in source
 
 
 def test_m55_milestone_local_worktree_assertion_only_is_retired():

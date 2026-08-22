@@ -15,7 +15,7 @@ from document_catalog import (
 
 CatalogService = Callable[[str], tuple[DocumentCatalogEntry, ...]]
 
-_EMPTY_TEXT = "No governed documents are available for this case."
+_EMPTY_TEXT = "No governed documents are available for this matter."
 _FAILURE_TEXT = "The governed document register could not be loaded safely."
 _NO_MATCH_TEXT = "No governed documents match that filename filter."
 _U8_VIEW_KEY = "u8_evidence_inspection_view"

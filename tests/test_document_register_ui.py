@@ -89,7 +89,7 @@ def test_empty_case_renders_safe_read_only_state(monkeypatch):
     ui.show_document_register(CASE_ID, catalog_service=lambda case_id: ())
 
     assert fake.expanders == [("📋 Governed document register", False)]
-    assert fake.infos == ["No governed documents are available for this case."]
+    assert fake.infos == ["No governed documents are available for this matter."]
     assert fake.text_inputs == []
 
 

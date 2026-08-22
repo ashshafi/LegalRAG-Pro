@@ -1,0 +1,46 @@
+services:
+  legalrag:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: legalrag-pro:local
+    init: true
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: /app/src
+      LEGALRAG_POPPLER_PATH: /usr/bin
+      LEGALRAG_TESSERACT_CMD: /usr/bin/tesseract
+    ports:
+      - "127.0.0.1:8501:8501"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    volumes:
+      - type: bind
+        source: "${LEGALRAG_STREAMLIT_SECRETS_DIR:?Set LEGALRAG_STREAMLIT_SECRETS_DIR}"
+        target: /app/.streamlit
+        read_only: true
+      - type: bind
+        source: ${LEGALRAG_DATA_ROOT:?Set LEGALRAG_DATA_ROOT to an approved persistent or disposable data root}/db
+        target: /app/db
+      - type: bind
+        source: ${LEGALRAG_DATA_ROOT:?Set LEGALRAG_DATA_ROOT to an approved persistent or disposable data root}/data
+        target: /app/data
+      - type: bind
+        source: ${LEGALRAG_DATA_ROOT:?Set LEGALRAG_DATA_ROOT to an approved persistent or disposable data root}/docs
+        target: /app/docs
+      - type: bind
+        source: ${LEGALRAG_DATA_ROOT:?Set LEGALRAG_DATA_ROOT to an approved persistent or disposable data root}/source_evidence_store
+        target: /app/source_evidence_store
+      - type: bind
+        source: ${LEGALRAG_DATA_ROOT:?Set LEGALRAG_DATA_ROOT to an approved persistent or disposable data root}/report_projections
+        target: /app/report_projections
+      - type: bind
+        source: ${LEGALRAG_DATA_ROOT:?Set LEGALRAG_DATA_ROOT to an approved persistent or disposable data root}/governed_analytical_authorities
+        target: /app/governed_analytical_authorities
+        read_only: true

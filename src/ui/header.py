@@ -20,7 +20,7 @@ def show_header():
         font-size:18px;
         margin-top:8px;
     ">
-    AI Employment Tribunal Assistant
+    Auditable Case Intelligence
     </p>
 
     </div>

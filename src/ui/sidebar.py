@@ -1,10 +1,12 @@
-"""Streamlit sidebar for case-scoped documents and tribunal tools."""
+"""Streamlit sidebar for case-scoped documents and matter-workspace navigation."""
 
 from __future__ import annotations
 
 import logging
 
 import streamlit as st
+
+from ui.matter_overview import set_matter_overview_view
 
 from document_upload import DocumentUploadError, upload_case_pdf
 
@@ -16,7 +18,7 @@ def _show_case_upload(active_case_id: str | None, docs: list[str]) -> None:
     st.sidebar.subheader("➕ Add document")
     if active_case_id is None:
         st.sidebar.caption(
-            "Create or select a case before uploading a PDF."
+            "Create or select a matter before uploading a PDF."
         )
         return
 
@@ -30,12 +32,12 @@ def _show_case_upload(active_case_id: str | None, docs: list[str]) -> None:
         return
     if uploaded_file.name in docs:
         st.sidebar.warning(
-            "A document with this filename is already indexed in the active case."
+            "A document with this filename is already indexed in the active matter."
         )
         return
     size_mb = uploaded_file.size / (1024 * 1024)
     st.sidebar.caption(
-        f"{uploaded_file.name} · {size_mb:.2f} MB · will be indexed to the active case"
+        f"{uploaded_file.name} · {size_mb:.2f} MB · will be indexed to the active matter"
     )
     if not st.sidebar.button(
         "📥 Upload and Index",
@@ -73,11 +75,30 @@ def show_sidebar(
     *,
     reports_available: bool = False,
 ):
-    """Display document selection and tribunal tools.
+    """Display document selection and matter-workspace navigation.
     When a case is active, only documents indexed/assigned to that case are
     displayed. With no active case the historic global document listing remains
     available for backwards compatibility.
     """
+    st.sidebar.caption("MATTER")
+    overview_clicked = st.sidebar.button(
+        "▣ Overview",
+        use_container_width=True,
+        disabled=active_case_id is None,
+        help=(
+            None
+            if active_case_id is not None
+            else "Select or create a matter to open its overview."
+        ),
+    )
+    if overview_clicked:
+        set_matter_overview_view(st.session_state, True)
+        st.session_state["u8_evidence_inspection_view"] = False
+        st.session_state["ppr3_legal_issue_dashboard_view"] = False
+        st.session_state["m7_source_evidence_view"] = False
+        st.session_state["m6_workspace_view"] = None
+        st.session_state["m55_main_view"] = "assistant"
+
     st.sidebar.title("📚 Documents")
 
     try:
@@ -90,7 +111,7 @@ def show_sidebar(
     selected_documents: list[str] = []
     if active_case_id is not None and not docs:
         st.sidebar.info(
-            "No documents are assigned to this case yet. "
+            "No documents are assigned to this matter yet. "
             "Assign a legacy document above or upload a new PDF below."
         )
     elif not docs:
@@ -106,11 +127,11 @@ def show_sidebar(
     _show_case_upload(active_case_id, docs)
 
     st.sidebar.divider()
-    st.sidebar.title("⚖ Tribunal Tools")
+    st.sidebar.caption("CASE INTELLIGENCE")
 
     tools_disabled = active_case_id is not None and not docs
     timeline_clicked = st.sidebar.button(
-        "📅 Timeline",
+        "🕒 Chronology",
         use_container_width=True,
         disabled=tools_disabled,
     )
@@ -118,31 +139,14 @@ def show_sidebar(
         st.session_state["m7_source_evidence_view"] = False
         st.session_state["m6_workspace_view"] = None
         st.session_state["m55_main_view"] = "assistant"
-    workspace_clicked = st.sidebar.button(
-        "🧭 Workspace",
-        use_container_width=True,
-        disabled=not reports_available,
-        help=(
-            None
-            if reports_available
-            else "A validated frozen report projection is required for the active case."
-        ),
-    )
-    if workspace_clicked:
-        st.session_state["m7_source_evidence_view"] = False
-        st.session_state["m6_workspace_view"] = "traceability"
+
     evidence_clicked = st.sidebar.button(
-        "📚 Evidence Explorer",
+        "🔎 Evidence",
         use_container_width=True,
         disabled=not reports_available,
     )
     people_clicked = st.sidebar.button(
-        "👤 People Explorer",
-        use_container_width=True,
-        disabled=not reports_available,
-    )
-    compare_clicked = st.sidebar.button(
-        "📑 Compare Documents",
+        "👥 People",
         use_container_width=True,
         disabled=not reports_available,
     )
@@ -152,23 +156,60 @@ def show_sidebar(
     if people_clicked:
         st.session_state["m7_source_evidence_view"] = False
         st.session_state["m6_workspace_view"] = "people"
-    if compare_clicked:
+
+    dashboard_clicked = st.sidebar.button(
+        "⚖️ Legal Issues",
+        use_container_width=True,
+        disabled=active_case_id is None,
+        help=(
+            None
+            if active_case_id is not None
+            else "An active matter is required for Legal Issues."
+        ),
+    )
+    if dashboard_clicked:
+        set_matter_overview_view(st.session_state, False)
+        st.session_state["ppr3_legal_issue_dashboard_view"] = True
+        st.session_state["u8_evidence_inspection_view"] = False
         st.session_state["m7_source_evidence_view"] = False
-        st.session_state["m6_workspace_view"] = "comparison"
-    source_evidence_clicked = st.sidebar.button(
-        "🔎 Source Evidence",
+        st.session_state["m6_workspace_view"] = None
+        st.session_state["m55_main_view"] = "assistant"
+
+    st.sidebar.divider()
+    st.sidebar.caption("LEGAL WORK")
+
+    workspace_clicked = st.sidebar.button(
+        "🧠 Analysis",
         use_container_width=True,
         disabled=not reports_available,
         help=(
             None
             if reports_available
-            else "A validated frozen report projection is required for the active case."
+            else "A validated frozen report projection is required for the active matter."
         ),
     )
-    if source_evidence_clicked:
-        st.session_state["m7_source_evidence_view"] = True
+    if workspace_clicked:
+        st.session_state["m7_source_evidence_view"] = False
+        st.session_state["m6_workspace_view"] = "traceability"
+
+    assistant_clicked = st.sidebar.button(
+        "💬 Assistant",
+        use_container_width=True,
+        disabled=active_case_id is None,
+    )
+    if assistant_clicked:
+        st.session_state["u8_evidence_inspection_view"] = False
+        st.session_state["m7_source_evidence_view"] = False
         st.session_state["m6_workspace_view"] = None
         st.session_state["m55_main_view"] = "assistant"
+
+    st.sidebar.button(
+        "✍ Drafting",
+        use_container_width=True,
+        disabled=True,
+        help="Planned legal-work capability; not active in PPR4-M3.",
+    )
+
     reports_clicked = st.sidebar.button(
         "📄 Reports",
         use_container_width=True,
@@ -176,7 +217,7 @@ def show_sidebar(
         help=(
             None
             if reports_available
-            else "A validated frozen report projection is required for the active case."
+            else "A validated frozen report projection is required for the active matter."
         ),
     )
     if reports_clicked:
@@ -185,11 +226,46 @@ def show_sidebar(
         st.session_state["m55_main_view"] = "reports"
 
     st.sidebar.divider()
+    st.sidebar.caption("AUDIT")
+
+    source_evidence_clicked = st.sidebar.button(
+        "🔗 Sources & Provenance",
+        use_container_width=True,
+        disabled=not reports_available,
+        help=(
+            None
+            if reports_available
+            else "A validated frozen report projection is required for the active matter."
+        ),
+    )
+    if source_evidence_clicked:
+        st.session_state["m7_source_evidence_view"] = True
+        st.session_state["m6_workspace_view"] = None
+        st.session_state["m55_main_view"] = "assistant"
+
+    st.sidebar.button(
+        "🛡 Audit Trail",
+        use_container_width=True,
+        disabled=True,
+        help="Planned consolidated audit presentation; not active in PPR4-M3.",
+    )
+
+    if (
+        timeline_clicked
+        or workspace_clicked
+        or evidence_clicked
+        or people_clicked
+        or assistant_clicked
+        or source_evidence_clicked
+        or reports_clicked
+    ):
+        set_matter_overview_view(st.session_state, False)
+        st.session_state["ppr3_legal_issue_dashboard_view"] = False
+
+    st.sidebar.divider()
     st.sidebar.title("📊 Status")
-    st.sidebar.success("OpenAI Connected")
-    st.sidebar.success("Chroma Connected")
     if active_case_id is not None:
-        st.sidebar.info(f"{len(docs)} document(s) in active case")
+        st.sidebar.info(f"{len(docs)} document(s) in active matter")
     else:
         st.sidebar.info(f"{len(docs)} document(s) indexed")
 

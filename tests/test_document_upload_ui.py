@@ -110,7 +110,7 @@ def test_no_case_is_informational_and_never_calls_service(fake):
     upload_ui.show_document_upload(None, upload_service=lambda **kw: calls.append(kw))
     assert calls == []
     assert fake.uploaders == []
-    assert fake.rendered == [("sidebar.info", "Select or create a case to add documents.")]
+    assert fake.rendered == [("sidebar.info", "Select or create a matter to add documents.")]
 
 
 def test_active_case_is_single_pdf_explicit_submit_form(fake):
@@ -149,7 +149,7 @@ def test_success_and_reuse_states_are_controlled(fake):
     fake.uploaded = Uploaded()
     fake.submitted = True
     upload_ui.show_document_upload(CASE_A, upload_service=lambda **kw: result())
-    assert ("success", "Document added to the selected case.") in fake.rendered
+    assert ("success", "Document added to the selected matter.") in fake.rendered
     assert ("text", "Document: ET3.pdf") in fake.rendered
     assert "C:\\\\SECRET" not in repr(fake.rendered)
 
@@ -157,7 +157,7 @@ def test_success_and_reuse_states_are_controlled(fake):
     upload_ui.show_document_upload(CASE_A, upload_service=lambda **kw: result(reused=True))
     assert (
         "success",
-        "An identical existing PDF was safely reused for the selected case.",
+        "An identical existing PDF was safely reused for the selected matter.",
     ) in fake.rendered
 
 
