@@ -15,6 +15,10 @@ from finance_workspace_index import (
     literal_query_matches,
 )
 from ui.finance_reports import render_finance_report_exports
+from finance_historical_report import (
+    HistoricalFinanceReport,
+    render_historical_finance_markdown,
+)
 
 _VIEW_LABELS = {
     "overview": "Overview",
@@ -487,8 +491,16 @@ def render_finance_workspace(
     workspace_id: str,
     projection: FinanceReportProjection,
     index: FinanceWorkspaceIndex | None = None,
+
+    historical_report: HistoricalFinanceReport | None = None,
+    historical_report_error: str | None = None,
 ) -> None:
     """Render a lens over F7A/F7B1; never perform Finance analysis or persistence."""
+    if historical_report_error:
+        st.warning(f"Historical finance report unavailable: {historical_report_error}")
+    elif historical_report is not None:
+        st.subheader("Historical Finance Report")
+        st.markdown(render_historical_finance_markdown(historical_report))
 
     validate_finance_report_projection(projection)
     if index is None:
