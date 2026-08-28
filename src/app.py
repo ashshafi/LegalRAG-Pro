@@ -54,9 +54,6 @@ active_case = show_case_selector()
 active_case_id = active_case.case_id if active_case is not None else None
 
 synchronise_evidence_inspection_session_state(active_case_id)
-show_document_upload(active_case_id)
-show_document_details(active_case_id)
-show_document_register(active_case_id)
 report_projection = None
 report_provider_error: ReportProjectionProviderError | None = None
 if active_case_id is not None:
@@ -86,6 +83,9 @@ selected_documents, timeline_clicked = show_sidebar(
     active_case_id=active_case_id,
     reports_available=reports_available,
 )
+show_document_upload(active_case_id)
+show_document_details(active_case_id)
+show_document_register(active_case_id)
 if active_case_id is not None and not reports_available:
     if report_provider_error is not None:
         st.sidebar.caption(
@@ -101,10 +101,11 @@ if active_case is not None:
         if active_case.case_number
         else ""
     )
-    st.caption(
-        f"Active matter: {active_case.name}{case_reference} "
-        f"· Status: {active_case.status.title()}"
-    )
+    if st.session_state.get("m55_main_view", "assistant") != "finance":
+        st.caption(
+            f"Active matter: {active_case.name}{case_reference} "
+            f"· Status: {active_case.status.title()}"
+        )
 else:
     st.info(
         "Create a matter in the sidebar to use matter-scoped document retrieval."
@@ -128,11 +129,12 @@ elif st.session_state.get("m55_main_view", "assistant") == "finance":
             st.info("No active Finance workspace is bound to this matter.")
             show_finance_binding_manager(case_id=active_case_id)
         else:
-            show_finance_binding_lifecycle_manager(
-                case_id=active_case_id,
-                current_workspace_id=finance_binding.workspace_id,
-            )
             show_finance_workspace(workspace_id=finance_binding.workspace_id)
+            with st.expander("Workspace history and administration", expanded=False):
+                show_finance_binding_lifecycle_manager(
+                    case_id=active_case_id,
+                    current_workspace_id=finance_binding.workspace_id,
+                )
 elif st.session_state.get("m55_main_view", "assistant") == "reports":
     show_report_viewer(
         active_case_id,

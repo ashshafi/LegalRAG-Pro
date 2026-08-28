@@ -2,6 +2,10 @@ import streamlit as st
 
 
 def show_header():
+    st.sidebar.markdown("### ⚖ LegalRAG Pro")
+    st.sidebar.caption("Auditable Case Intelligence")
+    if st.session_state.get("m55_main_view", "assistant") == "finance":
+        return
 
     st.markdown("""
     <div style="

@@ -341,7 +341,7 @@ def _render_matrix(index: FinanceWorkspaceIndex) -> None:
         statuses=_selected_values("finance_matrix_statuses"),
     )
     st.caption(f"Showing {len(rows)} of {len(index.cell_keys)} projected metric cells")
-    st.dataframe(rows, use_container_width=True, hide_index=True)
+    st.dataframe(rows, width="stretch", hide_index=True)
 
 
 def _render_summaries(index: FinanceWorkspaceIndex) -> None:
@@ -365,7 +365,7 @@ def _render_summaries(index: FinanceWorkspaceIndex) -> None:
                 "note": value.note,
             }
         )
-    st.dataframe(tuple(rows), use_container_width=True, hide_index=True)
+    st.dataframe(tuple(rows), width="stretch", hide_index=True)
 
 
 def _render_positions(index: FinanceWorkspaceIndex) -> None:
@@ -383,7 +383,7 @@ def _render_positions(index: FinanceWorkspaceIndex) -> None:
                 "note": value.note,
             }
         )
-    st.dataframe(tuple(rows), use_container_width=True, hide_index=True)
+    st.dataframe(tuple(rows), width="stretch", hide_index=True)
 
 
 def _render_calculations(index: FinanceWorkspaceIndex) -> None:
@@ -407,7 +407,7 @@ def _render_calculations(index: FinanceWorkspaceIndex) -> None:
                 "note": value.note,
             }
         )
-    st.dataframe(tuple(rows), use_container_width=True, hide_index=True)
+    st.dataframe(tuple(rows), width="stretch", hide_index=True)
 
 
 def _render_evidence(index: FinanceWorkspaceIndex) -> None:
@@ -421,7 +421,7 @@ def _render_evidence(index: FinanceWorkspaceIndex) -> None:
         binding_classes=_selected_values("finance_evidence_binding_classes"),
     )
     st.caption(f"Showing {len(rows)} of {len(index.evidence_keys)} projected evidence records")
-    st.dataframe(rows, use_container_width=True, hide_index=True)
+    st.dataframe(rows, width="stretch", hide_index=True)
     st.caption("Source text is not resolved in F7B2; only frozen F7A coordinates are displayed.")
 
 
@@ -438,7 +438,7 @@ def _render_limitations(index: FinanceWorkspaceIndex) -> None:
                 "note": value.note,
             }
         )
-    st.dataframe(tuple(rows), use_container_width=True, hide_index=True)
+    st.dataframe(tuple(rows), width="stretch", hide_index=True)
 
 
 def _render_traceability(index: FinanceWorkspaceIndex) -> None:
@@ -487,7 +487,7 @@ def _render_traceability(index: FinanceWorkspaceIndex) -> None:
         st.text("None")
 
 
-def render_finance_workspace(
+def _render_finance_workspace_analyst(
     workspace_id: str,
     projection: FinanceReportProjection,
     index: FinanceWorkspaceIndex | None = None,
@@ -537,6 +537,215 @@ def render_finance_workspace(
         _render_traceability(index)
     elif view == "reports":
         render_finance_report_exports(projection)
+
+
+def _ui2_period_rows(report: HistoricalFinanceReport) -> tuple[tuple[str, tuple[object, ...]], ...]:
+    """Return existing historical rows grouped in governed report period order."""
+    result = []
+    for period_id in report.period_ids:
+        rows = tuple(row for row in report.values if row.financial_period_id == period_id)
+        if rows:
+            result.append((rows[0].period_label, rows))
+    return tuple(result)
+
+
+def _ui2_value(report: HistoricalFinanceReport, period_id: str, metric_code: str) -> object:
+    """Select one already-governed historical value without creating analytical state."""
+    rows = tuple(
+        row
+        for row in report.values
+        if row.financial_period_id == period_id and row.metric_code == metric_code
+    )
+    if len(rows) != 1:
+        raise ValueError(
+            f"Historical Finance display requires exactly one {metric_code} value for {period_id}."
+        )
+    return rows[0]
+
+
+def _ui2_money_display(value_text: str, *, decimals: int) -> str:
+    """Presentation-only GBP millions formatting; this is not an analytical calculation."""
+    value = Decimal(value_text)
+    return f"£{value:.{decimals}f}m"
+
+
+def _ui2_exact_display(row: object) -> str:
+    """Human-readable exact stored value formatting without changing the underlying authority."""
+    if row.unit == "COUNT":
+        return f"{Decimal(row.value_text):,.0f}"
+    if row.currency == "GBP":
+        return f"£{Decimal(row.value_text):,.0f}"
+    if row.currency:
+        return f"{row.currency} {Decimal(row.value_text):,.0f}"
+    return row.value_text
+
+
+_UI2_LABELS = {
+    "REVENUE": "Revenue",
+    "OPERATING_PROFIT": "Operating profit",
+    "PROFIT_BEFORE_TAX": "Profit before tax",
+    "PROFIT_AFTER_TAX": "Profit after tax",
+    "CASH": "Cash",
+    "STAFF_COSTS": "Staff costs",
+    "EMPLOYEES": "Employees",
+    "TECHNICAL_EMPLOYEES": "Technical staff",
+    "SHAREHOLDERS_FUNDS": "Shareholders' funds",
+}
+
+
+def _render_ui2_historical_finance(
+    *,
+    workspace_id: str,
+    projection: FinanceReportProjection,
+    index: FinanceWorkspaceIndex,
+    historical_report: HistoricalFinanceReport,
+) -> None:
+    """Render the frozen R3 professional Finance presentation over existing authorities."""
+    period_groups = _ui2_period_rows(historical_report)
+    if not period_groups:
+        raise ValueError("Historical Finance display requires at least one governed period.")
+
+    latest_period_id = historical_report.period_ids[-1]
+    latest_label = period_groups[-1][0]
+    first_label = period_groups[0][0]
+
+    st.markdown(
+        "<style>"
+        'div[data-baseweb="tab-list"] button p {'
+        "font-size:1.02rem;font-weight:650;"
+        "}"
+        "</style>",
+        unsafe_allow_html=True,
+    )
+
+    st.title(historical_report.company_display_name)
+    st.caption(f"Historical financial analysis · {first_label}–{latest_label}")
+    st.success("Active Finance workspace · " + historical_report.workspace_name)
+
+    revenue = _ui2_value(historical_report, latest_period_id, "REVENUE")
+    pbt = _ui2_value(historical_report, latest_period_id, "PROFIT_BEFORE_TAX")
+    employees = _ui2_value(historical_report, latest_period_id, "EMPLOYEES")
+    technical = _ui2_value(historical_report, latest_period_id, "TECHNICAL_EMPLOYEES")
+
+    first_row = st.columns(2)
+    first_row[0].metric(
+        f"Revenue · {latest_label}",
+        _ui2_money_display(revenue.value_text, decimals=1),
+    )
+    first_row[1].metric(
+        f"Profit before tax · {latest_label}",
+        _ui2_money_display(pbt.value_text, decimals=2),
+    )
+    second_row = st.columns(2)
+    second_row[0].metric(f"Employees · {latest_label}", _ui2_exact_display(employees))
+    second_row[1].metric(f"Technical staff · {latest_label}", _ui2_exact_display(technical))
+
+    st.caption(
+        "Headline values are rounded for display. Exact values are available in Financials."
+    )
+
+    overview_tab, financials_tab, sources_tab, analyst_tab = st.tabs(
+        ["Overview", "Financials", "Source Evidence", "Analyst Workspace"]
+    )
+
+    overview_metrics = (
+        "REVENUE",
+        "OPERATING_PROFIT",
+        "PROFIT_BEFORE_TAX",
+        "PROFIT_AFTER_TAX",
+        "EMPLOYEES",
+        "TECHNICAL_EMPLOYEES",
+    )
+
+    with overview_tab:
+        st.subheader("Financial history")
+        header = "| Metric | " + " | ".join(label for label, _rows in period_groups) + " |"
+        rule = "| --- | " + " | ".join("---:" for _ in period_groups) + " |"
+        table = [header, rule]
+        for metric_code in overview_metrics:
+            cells = []
+            for period_id in historical_report.period_ids:
+                row = _ui2_value(historical_report, period_id, metric_code)
+                if metric_code in {"EMPLOYEES", "TECHNICAL_EMPLOYEES"}:
+                    cells.append(_ui2_exact_display(row))
+                else:
+                    cells.append(_ui2_money_display(row.value_text, decimals=2))
+            table.append(
+                "| "
+                + _UI2_LABELS[metric_code]
+                + " | "
+                + " | ".join(cells)
+                + " |"
+            )
+        st.markdown("\n".join(table))
+
+    with financials_tab:
+        st.subheader("Exact historical financials")
+        exact_rows = []
+        for metric_code in historical_report.metric_codes:
+            row = {"Metric": _UI2_LABELS.get(metric_code, metric_code.replace("_", " ").title())}
+            for period_id, period_group in zip(historical_report.period_ids, period_groups):
+                period_label = period_group[0]
+                value = _ui2_value(historical_report, period_id, metric_code)
+                row[period_label] = _ui2_exact_display(value)
+            exact_rows.append(row)
+        st.dataframe(exact_rows, hide_index=True, width="stretch")
+        st.caption(
+            "Values above are presentation-formatted from the exact stored historical observations."
+        )
+
+    with sources_tab:
+        st.subheader("Source evidence")
+        st.caption(
+            "Historical values remain bound to the published report authority and its source traceability."
+        )
+        _render_evidence(index)
+        with st.expander("Historical report authority and provenance", expanded=False):
+            st.markdown(render_historical_finance_markdown(historical_report))
+
+    with analyst_tab:
+        _render_finance_workspace_analyst(
+            workspace_id=workspace_id,
+            projection=projection,
+            index=index,
+            historical_report=None,
+            historical_report_error=None,
+        )
+
+
+def render_finance_workspace(
+    workspace_id: str,
+    projection: FinanceReportProjection,
+    index: FinanceWorkspaceIndex | None = None,
+    historical_report: HistoricalFinanceReport | None = None,
+    historical_report_error: str | None = None,
+) -> None:
+    """Render professional historical Finance UX or the existing read-only analyst lens."""
+    validate_finance_report_projection(projection)
+    if index is None:
+        index = build_finance_workspace_index(projection)
+    _assert_index_binding(projection, index)
+    synchronise_finance_workspace_session_state(workspace_id, projection)
+
+    if historical_report is None:
+        _render_finance_workspace_analyst(
+            workspace_id=workspace_id,
+            projection=projection,
+            index=index,
+            historical_report=None,
+            historical_report_error=historical_report_error,
+        )
+        return
+
+    if historical_report_error:
+        st.warning(f"Historical finance report unavailable: {historical_report_error}")
+
+    _render_ui2_historical_finance(
+        workspace_id=workspace_id,
+        projection=projection,
+        index=index,
+        historical_report=historical_report,
+    )
 
 
 __all__ = [

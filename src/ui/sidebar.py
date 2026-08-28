@@ -15,15 +15,15 @@ LOGGER = logging.getLogger(__name__)
 
 def _show_case_upload(active_case_id: str | None, docs: list[str]) -> None:
     """Display the case-aware PDF upload control."""
-    st.sidebar.subheader("➕ Add document")
+    st.subheader("➕ Add document")
     if active_case_id is None:
-        st.sidebar.caption(
+        st.caption(
             "Create or select a matter before uploading a PDF."
         )
         return
 
     nonce = int(st.session_state.get("case_upload_nonce", 0))
-    uploaded_file = st.sidebar.file_uploader(
+    uploaded_file = st.file_uploader(
         "Upload PDF",
         type=["pdf"],
         key=f"case_pdf_upload_{active_case_id}_{nonce}",
@@ -31,18 +31,18 @@ def _show_case_upload(active_case_id: str | None, docs: list[str]) -> None:
     if uploaded_file is None:
         return
     if uploaded_file.name in docs:
-        st.sidebar.warning(
+        st.warning(
             "A document with this filename is already indexed in the active matter."
         )
         return
     size_mb = uploaded_file.size / (1024 * 1024)
-    st.sidebar.caption(
+    st.caption(
         f"{uploaded_file.name} · {size_mb:.2f} MB · will be indexed to the active matter"
     )
-    if not st.sidebar.button(
+    if not st.button(
         "📥 Upload and Index",
         key=f"index_case_pdf_{active_case_id}_{nonce}",
-        use_container_width=True,
+        width="stretch",
     ):
         return
     try:
@@ -54,15 +54,15 @@ def _show_case_upload(active_case_id: str | None, docs: list[str]) -> None:
                     case_id=active_case_id,
                 )
     except DocumentUploadError as exc:
-        st.sidebar.error(str(exc))
+        st.error(str(exc))
         return
     except Exception:
         LOGGER.exception("Unexpected error during case-aware PDF upload.")
-        st.sidebar.error(
+        st.error(
             "The document could not be uploaded. Check the application log for details."
         )
         return
-    st.sidebar.success(
+    st.success(
         f"Indexed {result.filename} ({result.chunks_indexed} chunks)."
     )
     # A new uploader key clears the completed upload on rerun.
@@ -80,10 +80,18 @@ def show_sidebar(
     displayed. With no active case the historic global document listing remains
     available for backwards compatibility.
     """
+    try:
+        from document_manager import get_documents
+        docs = get_documents(active_case_id)
+    except Exception:
+        LOGGER.exception("Unable to load indexed document metadata.")
+        docs = []
+        st.sidebar.warning("Indexed documents could not be loaded.")
+
     st.sidebar.caption("MATTER")
     overview_clicked = st.sidebar.button(
         "▣ Overview",
-        use_container_width=True,
+        width="stretch",
         disabled=active_case_id is None,
         help=(
             None
@@ -101,6 +109,8 @@ def show_sidebar(
 
     finance_clicked = st.sidebar.button(
         "💹 Finance",
+        width="stretch",
+        type="primary" if st.session_state.get("m55_main_view") == "finance" else "secondary",
         disabled=active_case_id is None,
     )
     if finance_clicked:
@@ -111,30 +121,6 @@ def show_sidebar(
         st.session_state["m6_workspace_view"] = None
         st.session_state["m55_main_view"] = "finance"
 
-    st.sidebar.title("📚 Documents")
-
-    try:
-        from document_manager import get_documents
-        docs = get_documents(active_case_id)
-    except Exception:
-        LOGGER.exception("Unable to load indexed document metadata.")
-        docs = []
-        st.sidebar.warning("Indexed documents could not be loaded.")
-    selected_documents: list[str] = []
-    if active_case_id is not None and not docs:
-        st.sidebar.info(
-            "No documents are assigned to this matter yet. "
-            "Assign a legacy document above or upload a new PDF below."
-        )
-    elif not docs:
-        st.sidebar.info("No indexed documents found.")
-    for filename in docs:
-        if st.sidebar.checkbox(
-            filename,
-            value=True,
-            key=f"document_{active_case_id or 'legacy'}_{filename}",
-        ):
-            selected_documents.append(filename)
     st.sidebar.divider()
     _show_case_upload(active_case_id, docs)
 
@@ -144,7 +130,7 @@ def show_sidebar(
     tools_disabled = active_case_id is not None and not docs
     timeline_clicked = st.sidebar.button(
         "🕒 Chronology",
-        use_container_width=True,
+        width="stretch",
         disabled=tools_disabled,
     )
     if timeline_clicked:
@@ -154,12 +140,12 @@ def show_sidebar(
 
     evidence_clicked = st.sidebar.button(
         "🔎 Evidence",
-        use_container_width=True,
+        width="stretch",
         disabled=not reports_available,
     )
     people_clicked = st.sidebar.button(
         "👥 People",
-        use_container_width=True,
+        width="stretch",
         disabled=not reports_available,
     )
     if evidence_clicked:
@@ -171,7 +157,7 @@ def show_sidebar(
 
     dashboard_clicked = st.sidebar.button(
         "⚖️ Legal Issues",
-        use_container_width=True,
+        width="stretch",
         disabled=active_case_id is None,
         help=(
             None
@@ -192,7 +178,7 @@ def show_sidebar(
 
     workspace_clicked = st.sidebar.button(
         "🧠 Analysis",
-        use_container_width=True,
+        width="stretch",
         disabled=not reports_available,
         help=(
             None
@@ -206,7 +192,7 @@ def show_sidebar(
 
     assistant_clicked = st.sidebar.button(
         "💬 Assistant",
-        use_container_width=True,
+        width="stretch",
         disabled=active_case_id is None,
     )
     if assistant_clicked:
@@ -217,14 +203,14 @@ def show_sidebar(
 
     st.sidebar.button(
         "✍ Drafting",
-        use_container_width=True,
+        width="stretch",
         disabled=True,
         help="Planned legal-work capability; not active in PPR4-M3.",
     )
 
     reports_clicked = st.sidebar.button(
         "📄 Reports",
-        use_container_width=True,
+        width="stretch",
         disabled=not reports_available,
         help=(
             None
@@ -242,7 +228,7 @@ def show_sidebar(
 
     source_evidence_clicked = st.sidebar.button(
         "🔗 Sources & Provenance",
-        use_container_width=True,
+        width="stretch",
         disabled=not reports_available,
         help=(
             None
@@ -257,7 +243,7 @@ def show_sidebar(
 
     st.sidebar.button(
         "🛡 Audit Trail",
-        use_container_width=True,
+        width="stretch",
         disabled=True,
         help="Planned consolidated audit presentation; not active in PPR4-M3.",
     )
@@ -275,6 +261,23 @@ def show_sidebar(
         st.session_state["ppr3_legal_issue_dashboard_view"] = False
 
     st.sidebar.divider()
+    with st.sidebar.expander("📄 Documents", expanded=False):
+        selected_documents: list[str] = []
+        if active_case_id is not None and not docs:
+            st.info(
+                "No documents are assigned to this matter yet. "
+                "Assign a legacy document above or upload a new PDF below."
+            )
+        elif not docs:
+            st.info("No indexed documents found.")
+        for filename in docs:
+            if st.checkbox(
+                filename,
+                value=True,
+                key=f"document_{active_case_id or 'legacy'}_{filename}",
+            ):
+                selected_documents.append(filename)
+
     st.sidebar.title("📊 Status")
     if active_case_id is not None:
         st.sidebar.info(f"{len(docs)} document(s) in active matter")
