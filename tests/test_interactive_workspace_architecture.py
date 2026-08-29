@@ -11,6 +11,7 @@ APP = ROOT / "src" / "app.py"
 SIDEBAR = ROOT / "src" / "ui" / "sidebar.py"
 M55_ARCH = ROOT / "tests" / "test_streamlit_report_viewer_architecture.py"
 M6_BASELINE = "528c669"
+REQUIREMENTS_BASELINE = "b5a3f838e158c2ac5eab81e007e2b1ac416d1edc"
 APPROVED_M6_KEYS = {
     "m6_workspace_case_id",
     "m6_workspace_projection_id",
@@ -192,9 +193,23 @@ def test_m55_milestone_local_worktree_assertion_only_is_retired():
     assert "test_native_viewer_has_only_approved_dependency_direction" in source
 
 
-def test_requirements_and_frozen_semantic_reporting_boundary_are_unchanged_from_m6_baseline():
-    protected = [
-        "requirements.txt",
+def test_requirements_and_frozen_semantic_reporting_boundaries_remain_governed():
+    subprocess.run(
+        [
+            "git",
+            "diff",
+            "--exit-code",
+            REQUIREMENTS_BASELINE,
+            "--",
+            "requirements.txt",
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    semantic_protected = [
         "src/report_projection_provider.py",
         "src/ui/reports.py",
         "src/case_reporting",
@@ -204,7 +219,7 @@ def test_requirements_and_frozen_semantic_reporting_boundary_are_unchanged_from_
         "tests/fixtures/case_reporting/m54_full_audit.pdf",
     ]
     subprocess.run(
-        ["git", "diff", "--exit-code", M6_BASELINE, "--", *protected],
+        ["git", "diff", "--exit-code", M6_BASELINE, "--", *semantic_protected],
         cwd=ROOT,
         check=True,
         capture_output=True,
