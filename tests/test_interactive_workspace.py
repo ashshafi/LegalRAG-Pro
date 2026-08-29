@@ -266,3 +266,62 @@ def test_issue_review_routes_to_existing_frozen_chronology(monkeypatch):
 
     assert fake.session_state["m6_chronology_issue_ids"] == ["issue-1"]
     assert fake.session_state["m6_workspace_view"] == "chronology"
+
+
+def _review_evidential_dashboard(*, case_id=CASE_ID, issue_id="issue-1"):
+    element = NS(
+        element_id="RA-ELEMENT",
+        element_name="Adjustment provision",
+        legal_question="Was an adjustment required?",
+        current_evidential_position="Frozen evidential position",
+        supporting_evidence_keys=("support-1",),
+        adverse_evidence_keys=("adverse-1",),
+        corroborative_evidence_keys=("corroborative-1",),
+        neutral_evidence_keys=("neutral-1",),
+        conflicting_evidence_keys=("conflicting-1",),
+    )
+    return NS(
+        case_id=case_id,
+        authority_id="authority-1",
+        activation_id="activation-1",
+        issues=(NS(issue_analysis_id=issue_id, elements=(element,)),),
+    )
+
+
+def test_issue_review_renders_exact_governed_evidential_role_memberships(monkeypatch):
+    fake = _FakeStreamlit()
+    fake.session_state["m6_workspace_view"] = "review"
+    monkeypatch.setattr(workspace, "st", fake)
+    workspace._render_issue_review(_review_index(), _review_evidential_dashboard())
+    rendered = "\n".join(fake.text_calls)
+    for label in (
+        "Supporting evidence", "Adverse evidence", "Corroborative evidence",
+        "Neutral/context evidence", "Conflicting evidence",
+    ):
+        assert label in rendered
+    for evidence_key in (
+        "support-1", "adverse-1", "corroborative-1", "neutral-1", "conflicting-1",
+    ):
+        assert evidence_key in rendered
+    assert "Unresolved evidence" not in rendered
+
+
+def test_issue_review_role_navigation_uses_existing_evidence_session_state(monkeypatch):
+    fake = _FakeStreamlit(buttons={"Open in Evidence Explorer · support-1"})
+    fake.session_state["m6_workspace_view"] = "review"
+    monkeypatch.setattr(workspace, "st", fake)
+    with pytest.raises(RuntimeError, match="rerun"):
+        workspace._render_issue_review(_review_index(), _review_evidential_dashboard())
+    assert fake.session_state["m6_evidence_query"] == "support-1"
+    assert fake.session_state["m6_evidence_issue_ids"] == ["issue-1"]
+    assert fake.session_state["m6_workspace_view"] == "evidence"
+
+
+def test_issue_review_fails_closed_on_nonmatching_evidential_issue_identity(monkeypatch):
+    fake = _FakeStreamlit()
+    monkeypatch.setattr(workspace, "st", fake)
+    with pytest.raises(workspace.WorkspaceIndexError, match="exactly one"):
+        workspace._render_issue_review(
+            _review_index(),
+            _review_evidential_dashboard(issue_id="different-issue"),
+        )

@@ -104,6 +104,7 @@ def test_workspace_ui_dependency_direction_and_source_access_are_narrow():
         "streamlit",
         "case_reporting.models",
         "case_reporting.validation",
+        "legal_issue_dashboard",
         "workspace_index",
     }
     assert imports <= allowed
@@ -162,7 +163,8 @@ def test_app_uses_single_provider_result_and_m6_overlay_precedes_m55_route():
     reports = source.index('elif st.session_state.get("m55_main_view", "assistant") == "reports"')
     assert report_sync < workspace_sync < sidebar
     assert overlay < reports
-    assert "show_workspace(active_case_id, report_projection)" in source
+    assert "show_workspace(" in source
+    assert "evidential_dashboard=evidential_dashboard" in source
 
 
 def test_sidebar_signature_and_two_value_contract_remain_frozen():
@@ -259,13 +261,14 @@ def test_ierw_issue_review_is_an_m6_projection_only_view():
     workspace = WORKSPACE.read_text(encoding="utf-8")
 
     route = app.index('elif st.session_state.get("m6_workspace_view")')
-    show = app.index("show_workspace(active_case_id, report_projection)", route)
+    show = app.index("evidential_dashboard=evidential_dashboard", route)
     reports = app.index('elif st.session_state.get("m55_main_view", "assistant") == "reports"')
     assert route < show < reports
     assert '"review", "traceability", "evidence", "chronology", "people", "comparison"' in app
 
     assert '"review": "Issue Review"' in workspace
-    assert '"review": _render_issue_review' in workspace
+    assert 'if view == "review":' in workspace
+    assert "_render_issue_review(index, evidential_dashboard)" in workspace
     assert '"ierw_review_issue_id"' in workspace
     assert 'st.session_state["m6_evidence_issue_ids"] = [selected_issue_id]' in workspace
     assert 'st.session_state["m6_chronology_issue_ids"] = [selected_issue_id]' in workspace
@@ -276,5 +279,32 @@ def test_ierw_issue_review_is_an_m6_projection_only_view():
         "build_runtime_authority_context",
         "ask_with_reference_findings",
         "resolve_projection_citation_source",
+        "load_active_governed_analytical_authority",
+        "GovernedAnalyticalAuthorityProviderError",
+        "build_legal_issue_dashboard",
     ):
         assert prohibited not in workspace
+
+
+def test_ierw_evidential_position_composition_is_read_only_at_app_root():
+    app = APP.read_text(encoding="utf-8")
+    workspace = WORKSPACE.read_text(encoding="utf-8")
+
+    route = app.index('elif st.session_state.get("m6_workspace_view")')
+    provider = app.index("load_active_governed_analytical_authority(active_case_id)", route)
+    builder = app.index("build_legal_issue_dashboard(", provider)
+    show = app.index("evidential_dashboard=evidential_dashboard", builder)
+    reports = app.index('elif st.session_state.get("m55_main_view", "assistant") == "reports"')
+    assert route < provider < builder < show < reports
+
+    assert "from legal_issue_dashboard import LegalIssueDashboard" in workspace
+    assert "evidential_dashboard: LegalIssueDashboard | None = None" in workspace
+    assert "load_active_governed_analytical_authority" not in workspace
+    assert "GovernedAnalyticalAuthorityProviderError" not in workspace
+    assert "build_legal_issue_dashboard" not in workspace
+    for token in (
+        "supporting_evidence_keys", "adverse_evidence_keys", "corroborative_evidence_keys",
+        "neutral_evidence_keys", "conflicting_evidence_keys",
+    ):
+        assert token in workspace
+    assert "Unresolved evidence" not in workspace

@@ -18,6 +18,11 @@ from ui.evidence_inspection import (
 )
 from ui.document_upload import show_document_upload
 from ui.header import show_header
+from governed_analytical_authority.provider import (
+    GovernedAnalyticalAuthorityProviderError,
+    load_active_governed_analytical_authority,
+)
+from legal_issue_dashboard import LegalIssueDashboardError, build_legal_issue_dashboard
 from ui.legal_issue_dashboard import show_legal_issue_dashboard
 from ui.matter_overview import (
     is_matter_overview_active,
@@ -119,7 +124,26 @@ elif st.session_state.get("m7_source_evidence_view", False):
 elif st.session_state.get("m6_workspace_view") in {
     "review", "traceability", "evidence", "chronology", "people", "comparison"
 }:
-    show_workspace(active_case_id, report_projection)
+    evidential_dashboard = None
+    if active_case_id is not None:
+        try:
+            governed_authority = load_active_governed_analytical_authority(active_case_id)
+            if governed_authority is not None:
+                evidential_dashboard = build_legal_issue_dashboard(
+                    active_case_id=active_case_id,
+                    authority=governed_authority,
+                )
+        except (GovernedAnalyticalAuthorityProviderError, LegalIssueDashboardError) as exc:
+            LOGGER.error(
+                "Unable to bind governed evidential-position projection for case %s error %s.",
+                active_case_id,
+                type(exc).__name__,
+            )
+    show_workspace(
+        active_case_id,
+        report_projection,
+        evidential_dashboard=evidential_dashboard,
+    )
 elif st.session_state.get("m55_main_view", "assistant") == "finance":
     if active_case_id is None:
         st.info("Select an active matter to use Finance.")

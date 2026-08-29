@@ -263,7 +263,7 @@ def test_four_governed_issues_project_exactly():
         authority=_authority(_four_pairs()),
     )
     assert dashboard.case_id == CASE_ID
-    assert dashboard.schema_version == "legal-issue-dashboard/1.1"
+    assert dashboard.schema_version == "legal-issue-dashboard/1.2"
     assert [issue.issue_definition_id for issue in dashboard.issues] == [
         "DA-001",
         "EK-001",
@@ -570,3 +570,43 @@ def test_dashboard_metric_layout_uses_rows_of_at_most_two_columns():
     assert '"Conflicting evidence"' in source
     assert '"Distinct evidence involved"' in source
 
+
+
+def test_dashboard_element_preserves_exact_frozen_case_matrix_role_key_tuples():
+    pair = _result(
+        "EK-001",
+        "Employer knowledge of disability",
+        2,
+        roles=("supporting", "supporting", "adverse", "corroborative", "neutral", "conflicting"),
+    )
+    matrix_element = pair[1].element_records[0]
+    element = build_legal_issue_dashboard(
+        active_case_id=CASE_ID,
+        authority=_authority((pair,)),
+    ).issues[0].elements[0]
+
+    assert element.supporting_evidence_keys == matrix_element.supporting_evidence_keys
+    assert element.adverse_evidence_keys == matrix_element.adverse_evidence_keys
+    assert element.corroborative_evidence_keys == matrix_element.corroborative_evidence_keys
+    assert element.neutral_evidence_keys == matrix_element.neutral_evidence_keys
+    assert element.conflicting_evidence_keys == matrix_element.conflicting_evidence_keys
+
+
+def test_same_evidence_identity_is_preserved_across_multiple_projected_roles():
+    result, matrix_issue = _result(
+        "RA-001",
+        "Reasonable adjustments",
+        4,
+        roles=("supporting", "adverse"),
+    )
+    shared = "shared-evidence-key"
+    matrix_issue.element_records[0].supporting_evidence_keys = (shared,)
+    matrix_issue.element_records[0].adverse_evidence_keys = (shared,)
+
+    element = build_legal_issue_dashboard(
+        active_case_id=CASE_ID,
+        authority=_authority(((result, matrix_issue),)),
+    ).issues[0].elements[0]
+
+    assert element.supporting_evidence_keys == (shared,)
+    assert element.adverse_evidence_keys == (shared,)

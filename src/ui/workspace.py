@@ -8,6 +8,7 @@ from typing import Iterable
 import streamlit as st
 
 from case_reporting.models import CaseReportProjection, StatusView
+from legal_issue_dashboard import LegalIssueDashboard
 from case_reporting.validation import validate_case_report_projection
 from workspace_index import (
     DocumentGroupKey,
@@ -405,12 +406,77 @@ def _render_review_collection(
         )
 
 
-def _render_issue_review(index: WorkspaceIndex) -> None:
-    """Compose one issue-centric read-only review from the frozen workspace index."""
+_IERW_EVIDENTIAL_ROLE_FIELDS = (
+    ("Supporting evidence", "supporting_evidence_keys"),
+    ("Adverse evidence", "adverse_evidence_keys"),
+    ("Corroborative evidence", "corroborative_evidence_keys"),
+    ("Neutral/context evidence", "neutral_evidence_keys"),
+    ("Conflicting evidence", "conflicting_evidence_keys"),
+)
+
+
+def _render_evidential_position(dashboard_issue) -> None:
+    """Render exact frozen role memberships without reclassifying evidence."""
+
+    st.subheader("Evidential Position")
+    st.caption(
+        "Read-only role memberships copied from the frozen governed Case Matrices. "
+        "One evidence key may appear in more than one role."
+    )
+    for element in dashboard_issue.elements:
+        st.text(f"{element.element_id} · {element.element_name}")
+        st.caption("Legal question: " + element.legal_question)
+        st.caption("Current evidential position: " + element.current_evidential_position)
+        for label, field_name in _IERW_EVIDENTIAL_ROLE_FIELDS:
+            evidence_keys = tuple(getattr(element, field_name))
+            st.text(f"{label} ({len(evidence_keys)})")
+            if not evidence_keys:
+                st.caption("No frozen evidence keys in this role.")
+                continue
+            for ordinal, evidence_key in enumerate(evidence_keys, start=1):
+                st.text(evidence_key)
+                if st.button(
+                    f"Open in Evidence Explorer · {evidence_key}",
+                    key=(
+                        "ierw_review_evidence::"
+                        f"{dashboard_issue.issue_analysis_id}::"
+                        f"{element.element_id}::{field_name}::{ordinal}"
+                    ),
+                ):
+                    st.session_state["m6_evidence_query"] = evidence_key
+                    st.session_state["m6_evidence_issue_ids"] = [dashboard_issue.issue_analysis_id]
+                    st.session_state["m6_workspace_view"] = "evidence"
+                    st.rerun()
+
+
+def _review_dashboard_issue(
+    evidential_dashboard: LegalIssueDashboard | None,
+    selected_issue_id: str,
+):
+    if evidential_dashboard is None:
+        return None
+    matches = tuple(
+        issue for issue in evidential_dashboard.issues
+        if issue.issue_analysis_id == selected_issue_id
+    )
+    if len(matches) != 1:
+        raise WorkspaceIndexError(
+            "Issue Review could not bind the selected report issue to exactly one "
+            "governed evidential-position issue."
+        )
+    return matches[0]
+
+
+def _render_issue_review(
+    index: WorkspaceIndex,
+    evidential_dashboard: LegalIssueDashboard | None = None,
+) -> None:
+    """Compose one issue-centric review from separately governed projections."""
 
     st.header("Issue Review")
     st.caption(
-        "Read-only review of the validated frozen report projection. "
+        "Read-only review of the validated frozen report projection and, when available, "
+        "the separately bound governed evidential-position projection. "
         "This view creates no analytical state and performs no retrieval."
     )
 
@@ -438,6 +504,12 @@ def _render_issue_review(index: WorkspaceIndex) -> None:
     _text("Issue summary", issue.issue_summary)
     _status("Position status", issue.position_status)
     _status("Position confidence", issue.confidence)
+
+    dashboard_issue = _review_dashboard_issue(evidential_dashboard, selected_issue_id)
+    if dashboard_issue is None:
+        st.info("No governed evidential-position projection is available for this issue.")
+    else:
+        _render_evidential_position(dashboard_issue)
 
     if st.button("Open issue in Exact Traceability", key="ierw_review_open_issue_trace"):
         st.session_state["m6_trace_kind"] = "issue"
@@ -773,6 +845,8 @@ def _render_comparison(index: WorkspaceIndex) -> None:
 def show_workspace(
     active_case_id: str | None,
     projection: CaseReportProjection | None,
+    *,
+    evidential_dashboard: LegalIssueDashboard | None = None,
 ) -> None:
     """Render the deterministic read-only M6 workspace for the active case."""
 
@@ -787,6 +861,13 @@ def show_workspace(
         if projection.case_header.case_id != active_case_id:
             raise WorkspaceIndexError("Cross-case projection is not permitted.")
         index = build_workspace_index(projection)
+        if evidential_dashboard is not None:
+            if evidential_dashboard.case_id != active_case_id:
+                raise WorkspaceIndexError("Cross-case evidential-position projection is not permitted.")
+            report_issue_ids = tuple(key.primary_id for key in index.issue_keys)
+            dashboard_issue_ids = tuple(issue.issue_analysis_id for issue in evidential_dashboard.issues)
+            if dashboard_issue_ids != report_issue_ids:
+                raise WorkspaceIndexError("Report and evidential-position issue identities or order differ.")
     except (ValueError, WorkspaceIndexError):
         st.error(_INVALID_WORKSPACE_TEXT)
         return
@@ -806,14 +887,16 @@ def show_workspace(
         key="m6_workspace_view",
         format_func=lambda value: _VIEW_LABELS[value],
     )
-    {
-        "review": _render_issue_review,
-        "traceability": _render_traceability,
-        "evidence": _render_evidence,
-        "chronology": _render_chronology,
-        "people": _render_people,
-        "comparison": _render_comparison,
-    }[view](index)
+    if view == "review":
+        _render_issue_review(index, evidential_dashboard)
+    else:
+        {
+            "traceability": _render_traceability,
+            "evidence": _render_evidence,
+            "chronology": _render_chronology,
+            "people": _render_people,
+            "comparison": _render_comparison,
+        }[view](index)
 
 
 __all__ = ["show_workspace", "synchronise_workspace_session_state"]

@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from governed_analytical_authority.models import GovernedRuntimeAnalyticalAuthority
 
 
-DASHBOARD_SCHEMA_VERSION = "legal-issue-dashboard/1.1"
+DASHBOARD_SCHEMA_VERSION = "legal-issue-dashboard/1.2"
 _ALLOWED_ROLES = ("supporting", "adverse", "corroborative", "neutral", "conflicting")
 _ALLOWED_CONFIDENCE = ("high", "medium", "low")
 
@@ -118,6 +118,11 @@ class DashboardElement:
     evidential_gaps: tuple[DashboardGap, ...]
     provisional_analysis: str
     evidence_counts: DashboardEvidenceCounts
+    supporting_evidence_keys: tuple[str, ...] = ()
+    adverse_evidence_keys: tuple[str, ...] = ()
+    corroborative_evidence_keys: tuple[str, ...] = ()
+    neutral_evidence_keys: tuple[str, ...] = ()
+    conflicting_evidence_keys: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -413,6 +418,11 @@ def _build_issue(result: Any, matrix_issue: Any, *, case_id: str) -> DashboardIs
                     field_name="provisional_analysis",
                 ),
                 evidence_counts=_evidence_counts_from_buckets(matrix_buckets),
+                supporting_evidence_keys=matrix_buckets["supporting"],
+                adverse_evidence_keys=matrix_buckets["adverse"],
+                corroborative_evidence_keys=matrix_buckets["corroborative"],
+                neutral_evidence_keys=matrix_buckets["neutral"],
+                conflicting_evidence_keys=matrix_buckets["conflicting"],
             )
         )
 
