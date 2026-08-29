@@ -117,7 +117,7 @@ elif st.session_state.get("ppr3_legal_issue_dashboard_view", False):
 elif st.session_state.get("m7_source_evidence_view", False):
     show_source_evidence(active_case_id, report_projection)
 elif st.session_state.get("m6_workspace_view") in {
-    "traceability", "evidence", "chronology", "people", "comparison"
+    "review", "traceability", "evidence", "chronology", "people", "comparison"
 }:
     show_workspace(active_case_id, report_projection)
 elif st.session_state.get("m55_main_view", "assistant") == "finance":

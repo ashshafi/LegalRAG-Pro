@@ -253,3 +253,28 @@ def test_requirements_and_frozen_semantic_reporting_boundaries_remain_governed()
         if line.strip()
     }
     assert observed == allowed_eq4_legal_analysis
+
+def test_ierw_issue_review_is_an_m6_projection_only_view():
+    app = APP.read_text(encoding="utf-8")
+    workspace = WORKSPACE.read_text(encoding="utf-8")
+
+    route = app.index('elif st.session_state.get("m6_workspace_view")')
+    show = app.index("show_workspace(active_case_id, report_projection)", route)
+    reports = app.index('elif st.session_state.get("m55_main_view", "assistant") == "reports"')
+    assert route < show < reports
+    assert '"review", "traceability", "evidence", "chronology", "people", "comparison"' in app
+
+    assert '"review": "Issue Review"' in workspace
+    assert '"review": _render_issue_review' in workspace
+    assert '"ierw_review_issue_id"' in workspace
+    assert 'st.session_state["m6_evidence_issue_ids"] = [selected_issue_id]' in workspace
+    assert 'st.session_state["m6_chronology_issue_ids"] = [selected_issue_id]' in workspace
+    assert 'st.session_state["m6_trace_kind"] = "issue"' in workspace
+
+    for prohibited in (
+        "route_question_to_active_authority",
+        "build_runtime_authority_context",
+        "ask_with_reference_findings",
+        "resolve_projection_citation_source",
+    ):
+        assert prohibited not in workspace

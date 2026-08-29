@@ -33,6 +33,7 @@ _VIEW_LABELS = {
     "chronology": "Frozen Chronology",
     "people": "People / Participants Explorer",
     "comparison": "Projection Evidence-Use Comparison",
+    "review": "Issue Review",
 }
 _VIEW_ORDER = tuple(_VIEW_LABELS)
 _TRACE_LABELS = {
@@ -363,6 +364,111 @@ def _render_traceability(index: WorkspaceIndex) -> None:
             st.session_state["m6_trace_selected_key"] = backlink.source
             st.rerun()
 
+
+
+def _review_open_traceability(label: str, key: WorkspaceObjectKey, *, token: str) -> None:
+    """Navigate to one already-indexed frozen object without changing analytical state."""
+
+    if st.button(label, key=f"ierw_review_trace::{token}::{key.kind}::{key.primary_id}"):
+        st.session_state["m6_trace_kind"] = key.kind
+        st.session_state["m6_trace_selected_key"] = key
+        st.session_state["m6_workspace_view"] = "traceability"
+        st.rerun()
+
+
+def _render_review_collection(
+    index: WorkspaceIndex,
+    heading: str,
+    kind: str,
+    primary_ids: tuple[str, ...],
+) -> None:
+    """Render exact frozen objects and offer only existing traceability navigation."""
+
+    st.subheader(heading)
+    if not primary_ids:
+        st.text(_EMPTY_FROZEN_TEXT)
+        return
+
+    for ordinal, primary_id in enumerate(primary_ids, start=1):
+        key = WorkspaceObjectKey(kind, primary_id)
+        value = index.object_by_key.get(key)
+        if value is None:
+            raise WorkspaceIndexError(
+                f"Issue Review references an unknown frozen {kind} object: {primary_id!r}."
+            )
+        st.text(_format_key(key))
+        _render_scalar_fields(value)
+        _review_open_traceability(
+            f"Open in Exact Traceability · {_format_key(key)}",
+            key,
+            token=f"{heading}:{ordinal}",
+        )
+
+
+def _render_issue_review(index: WorkspaceIndex) -> None:
+    """Compose one issue-centric read-only review from the frozen workspace index."""
+
+    st.header("Issue Review")
+    st.caption(
+        "Read-only review of the validated frozen report projection. "
+        "This view creates no analytical state and performs no retrieval."
+    )
+
+    issue_ids = tuple(key.primary_id for key in index.issue_keys)
+    if not issue_ids:
+        st.info("No frozen legal issues are available in this report projection.")
+        st.session_state["ierw_review_issue_id"] = None
+        return
+
+    selected_issue_id = st.session_state.get("ierw_review_issue_id")
+    if selected_issue_id not in issue_ids:
+        st.session_state["ierw_review_issue_id"] = issue_ids[0]
+
+    selected_issue_id = st.selectbox(
+        "Frozen issue",
+        options=issue_ids,
+        key="ierw_review_issue_id",
+        format_func=lambda value: index.issues_by_id[value].issue_name,
+    )
+    issue = index.issues_by_id[selected_issue_id]
+    issue_key = WorkspaceObjectKey("issue", selected_issue_id)
+
+    st.subheader(issue.issue_name)
+    _text("Issue analysis ID", issue.issue_analysis_id)
+    _text("Issue summary", issue.issue_summary)
+    _status("Position status", issue.position_status)
+    _status("Position confidence", issue.confidence)
+
+    if st.button("Open issue in Exact Traceability", key="ierw_review_open_issue_trace"):
+        st.session_state["m6_trace_kind"] = "issue"
+        st.session_state["m6_trace_selected_key"] = issue_key
+        st.session_state["m6_workspace_view"] = "traceability"
+        st.rerun()
+
+    if st.button("Review issue evidence", key="ierw_review_open_issue_evidence"):
+        st.session_state["m6_evidence_issue_ids"] = [selected_issue_id]
+        st.session_state["m6_workspace_view"] = "evidence"
+        st.rerun()
+
+    if st.button("Review issue chronology", key="ierw_review_open_issue_chronology"):
+        st.session_state["m6_chronology_issue_ids"] = [selected_issue_id]
+        st.session_state["m6_workspace_view"] = "chronology"
+        st.rerun()
+
+    direct_ids = tuple(finding.finding_id for finding in issue.direct_findings)
+    higher_ids = tuple(finding.finding_id for finding in issue.higher_order_findings)
+    question_ids = tuple(
+        key.primary_id
+        for key in index.question_keys
+        if selected_issue_id in index.questions_by_id[key.primary_id].affected_issue_ids
+    )
+
+    _render_review_collection(index, "Direct Findings", "finding", direct_ids)
+    _render_review_collection(index, "Higher-Order Findings", "finding", higher_ids)
+    _render_review_collection(index, "Conflicts", "conflict", tuple(issue.conflict_ids))
+    _render_review_collection(index, "Evidence Gaps", "gap", tuple(issue.gap_ids))
+    _render_review_collection(index, "Risk Areas", "risk", tuple(issue.risk_ids))
+    _render_review_collection(index, "Priority Questions", "question", question_ids)
 
 def _citation_search_values(value) -> tuple[object, ...]:
     return (
@@ -701,6 +807,7 @@ def show_workspace(
         format_func=lambda value: _VIEW_LABELS[value],
     )
     {
+        "review": _render_issue_review,
         "traceability": _render_traceability,
         "evidence": _render_evidence,
         "chronology": _render_chronology,

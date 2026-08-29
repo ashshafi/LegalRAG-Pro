@@ -193,3 +193,76 @@ def test_comparison_and_people_qualifications_are_non_analytical():
     assert "It does not perform a full-text or merits comparison of the underlying documents." in text
     for prohibited in ("stronger document", "weaker document", "win probability", "recommended evidence"):
         assert prohibited not in text
+
+def _review_status(raw: str, label: str):
+    return NS(raw_value=raw, label=label, explanation="frozen", qualification_code=None)
+
+
+def _review_index():
+    issue = NS(
+        issue_analysis_id="issue-1",
+        issue_name="Reasonable adjustments",
+        issue_summary="Frozen issue summary",
+        position_status=_review_status("well_supported", "Well supported"),
+        confidence=_review_status("high", "High"),
+        direct_findings=(),
+        higher_order_findings=(),
+        conflict_ids=(),
+        gap_ids=(),
+        risk_ids=(),
+    )
+    issue_key = workspace.WorkspaceObjectKey("issue", "issue-1")
+    return NS(
+        issue_keys=(issue_key,),
+        issues_by_id={"issue-1": issue},
+        findings_by_id={},
+        conflicts_by_id={},
+        gaps_by_id={},
+        risks_by_id={},
+        questions_by_id={},
+        question_keys=(),
+        object_by_key={issue_key: issue},
+        outgoing={issue_key: ()},
+        backlinks={issue_key: ()},
+        unresolved_priority_element_ids={},
+    )
+
+
+def test_issue_review_is_projection_only_and_routes_to_existing_evidence_view(monkeypatch):
+    fake = _FakeStreamlit(buttons={"Review issue evidence"})
+    fake.session_state["m6_workspace_view"] = "review"
+    monkeypatch.setattr(workspace, "st", fake)
+
+    with pytest.raises(RuntimeError, match="rerun"):
+        workspace._render_issue_review(_review_index())
+
+    assert fake.session_state["ierw_review_issue_id"] == "issue-1"
+    assert fake.session_state["m6_evidence_issue_ids"] == ["issue-1"]
+    assert fake.session_state["m6_workspace_view"] == "evidence"
+    assert fake.header_calls == ["Issue Review"]
+    assert any("Reasonable adjustments" in value for value in fake.subheader_calls)
+
+
+def test_issue_review_routes_to_existing_traceability_without_new_authority(monkeypatch):
+    fake = _FakeStreamlit(buttons={"Open issue in Exact Traceability"})
+    fake.session_state["m6_workspace_view"] = "review"
+    monkeypatch.setattr(workspace, "st", fake)
+
+    with pytest.raises(RuntimeError, match="rerun"):
+        workspace._render_issue_review(_review_index())
+
+    assert fake.session_state["m6_trace_kind"] == "issue"
+    assert fake.session_state["m6_trace_selected_key"] == workspace.WorkspaceObjectKey("issue", "issue-1")
+    assert fake.session_state["m6_workspace_view"] == "traceability"
+
+
+def test_issue_review_routes_to_existing_frozen_chronology(monkeypatch):
+    fake = _FakeStreamlit(buttons={"Review issue chronology"})
+    fake.session_state["m6_workspace_view"] = "review"
+    monkeypatch.setattr(workspace, "st", fake)
+
+    with pytest.raises(RuntimeError, match="rerun"):
+        workspace._render_issue_review(_review_index())
+
+    assert fake.session_state["m6_chronology_issue_ids"] == ["issue-1"]
+    assert fake.session_state["m6_workspace_view"] == "chronology"
