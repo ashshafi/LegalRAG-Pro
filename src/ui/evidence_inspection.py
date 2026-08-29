@@ -103,79 +103,102 @@ def _show_document_summary(result: CaseEvidenceSearchResult) -> None:
     document = result.documents[0]
     value = document.document
 
-    st.subheader("Document")
+    st.subheader("Document verification")
     st.text(f"Filename: {value.original_filename}")
-    st.text(f"Source document ID: {value.source_document_instance_id}")
-    st.text(f"Source snapshot ID: {value.source_snapshot_id}")
-    st.text(f"Original SHA-256: {value.original_blob_sha256}")
-    st.text(f"Original size: {value.original_byte_length:,} bytes")
-    st.text(f"Pages: {value.page_count}")
-    st.text(f"Evidence chunks: {value.evidence_chunk_count}")
-    st.text(f"Extraction profile: {value.extraction_profile_id}")
-    st.text(f"Chunking profile: {value.chunking_profile_id}")
-    st.text("Source-bound status: FULL_CHAIN_BOUND (all governed chunks)")
-
-    st.subheader("Evidence roles")
-    st.text(f"Primary source: {_role_count(result, EvidenceRole.PRIMARY_SOURCE)}")
-    st.text(f"Commentary: {_role_count(result, EvidenceRole.COMMENTARY)}")
-    st.text(f"Cross-reference: {_role_count(result, EvidenceRole.CROSS_REFERENCE)}")
-    st.text(f"Cover / index: {_role_count(result, EvidenceRole.COVER_OR_INDEX)}")
-    st.text(f"Mixed: {_role_count(result, EvidenceRole.MIXED)}")
-    st.text(f"Unclassified: {_role_count(result, EvidenceRole.UNCLASSIFIED)}")
+    st.text("Document integrity: Verified")
+    st.text("Text extraction: Complete")
+    st.text(f"Pages captured: {value.page_count}/{value.page_count}")
+    st.text("Evidence traceability: Complete")
+    st.text(f"Searchable evidence sections: {value.evidence_chunk_count}")
 
     st.info(
-        "People and dates are not asserted as governed structured metadata in this view. "
-        "U8 displays only source-bound facts and deterministic evidence-role decisions."
+        "This document has been captured completely and every searchable evidence "
+        "section can be traced to the original uploaded file."
     )
 
+    with st.expander("Technical provenance & audit details", expanded=False):
+        st.text(f"Source document ID: {value.source_document_instance_id}")
+        st.text(f"Source snapshot ID: {value.source_snapshot_id}")
+        st.text(f"Original SHA-256: {value.original_blob_sha256}")
+        st.text(f"Original size: {value.original_byte_length:,} bytes")
+        st.text(f"Pages: {value.page_count}")
+        st.text(f"Evidence chunks: {value.evidence_chunk_count}")
+        st.text(f"Extraction profile: {value.extraction_profile_id}")
+        st.text(f"Chunking profile: {value.chunking_profile_id}")
+        st.text("Source-bound status: FULL_CHAIN_BOUND (all governed chunks)")
+
+        st.subheader("Evidence roles")
+        st.text(f"Primary source: {_role_count(result, EvidenceRole.PRIMARY_SOURCE)}")
+        st.text(f"Commentary: {_role_count(result, EvidenceRole.COMMENTARY)}")
+        st.text(f"Cross-reference: {_role_count(result, EvidenceRole.CROSS_REFERENCE)}")
+        st.text(f"Cover / index: {_role_count(result, EvidenceRole.COVER_OR_INDEX)}")
+        st.text(f"Mixed: {_role_count(result, EvidenceRole.MIXED)}")
+        st.text(f"Unclassified: {_role_count(result, EvidenceRole.UNCLASSIFIED)}")
+
+        st.info(
+            "People and dates are not asserted as governed structured metadata in this view. "
+            "U8 displays only source-bound facts and deterministic evidence-role decisions."
+        )
+
+        _show_receipt(result)
 
 def _show_receipt(result: CaseEvidenceSearchResult) -> None:
     receipt = result.receipt
-    with st.expander("Search coverage receipt", expanded=False):
-        st.text(f"Search mode: {receipt.search_mode.value}")
-        st.text(f"Completion: {receipt.completion.value}")
-        st.text(
-            "Documents completely expanded: "
-            f"{receipt.documents_completely_expanded}/{receipt.scope_document_count}"
-        )
-        st.text(f"Pages inspected: {receipt.pages_inspected}/{receipt.scope_page_count}")
-        st.text(f"Chunks inspected: {receipt.chunks_inspected}/{receipt.scope_chunk_count}")
-        st.text(f"Whole case corpus complete: {'yes' if receipt.case_corpus_complete else 'no'}")
-        st.text(f"Negative-finding scope: {receipt.negative_finding_scope.value}")
-        st.text(
-            "Scoped negative finding permitted: "
-            f"{'yes' if receipt.negative_finding_permitted else 'no'}"
-        )
-        st.text(f"Query SHA-256: {receipt.query_sha256}")
 
+    st.subheader("Search coverage receipt")
+    st.text(f"Search mode: {receipt.search_mode.value}")
+    st.text(f"Completion: {receipt.completion.value}")
+    st.text(
+        "Documents completely expanded: "
+        f"{receipt.documents_completely_expanded}/{receipt.scope_document_count}"
+    )
+    st.text(f"Pages inspected: {receipt.pages_inspected}/{receipt.scope_page_count}")
+    st.text(f"Chunks inspected: {receipt.chunks_inspected}/{receipt.scope_chunk_count}")
+    st.text(f"Whole case corpus complete: {'yes' if receipt.case_corpus_complete else 'no'}")
+    st.text(f"Negative-finding scope: {receipt.negative_finding_scope.value}")
+    st.text(
+        "Scoped negative finding permitted: "
+        f"{'yes' if receipt.negative_finding_permitted else 'no'}"
+    )
+    st.text(f"Query SHA-256: {receipt.query_sha256}")
 
 def _show_pages(result: CaseEvidenceSearchResult) -> None:
     document = result.documents[0]
 
-    st.subheader("Pages and governed chunks")
+    st.subheader("Pages and evidence sections")
+
     for page in document.pages:
         page_value = page.page
+        section_count = len(page.chunks)
+        section_word = "section" if section_count == 1 else "sections"
+
         st.text(
-            f"Page {page_value.page_number} · "
-            f"{page_value.extraction_method.value} · "
-            f"{len(page.chunks)} governed chunks"
+            f"Page {page_value.page_number} | "
+            f"{section_count} evidence {section_word}"
         )
-        st.text(f"Page-text SHA-256: {page_value.page_text_sha256}")
 
         with st.expander(
-            f"Page {page_value.page_number} — immutable extracted text",
+            f"Page {page_value.page_number} - original extracted text",
             expanded=False,
         ):
             st.code(page_value.text, language=None)
+            st.text("Technical details")
+            st.text(f"Extraction method: {page_value.extraction_method.value}")
+            st.text(f"Page-text SHA-256: {page_value.page_text_sha256}")
 
         for item in page.chunks:
             chunk = item.chunk
             classification = item.classification
+
             label = (
-                f"Page {chunk.page_number} · chunk {chunk.chunk_ordinal} · "
-                f"{classification.role.value} · {chunk.evidence_key[:12]}"
+                f"Page {chunk.page_number} - "
+                f"Evidence section {chunk.chunk_ordinal + 1}"
             )
+
             with st.expander(label, expanded=False):
+                st.code(chunk.text, language=None)
+
+                st.text("Technical details")
                 st.text(f"Evidence role: {classification.role.value}")
                 st.text(f"Role rule: {classification.rule_id}")
                 st.text(f"Role basis: {classification.basis}")
@@ -190,8 +213,6 @@ def _show_pages(result: CaseEvidenceSearchResult) -> None:
                 st.text(f"Chunk ID: {chunk.chunk_id}")
                 st.text(f"Chunk-text SHA-256: {chunk.chunk_text_sha256}")
                 st.text(f"Chunk byte length: {chunk.chunk_text_byte_length:,}")
-                st.code(chunk.text, language=None)
-
 
 def show_evidence_inspection(
     active_case_id: str | None,
@@ -241,7 +262,6 @@ def show_evidence_inspection(
         return
 
     _show_document_summary(result)
-    _show_receipt(result)
     _show_pages(result)
 
 

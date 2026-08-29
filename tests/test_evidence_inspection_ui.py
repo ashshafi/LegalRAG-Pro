@@ -295,6 +295,23 @@ def test_inspection_calls_exact_document_complete_boundary_and_renders_full_chai
     assert fake.titles == ["🔬 Document Evidence Inspection"]
     rendered = "\n".join(fake.texts)
     assert "Filename: Appendix H5.pdf" in rendered
+    assert "Document integrity: Verified" in rendered
+    assert "Text extraction: Complete" in rendered
+    assert "Pages captured: 1/1" in rendered
+    assert "Evidence traceability: Complete" in rendered
+    assert "Searchable evidence sections: 1" in rendered
+    assert "Page 1 | 1 evidence section" in rendered
+    assert ("Technical provenance & audit details", False) in fake.expanders
+    assert "Pages and evidence sections" in fake.subheaders
+    assert "Search coverage receipt" in fake.subheaders
+    assert ("Search coverage receipt", False) not in fake.expanders
+    assert ("Page 1 - original extracted text", False) in fake.expanders
+    assert ("Page 1 - Evidence section 1", False) in fake.expanders
+    assert any(
+        "captured completely" in text
+        and "traced to the original uploaded file" in text
+        for text in fake.infos
+    )
     assert f"Source document ID: {DOCUMENT_ID}" in rendered
     assert "Pages: 1" in rendered
     assert "Evidence chunks: 1" in rendered
