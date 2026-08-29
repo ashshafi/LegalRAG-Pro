@@ -28,6 +28,7 @@ class FakeSidebar:
     def checkbox(self, *args, **kwargs): return True
     def file_uploader(self, *args, **kwargs): return None
     def button(self, label, **kwargs): return self.buttons.get(label, False)
+    def expander(self, *args, **kwargs): return self
 
     def __enter__(self): return self
     def __exit__(self, *args): return False
@@ -44,6 +45,8 @@ class FakeStreamlit:
     def caption(self, *args, **kwargs): self.calls.append(("caption", args))
     def info(self, *args, **kwargs): self.calls.append(("info", args))
     def error(self, *args, **kwargs): self.calls.append(("error", args))
+    def file_uploader(self, *args, **kwargs): return None
+    def checkbox(self, *args, **kwargs): return False
     def text(self, *args, **kwargs): self.calls.append(("text", args))
     def code(self, body, **kwargs): self.calls.append(("code", body, kwargs))
     def download_button(self, label, **kwargs): self.calls.append(("download", label, kwargs)); return False
