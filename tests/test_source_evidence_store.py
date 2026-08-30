@@ -592,5 +592,9 @@ def test_frozen_m1_core_hashes_are_unchanged() -> None:
 def test_gitignore_contains_only_approved_source_store_rule_at_end() -> None:
     gitignore = (Path(__file__).resolve().parents[1] / ".gitignore").read_text(encoding="utf-8")
     assert gitignore.endswith(
-        "docs/*.pdf\n# Immutable source evidence store\nsource_evidence_store/\n"
+        "docs/*.pdf\n"
+        "# Immutable source evidence store\n"
+        "source_evidence_store/\n"
+        "# Immutable derived transcription store\n"
+        "derived_transcription_store/\n"
     )

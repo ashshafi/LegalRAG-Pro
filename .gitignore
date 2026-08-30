@@ -37,3 +37,5 @@ data/
 docs/*.pdf
 # Immutable source evidence store
 source_evidence_store/
+# Immutable derived transcription store
+derived_transcription_store/
