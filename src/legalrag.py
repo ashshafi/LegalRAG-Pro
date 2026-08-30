@@ -116,6 +116,26 @@ def ask(
             enriched_results=results,
         )
 
+        # Supplementary derived-transcription candidates remain
+        # candidate_discovery_only and never become FULL_CHAIN evidence.
+        try:
+            from derived_transcription_answer_context import (
+                augment_governed_answer_prompt_with_derived_candidates,
+            )
+
+            base_prompt = (
+                augment_governed_answer_prompt_with_derived_candidates(
+                    base_prompt=base_prompt,
+                    question=question,
+                    case_id=case_id,
+                )
+            )
+        except Exception:
+            LOGGER.exception(
+                "Derived transcription candidate discovery failed for case %s.",
+                case_id,
+            )
+
         # B15 is deliberately lazy-imported inside the case-scoped branch so the
         # legacy/no-case path does not acquire new analytical runtime dependencies.
         from governed_analytical_authority.provider import (
