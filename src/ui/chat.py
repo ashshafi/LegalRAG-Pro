@@ -323,7 +323,7 @@ def show_chat(
 
     _show_conversation_history(active_case_id)
 
-    question = st.text_input(
+    question = st.text_area(
         "Ask a legal question",
         key=_QUESTION_INPUT_KEY,
     )
