@@ -597,4 +597,84 @@ def test_gitignore_contains_only_approved_source_store_rule_at_end() -> None:
         "source_evidence_store/\n"
         "# Immutable derived transcription store\n"
         "derived_transcription_store/\n"
+        "# Derived transcription search runtime persistence\n"
+        "/derived_transcription_search_index/\n"
     )
+
+
+def test_derived_transcription_search_index_is_ignored_without_hiding_activation_code() -> None:
+    import subprocess
+
+    root = Path(__file__).resolve().parents[1]
+
+    def ignore_result(relative_path: str):
+        return subprocess.run(
+            [
+                "git",
+                "check-ignore",
+                "-q",
+                "--no-index",
+                "--",
+                relative_path,
+            ],
+            cwd=root,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+
+    gitignore = (root / ".gitignore").read_text(
+        encoding="utf-8",
+    )
+
+    assert gitignore.count(
+        "/derived_transcription_search_index/"
+    ) == 1
+
+    for relative_path in (
+        "derived_transcription_search_index/v1/.governance-probe",
+        "derived_transcription_search_index/v1/chroma.sqlite3",
+        "derived_transcription_search_index/v1/collections/derived_transcriptions_v1/.governance-probe",
+    ):
+        result = ignore_result(relative_path)
+
+        assert result.returncode == 0, (
+            relative_path,
+            result.returncode,
+            result.stderr,
+        )
+
+    existing_derived = ignore_result(
+        "derived_transcription_store/v1/.governance-probe"
+    )
+
+    assert existing_derived.returncode == 0, (
+        existing_derived.returncode,
+        existing_derived.stderr,
+    )
+
+    existing_source = ignore_result(
+        "source_evidence_store/v1/.governance-probe"
+    )
+
+    assert existing_source.returncode == 0, (
+        existing_source.returncode,
+        existing_source.stderr,
+    )
+
+    for relative_path in (
+        "src/derived_transcription_search_activation/__init__.py",
+        "src/derived_transcription_search_activation/models.py",
+        "src/derived_transcription_search_activation/embedding.py",
+        "src/derived_transcription_search_activation/chroma_adapter.py",
+        "src/derived_transcription_search_activation/service.py",
+        "tests/test_derived_transcription_search_activation.py",
+    ):
+        result = ignore_result(relative_path)
+
+        assert result.returncode == 1, (
+            relative_path,
+            result.returncode,
+            result.stderr,
+        )

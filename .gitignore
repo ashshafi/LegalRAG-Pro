@@ -39,3 +39,5 @@ docs/*.pdf
 source_evidence_store/
 # Immutable derived transcription store
 derived_transcription_store/
+# Derived transcription search runtime persistence
+/derived_transcription_search_index/
