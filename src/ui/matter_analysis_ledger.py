@@ -21,6 +21,8 @@ from matter_analysis_ledger import (
 
 
 
+MAL1_REVIEW_CLARITY_VERSION = "matter-analysis-ledger-review-clarity/1.0"
+
 EVIDENCE_SELECTOR_PRESENTATION_VERSION = (
     "matter-analysis-ledger-evidence-selector/1.1"
 )
@@ -999,27 +1001,41 @@ def _show_selected_evidence(
 
 
 def _evidence_list(
-    label: str,
-    values: tuple[str, ...],
-) -> None:
-
-    st.markdown(
-        f"**{label} - {len(values)}**"
+    label,
+    values,
+):
+    items = tuple(
+        values
     )
 
-    if values:
+    if not items:
+
+        st.caption(
+            f"{label}: none recorded."
+        )
+
+        return
+
+    with st.expander(
+        f"{label} - {len(items)} technical evidence keys",
+        expanded=False,
+    ):
+
+        st.caption(
+            "Technical evidence identifiers only. "
+            "Use the relationship review evidence display "
+            "for document, page, provenance and verified text."
+        )
+
         st.code(
             "\n".join(
-                values
+                str(item)
+                for item in items
             ),
             language=None,
         )
 
-    else:
-        st.caption(
-            "None recorded in the "
-            "governed analytical matrix."
-        )
+
 
 
 def show_matter_analysis_ledger(
@@ -1320,11 +1336,30 @@ def show_matter_analysis_ledger(
                                 + relationship.state.value
                             )
 
-                            st.code(
-                                relationship.left_evidence_key
-                                + "\n<->\n"
-                                + relationship.right_evidence_key,
-                                language=None,
+                            st.markdown(
+                                "**Evidence A**"
+                            )
+
+                            _show_selected_evidence(
+                                "Evidence A",
+                                relationship.left_evidence_key,
+                                evidence_display_index,
+                                role_index,
+                            )
+
+                            st.markdown(
+                                "**Evidence B**"
+                            )
+
+                            _show_selected_evidence(
+                                "Evidence B",
+                                relationship.right_evidence_key,
+                                evidence_display_index,
+                                role_index,
+                            )
+
+                            st.markdown(
+                                "**Reason for proposed relationship**"
                             )
 
                             st.write(
@@ -1353,9 +1388,15 @@ def show_matter_analysis_ledger(
                                 is RelationshipReviewState.PROPOSED
                             ):
 
+                                st.warning(
+                                    "PENDING RELATIONSHIP REVIEW - "
+                                    "choose APPROVE or REJECT below. "
+                                    "The decision is append-only."
+                                )
+
                                 review_note = (
                                     st.text_area(
-                                        "Optional review note",
+                                        "Optional reviewer note for this relationship",
                                         key=(
                                             "mal_review_note_"
                                             + relationship.relationship_id
@@ -1371,7 +1412,7 @@ def show_matter_analysis_ledger(
                                 )
 
                                 if approve.button(
-                                    "Approve",
+                                    "APPROVE THIS RELATIONSHIP",
                                     key=(
                                         "mal_approve_"
                                         + relationship.relationship_id
@@ -1406,7 +1447,7 @@ def show_matter_analysis_ledger(
                                         st.rerun()
 
                                 if reject.button(
-                                    "Reject",
+                                    "REJECT THIS RELATIONSHIP",
                                     key=(
                                         "mal_reject_"
                                         + relationship.relationship_id
@@ -1451,7 +1492,24 @@ def show_matter_analysis_ledger(
                 # NEW PROPOSAL
                 # ----------------------------------------------------------
 
-                if len(evidence_options) >= 2:
+                pending_relationships = tuple(
+                    relationship
+                    for relationship in relationships
+                    if (
+                        relationship.state
+                        is RelationshipReviewState.PROPOSED
+                    )
+                )
+
+                if pending_relationships:
+
+                    st.info(
+                        "A relationship is awaiting review above. "
+                        "New proposal controls are hidden until "
+                        "that relationship is approved or rejected."
+                    )
+
+                elif len(evidence_options) >= 2:
 
                     form_key = (
                         "mal_proposal_"

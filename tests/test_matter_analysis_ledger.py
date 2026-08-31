@@ -692,3 +692,114 @@ def test_inconsistent_duplicate_governed_reference_fails_closed():
 
 
     assert "E-CONFLICT" not in index
+
+
+
+def test_pending_relationship_review_is_visually_prioritised():
+
+    source = open(
+        "src/ui/matter_analysis_ledger.py",
+        encoding="utf-8",
+    ).read()
+
+    assert (
+        'MAL1_REVIEW_CLARITY_VERSION = '
+        '"matter-analysis-ledger-review-clarity/1.0"'
+        in source
+    )
+
+    assert (
+        "PENDING RELATIONSHIP REVIEW"
+        in source
+    )
+
+    assert (
+        '"APPROVE THIS RELATIONSHIP"'
+        in source
+    )
+
+    assert (
+        '"REJECT THIS RELATIONSHIP"'
+        in source
+    )
+
+    assert (
+        "Optional reviewer note for this relationship"
+        in source
+    )
+
+
+def test_pending_relationship_hides_second_proposal_form():
+
+    source = open(
+        "src/ui/matter_analysis_ledger.py",
+        encoding="utf-8",
+    ).read()
+
+    assert (
+        "pending_relationships = tuple("
+        in source
+    )
+
+    assert (
+        "if pending_relationships:"
+        in source
+    )
+
+    assert (
+        "New proposal controls are hidden"
+        in source
+    )
+
+    assert (
+        "elif len(evidence_options) >= 2:"
+        in source
+    )
+
+
+def test_pending_relationship_uses_professional_evidence_display():
+
+    source = open(
+        "src/ui/matter_analysis_ledger.py",
+        encoding="utf-8",
+    ).read()
+
+    assert (
+        '_show_selected_evidence(\n'
+        '                                "Evidence A",'
+        in source
+    )
+
+    assert (
+        '_show_selected_evidence(\n'
+        '                                "Evidence B",'
+        in source
+    )
+
+    assert (
+        "**Reason for proposed relationship**"
+        in source
+    )
+
+
+def test_why_raw_evidence_keys_are_collapsed():
+
+    source = open(
+        "src/ui/matter_analysis_ledger.py",
+        encoding="utf-8",
+    ).read()
+
+    assert (
+        "technical evidence keys"
+        in source
+    )
+
+    assert (
+        "Technical evidence identifiers only."
+        in source
+    )
+
+    assert (
+        "expanded=False"
+        in source
+    )
