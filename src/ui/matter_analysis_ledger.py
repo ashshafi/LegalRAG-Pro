@@ -22,6 +22,7 @@ from matter_analysis_ledger import (
 
 
 MAL1_REVIEW_CLARITY_VERSION = "matter-analysis-ledger-review-clarity/1.0"
+MAL1_ROLE_AWARE_SELECTOR_VERSION = "matter-analysis-ledger-role-aware-selector/1.0"
 
 EVIDENCE_SELECTOR_PRESENTATION_VERSION = (
     "matter-analysis-ledger-evidence-selector/1.1"
@@ -1511,42 +1512,203 @@ def show_matter_analysis_ledger(
 
                 elif len(evidence_options) >= 2:
 
-                    form_key = (
+                    proposal_key = (
                         "mal_proposal_"
                         + issue.issue_analysis_id
                         + "_"
                         + element.element_id
                     )
 
-                    with st.form(
-                        form_key
-                    ):
+                    st.markdown(
+                        "**Propose a contradiction "
+                        "or corroboration**"
+                    )
 
-                        st.markdown(
-                            "**Propose a contradiction "
-                            "or corroboration**"
+                    relationship_type = (
+                        st.selectbox(
+                            "Relationship",
+                            options=(
+                                RelationshipType.CONTRADICTS.value,
+                                RelationshipType.CORROBORATES.value,
+                            ),
+                            key=(
+                                proposal_key
+                                + "_relationship_type"
+                            ),
+                        )
+                    )
+
+                    role_evidence_options = {
+                        "SUPPORTING":
+                            tuple(
+                                element.supporting_evidence_keys
+                            ),
+
+                        "ADVERSE":
+                            tuple(
+                                element.adverse_evidence_keys
+                            ),
+
+                        "CORROBORATIVE":
+                            tuple(
+                                element.corroborative_evidence_keys
+                            ),
+
+                        "CONFLICTING":
+                            tuple(
+                                element.conflicting_evidence_keys
+                            ),
+
+                        "NEUTRAL/CONTEXT":
+                            tuple(
+                                element.neutral_evidence_keys
+                            ),
+                    }
+
+                    available_roles = tuple(
+                        role
+                        for role, keys
+                        in role_evidence_options.items()
+                        if keys
+                    )
+
+                    if len(
+                        available_roles
+                    ) < 1:
+
+                        st.warning(
+                            "No governed evidence roles "
+                            "are available for this element."
                         )
 
-                        relationship_type = (
+                        left = None
+                        right = None
+                        rationale = ""
+                        submitted = False
+
+                    else:
+
+                        preferred_left_role = (
+                            "SUPPORTING"
+                            if "SUPPORTING"
+                            in available_roles
+                            else available_roles[
+                                0
+                            ]
+                        )
+
+                        if (
+                            relationship_type
+                            == RelationshipType.CONTRADICTS.value
+                        ):
+
+                            preferred_right_role = (
+                                "CONFLICTING"
+                                if "CONFLICTING"
+                                in available_roles
+                                else (
+                                    "ADVERSE"
+                                    if "ADVERSE"
+                                    in available_roles
+                                    else available_roles[
+                                        0
+                                    ]
+                                )
+                            )
+
+                            st.caption(
+                                "For a contradiction, "
+                                "Evidence B defaults to "
+                                "CONFLICTING where governed "
+                                "conflicting evidence exists."
+                            )
+
+                        else:
+
+                            preferred_right_role = (
+                                "CORROBORATIVE"
+                                if "CORROBORATIVE"
+                                in available_roles
+                                else (
+                                    "SUPPORTING"
+                                    if "SUPPORTING"
+                                    in available_roles
+                                    else available_roles[
+                                        0
+                                    ]
+                                )
+                            )
+
+                            st.caption(
+                                "For corroboration, "
+                                "Evidence B defaults to "
+                                "CORROBORATIVE where governed "
+                                "corroborative evidence exists."
+                            )
+
+                        left_role = (
                             st.selectbox(
-                                "Relationship",
-                                options=(
-                                    RelationshipType.CONTRADICTS.value,
-                                    RelationshipType.CORROBORATES.value,
+                                "Evidence A role",
+                                available_roles,
+                                index=(
+                                    available_roles.index(
+                                        preferred_left_role
+                                    )
+                                ),
+                                format_func=lambda role: (
+                                    role
+                                    + " ("
+                                    + str(
+                                        len(
+                                            role_evidence_options[
+                                                role
+                                            ]
+                                        )
+                                    )
+                                    + ")"
+                                ),
+                                key=(
+                                    proposal_key
+                                    + "_left_role"
                                 ),
                             )
+                        )
+
+                        left_options = (
+                            role_evidence_options[
+                                left_role
+                            ]
+                        )
+
+                        st.caption(
+                            "Evidence A is filtered to "
+                            + left_role
+                            + " ("
+                            + str(
+                                len(
+                                    left_options
+                                )
+                            )
+                            + ")."
                         )
 
                         left = (
                             st.selectbox(
                                 "Evidence item A",
-                                evidence_options,
+                                left_options,
                                 format_func=lambda evidence_key: (
                                     _format_evidence_option(
                                         evidence_key,
                                         evidence_display_index,
-                                        role_index,
+                                        {
+                                            evidence_key:
+                                                left_role
+                                        },
                                     )
+                                ),
+                                key=(
+                                    proposal_key
+                                    + "_left_evidence"
                                 ),
                             )
                         )
@@ -1555,20 +1717,79 @@ def show_matter_analysis_ledger(
                             "Evidence item A",
                             left,
                             evidence_display_index,
-                            role_index,
+                            {
+                                left:
+                                    left_role
+                            },
+                        )
+
+                        right_role = (
+                            st.selectbox(
+                                "Evidence B role",
+                                available_roles,
+                                index=(
+                                    available_roles.index(
+                                        preferred_right_role
+                                    )
+                                ),
+                                format_func=lambda role: (
+                                    role
+                                    + " ("
+                                    + str(
+                                        len(
+                                            role_evidence_options[
+                                                role
+                                            ]
+                                        )
+                                    )
+                                    + ")"
+                                ),
+                                key=(
+                                    proposal_key
+                                    + "_right_role_"
+                                    + relationship_type
+                                ),
+                            )
+                        )
+
+                        right_options = (
+                            role_evidence_options[
+                                right_role
+                            ]
+                        )
+
+                        st.caption(
+                            "Evidence B is filtered to "
+                            + right_role
+                            + " ("
+                            + str(
+                                len(
+                                    right_options
+                                )
+                            )
+                            + ")."
                         )
 
                         right = (
                             st.selectbox(
                                 "Evidence item B",
-                                evidence_options,
-                                index=1,
+                                right_options,
                                 format_func=lambda evidence_key: (
                                     _format_evidence_option(
                                         evidence_key,
                                         evidence_display_index,
-                                        role_index,
+                                        {
+                                            evidence_key:
+                                                right_role
+                                        },
                                     )
+                                ),
+                                key=(
+                                    proposal_key
+                                    + "_right_evidence_"
+                                    + relationship_type
+                                    + "_"
+                                    + right_role
                                 ),
                             )
                         )
@@ -1577,19 +1798,31 @@ def show_matter_analysis_ledger(
                             "Evidence item B",
                             right,
                             evidence_display_index,
-                            role_index,
+                            {
+                                right:
+                                    right_role
+                            },
                         )
 
                         rationale = (
                             st.text_area(
                                 "Why are these evidence items related?",
                                 height=120,
+                                key=(
+                                    proposal_key
+                                    + "_rationale"
+                                ),
                             )
                         )
 
                         submitted = (
-                            st.form_submit_button(
-                                "Propose relationship"
+                            st.button(
+                                "PROPOSE RELATIONSHIP",
+                                key=(
+                                    proposal_key
+                                    + "_submit"
+                                ),
+                                use_container_width=True,
                             )
                         )
 

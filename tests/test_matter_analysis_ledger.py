@@ -803,3 +803,140 @@ def test_why_raw_evidence_keys_are_collapsed():
         "expanded=False"
         in source
     )
+
+
+
+def test_role_aware_selector_filters_from_element_role_fields():
+
+    source = open(
+        "src/ui/matter_analysis_ledger.py",
+        encoding="utf-8",
+    ).read()
+
+    assert (
+        'MAL1_ROLE_AWARE_SELECTOR_VERSION = '
+        '"matter-analysis-ledger-role-aware-selector/1.0"'
+        in source
+    )
+
+    assert (
+        '"SUPPORTING":\n'
+        '                            tuple(\n'
+        '                                element.supporting_evidence_keys'
+        in source
+    )
+
+    assert (
+        '"CONFLICTING":\n'
+        '                            tuple(\n'
+        '                                element.conflicting_evidence_keys'
+        in source
+    )
+
+    assert (
+        '"ADVERSE":\n'
+        '                            tuple(\n'
+        '                                element.adverse_evidence_keys'
+        in source
+    )
+
+    assert (
+        '"CORROBORATIVE":\n'
+        '                            tuple(\n'
+        '                                element.corroborative_evidence_keys'
+        in source
+    )
+
+
+def test_contradiction_defaults_evidence_b_to_conflicting_role():
+
+    source = open(
+        "src/ui/matter_analysis_ledger.py",
+        encoding="utf-8",
+    ).read()
+
+    assert (
+        'preferred_right_role = (\n'
+        '                                "CONFLICTING"'
+        in source
+    )
+
+    assert (
+        '"Evidence B role"'
+        in source
+    )
+
+    assert (
+        '"Evidence B is filtered to "'
+        in source
+    )
+
+
+def test_role_aware_proposal_is_dynamic_not_streamlit_form_bound():
+
+    source = open(
+        "src/ui/matter_analysis_ledger.py",
+        encoding="utf-8",
+    ).read()
+
+    proposal_start = source.index(
+        "proposal_key = ("
+    )
+
+    submit_end = source.index(
+        "if submitted:",
+        proposal_start,
+    )
+
+    proposal_source = source[
+        proposal_start:
+        submit_end
+    ]
+
+    assert (
+        "with st.form("
+        not in proposal_source
+    )
+
+    assert (
+        "st.form_submit_button("
+        not in proposal_source
+    )
+
+    assert (
+        'st.button(\n'
+        '                                "PROPOSE RELATIONSHIP"'
+        in proposal_source
+    )
+
+
+def test_role_selector_counts_and_preserves_multi_role_membership():
+
+    source = open(
+        "src/ui/matter_analysis_ledger.py",
+        encoding="utf-8",
+    ).read()
+
+    assert (
+        "role_evidence_options = {"
+        in source
+    )
+
+    assert (
+        "for role, keys\n"
+        "                        in role_evidence_options.items()"
+        in source
+    )
+
+    assert (
+        "role_evidence_options[\n"
+        "                                right_role"
+        in source
+    )
+
+    # The filtering source is the element's role-specific tuples,
+    # not a single inferred role assigned globally to the evidence key.
+    assert (
+        "element.conflicting_evidence_keys"
+        in source
+    )
