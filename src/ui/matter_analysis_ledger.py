@@ -24,6 +24,7 @@ from matter_analysis_ledger import (
 MAL1_REVIEW_CLARITY_VERSION = "matter-analysis-ledger-review-clarity/1.0"
 MAL1_ROLE_AWARE_SELECTOR_VERSION = "matter-analysis-ledger-role-aware-selector/1.0"
 MAL1_FOCUSED_WORKSPACE_VERSION = "matter-analysis-ledger-focused-workspace/1.0"
+MAL1_COMPACT_HISTORY_VERSION = "matter-analysis-ledger-compact-history/1.0"
 
 EVIDENCE_SELECTOR_PRESENTATION_VERSION = (
     "matter-analysis-ledger-evidence-selector/1.1"
@@ -1040,6 +1041,125 @@ def _evidence_list(
 
 
 
+
+def _show_terminal_relationship_summary(
+    relationship: Any,
+    evidence_display_index: Any,
+    role_index: Any,
+) -> None:
+    """Render an approved/rejected relationship compactly."""
+
+    state = relationship.state.value
+
+    relationship_name = {
+        RelationshipType.CONTRADICTS.value:
+            "CONTRADICTION",
+        RelationshipType.CORROBORATES.value:
+            "CORROBORATION",
+    }.get(
+        relationship.relationship_type.value,
+        relationship.relationship_type.value,
+    )
+
+    st.write(
+        "**"
+        + state
+        + " "
+        + relationship_name
+        + "**"
+    )
+
+    left_label = _format_evidence_option(
+        relationship.left_evidence_key,
+        evidence_display_index,
+        role_index,
+    )
+
+    right_label = _format_evidence_option(
+        relationship.right_evidence_key,
+        evidence_display_index,
+        role_index,
+    )
+
+    st.caption("Evidence A")
+    st.write(left_label)
+
+    st.caption("Evidence B")
+    st.write(right_label)
+
+    if (
+        relationship.state
+        is RelationshipReviewState.REJECTED
+        and relationship.review_note
+    ):
+        st.write(
+            "**Reason rejected**"
+        )
+        st.write(
+            relationship.review_note
+        )
+
+    elif relationship.review_note:
+        st.write(
+            "**Review note**"
+        )
+        st.write(
+            relationship.review_note
+        )
+
+    if relationship.created_at:
+        st.caption(
+            "Reviewed: "
+            + relationship.created_at[:10]
+        )
+
+    with st.expander(
+        "View evidence details",
+        expanded=False,
+    ):
+        _show_selected_evidence(
+            "Evidence A",
+            relationship.left_evidence_key,
+            evidence_display_index,
+            role_index,
+        )
+
+        _show_selected_evidence(
+            "Evidence B",
+            relationship.right_evidence_key,
+            evidence_display_index,
+            role_index,
+        )
+
+    with st.expander(
+        "View relationship record",
+        expanded=False,
+    ):
+        st.write(
+            "**Original proposal rationale**"
+        )
+        st.write(
+            relationship.proposal_rationale
+        )
+
+        st.caption(
+            "Recorded actor: "
+            + relationship.actor
+        )
+
+        st.caption(
+            "Recorded event time: "
+            + relationship.created_at
+        )
+
+        st.code(
+            relationship.left_evidence_key
+            + "\n<->\n"
+            + relationship.right_evidence_key,
+            language=None,
+        )
+
+
 def show_matter_analysis_ledger(
     active_case_id: str | None,
 ) -> None:
@@ -1451,6 +1571,19 @@ def show_matter_analysis_ledger(
                         with st.container(
                             border=True
                         ):
+
+                            if (
+                                relationship.state
+                                is not RelationshipReviewState.PROPOSED
+                            ):
+
+                                _show_terminal_relationship_summary(
+                                    relationship,
+                                    evidence_display_index,
+                                    role_index,
+                                )
+
+                                continue
 
                             st.write(
                                 "**"

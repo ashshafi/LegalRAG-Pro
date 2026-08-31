@@ -683,3 +683,21 @@ def test_dashboard_ui_is_summary_only_and_defers_detailed_review():
         '"Governance details"'
         in rendered
     )
+
+
+
+def test_compact_summary_hides_long_frozen_text_by_default():
+
+    source = UI.read_text(
+        encoding="utf-8"
+    )
+
+    assert (
+        'LEGAL_ISSUE_COMPACT_SUMMARY_VERSION = '
+        '"legal-issue-compact-summary/1.0"'
+        in source
+    )
+
+    assert '"About this assessment"' in source
+    assert "issue.issue_summary" in source
+    assert "The concise metrics below are the normal working view." in source

@@ -1019,3 +1019,65 @@ def test_focused_workspace_hides_proposal_editor_until_requested():
         "MAL1_REVIEW_CLARITY_VERSION"
         in source
     )
+
+
+
+def test_terminal_relationship_history_is_compact_by_default():
+
+    source = open(
+        "src/ui/matter_analysis_ledger.py",
+        encoding="utf-8",
+    ).read()
+
+    assert (
+        'MAL1_COMPACT_HISTORY_VERSION = '
+        '"matter-analysis-ledger-compact-history/1.0"'
+        in source
+    )
+
+    assert (
+        "def _show_terminal_relationship_summary("
+        in source
+    )
+
+    # Presentation label intentionally includes Markdown emphasis.
+    assert (
+        '"**Reason rejected**"'
+        in source
+    )
+
+    assert '"View evidence details"' in source
+    assert '"View relationship record"' in source
+
+    assert (
+        "relationship.state\n"
+        "                                is not RelationshipReviewState.PROPOSED"
+        in source
+    )
+
+
+def test_pending_relationship_controls_are_preserved():
+
+    source = open(
+        "src/ui/matter_analysis_ledger.py",
+        encoding="utf-8",
+    ).read()
+
+    assert '"APPROVE THIS RELATIONSHIP"' in source
+    assert '"REJECT THIS RELATIONSHIP"' in source
+    assert "PENDING RELATIONSHIP REVIEW" in source
+
+
+def test_compact_history_retains_complete_record_on_demand():
+
+    source = open(
+        "src/ui/matter_analysis_ledger.py",
+        encoding="utf-8",
+    ).read()
+
+    assert "relationship.proposal_rationale" in source
+    assert "relationship.left_evidence_key" in source
+    assert "relationship.right_evidence_key" in source
+    assert "relationship.actor" in source
+    assert "relationship.created_at" in source
+    assert "_show_selected_evidence(" in source

@@ -127,6 +127,7 @@ def _show_element(element: DashboardElement) -> None:
 
 
 LEGAL_ISSUE_SUMMARY_UI_VERSION = "legal-issue-summary-ui/1.0"
+LEGAL_ISSUE_COMPACT_SUMMARY_VERSION = "legal-issue-compact-summary/1.0"
 
 
 def show_legal_issue_dashboard(
@@ -230,9 +231,19 @@ def show_legal_issue_dashboard(
                 + issue.issue_definition_version
             )
 
-            st.write(
-                issue.issue_summary
-            )
+            with st.expander(
+                "About this assessment",
+                expanded=False,
+            ):
+
+                st.write(
+                    issue.issue_summary
+                )
+
+                st.caption(
+                    "This is frozen governed analytical text. "
+                    "The concise metrics below are the normal working view."
+                )
 
             synthesis = (
                 issue.synthesis_counts
