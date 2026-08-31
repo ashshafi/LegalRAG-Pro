@@ -25,6 +25,7 @@ MAL1_REVIEW_CLARITY_VERSION = "matter-analysis-ledger-review-clarity/1.0"
 MAL1_ROLE_AWARE_SELECTOR_VERSION = "matter-analysis-ledger-role-aware-selector/1.0"
 MAL1_FOCUSED_WORKSPACE_VERSION = "matter-analysis-ledger-focused-workspace/1.0"
 MAL1_COMPACT_HISTORY_VERSION = "matter-analysis-ledger-compact-history/1.0"
+MAL1_FINDINGS_GAPS_UNCERTAINTY_VERSION = "matter-analysis-ledger-findings-gaps-uncertainty/1.0"
 
 EVIDENCE_SELECTOR_PRESENTATION_VERSION = (
     "matter-analysis-ledger-evidence-selector/1.1"
@@ -1399,56 +1400,230 @@ def show_matter_analysis_ledger(
                     element.legal_question
                 )
 
-                c1, c2, c3, c4, c5 = (
-                    st.columns(
-                        5
+                # ----------------------------------------------------------
+                # FINDINGS / GAPS / UNCERTAINTY
+                #
+                # Presentation-only projection over the already-governed
+                # analytical element and append-only MAL1 review history.
+                # ----------------------------------------------------------
+
+                approved_contradictions = tuple(
+                    relationship
+                    for relationship
+                    in element.relationships
+                    if (
+                        relationship.state
+                        is RelationshipReviewState.APPROVED
+                        and relationship.relationship_type
+                        is RelationshipType.CONTRADICTS
                     )
                 )
 
-                c1.metric(
-                    "Supporting",
-                    len(
-                        element.supporting_evidence_keys
-                    ),
+                approved_corroborations = tuple(
+                    relationship
+                    for relationship
+                    in element.relationships
+                    if (
+                        relationship.state
+                        is RelationshipReviewState.APPROVED
+                        and relationship.relationship_type
+                        is RelationshipType.CORROBORATES
+                    )
                 )
 
-                c2.metric(
-                    "Adverse",
-                    len(
-                        element.adverse_evidence_keys
-                    ),
+                rejected_relationships = tuple(
+                    relationship
+                    for relationship
+                    in element.relationships
+                    if (
+                        relationship.state
+                        is RelationshipReviewState.REJECTED
+                    )
                 )
 
-                c3.metric(
-                    "Corroborative",
-                    len(
-                        element.corroborative_evidence_keys
-                    ),
+                pending_relationship_summaries = tuple(
+                    relationship
+                    for relationship
+                    in element.relationships
+                    if (
+                        relationship.state
+                        is RelationshipReviewState.PROPOSED
+                    )
                 )
 
-                c4.metric(
-                    "Conflicting",
-                    len(
-                        element.conflicting_evidence_keys
-                    ),
+                st.markdown(
+                    "### Findings, gaps & uncertainty"
                 )
 
-                c5.metric(
-                    "Gaps",
-                    len(
-                        element.evidential_gap_ids
-                    ),
-                )
+                with st.container(
+                    border=True
+                ):
 
-                st.write(
-                    "**Current analytical status:** "
-                    + element.analytical_status
-                )
+                    st.write(
+                        "**Current position:** "
+                        + element.analytical_status
+                    )
 
-                st.caption(
-                    "Confidence: "
-                    + element.analytical_confidence
-                )
+                    st.caption(
+                        "Confidence: "
+                        + element.analytical_confidence
+                    )
+
+                    with st.expander(
+                        "Current governed explanation",
+                        expanded=False,
+                    ):
+
+                        if element.provisional_analysis:
+
+                            st.write(
+                                element.provisional_analysis
+                            )
+
+                        else:
+
+                            st.caption(
+                                "No provisional analytical "
+                                "explanation is recorded."
+                            )
+
+                    left, right = (
+                        st.columns(
+                            2
+                        )
+                    )
+
+                    left.metric(
+                        "Supporting evidence",
+                        len(
+                            element.supporting_evidence_keys
+                        ),
+                    )
+
+                    right.metric(
+                        "Conflicting evidence",
+                        len(
+                            element.conflicting_evidence_keys
+                        ),
+                    )
+
+                    left, right = (
+                        st.columns(
+                            2
+                        )
+                    )
+
+                    left.metric(
+                        "Adverse evidence",
+                        len(
+                            element.adverse_evidence_keys
+                        ),
+                    )
+
+                    right.metric(
+                        "Corroborative evidence",
+                        len(
+                            element.corroborative_evidence_keys
+                        ),
+                    )
+
+                    left, right = (
+                        st.columns(
+                            2
+                        )
+                    )
+
+                    left.metric(
+                        "Formal gaps",
+                        len(
+                            element.evidential_gap_ids
+                        ),
+                    )
+
+                    right.metric(
+                        "Unresolved matters",
+                        len(
+                            element.unresolved_matters
+                        ),
+                    )
+
+                    st.write(
+                        "**Reviewed relationships**"
+                    )
+
+                    st.caption(
+                        "Approved contradictions: "
+                        + str(
+                            len(
+                                approved_contradictions
+                            )
+                        )
+                        + " | Approved corroborations: "
+                        + str(
+                            len(
+                                approved_corroborations
+                            )
+                        )
+                        + " | Rejected proposals: "
+                        + str(
+                            len(
+                                rejected_relationships
+                            )
+                        )
+                        + " | Pending review: "
+                        + str(
+                            len(
+                                pending_relationship_summaries
+                            )
+                        )
+                    )
+
+                    st.write(
+                        "**What remains unresolved**"
+                    )
+
+                    if element.unresolved_matters:
+
+                        for value in (
+                            element.unresolved_matters
+                        ):
+
+                            st.write(
+                                "- "
+                                + value
+                            )
+
+                    else:
+
+                        st.caption(
+                            "No unresolved matters are recorded."
+                        )
+
+                    if element.evidential_gap_ids:
+
+                        with st.expander(
+                            "View formal gap identifiers",
+                            expanded=False,
+                        ):
+
+                            st.caption(
+                                "Technical governed identifiers."
+                            )
+
+                            for value in (
+                                element.evidential_gap_ids
+                            ):
+
+                                st.code(
+                                    value,
+                                    language=None,
+                                )
+
+                    else:
+
+                        st.caption(
+                            "No formal evidential gaps are recorded."
+                        )
 
                 # ----------------------------------------------------------
                 # WHY?

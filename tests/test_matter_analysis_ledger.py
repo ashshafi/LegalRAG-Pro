@@ -1081,3 +1081,173 @@ def test_compact_history_retains_complete_record_on_demand():
     assert "relationship.actor" in source
     assert "relationship.created_at" in source
     assert "_show_selected_evidence(" in source
+
+
+
+def test_findings_gaps_uncertainty_workspace_projects_existing_state():
+
+    source = open(
+        "src/ui/matter_analysis_ledger.py",
+        encoding="utf-8",
+    ).read()
+
+    assert (
+        'MAL1_FINDINGS_GAPS_UNCERTAINTY_VERSION = '
+        '"matter-analysis-ledger-findings-gaps-uncertainty/1.0"'
+        in source
+    )
+
+    assert (
+        '"### Findings, gaps & uncertainty"'
+        in source
+    )
+
+    assert (
+        '"**Current position:** "'
+        in source
+    )
+
+    assert (
+        '"Current governed explanation"'
+        in source
+    )
+
+    assert (
+        '"Supporting evidence"'
+        in source
+    )
+
+    assert (
+        '"Conflicting evidence"'
+        in source
+    )
+
+    assert (
+        '"Formal gaps"'
+        in source
+    )
+
+    assert (
+        '"Unresolved matters"'
+        in source
+    )
+
+
+def test_findings_workspace_projects_reviewed_mal_relationships():
+
+    source = open(
+        "src/ui/matter_analysis_ledger.py",
+        encoding="utf-8",
+    ).read()
+
+    assert (
+        "approved_contradictions = tuple("
+        in source
+    )
+
+    assert (
+        "approved_corroborations = tuple("
+        in source
+    )
+
+    assert (
+        "rejected_relationships = tuple("
+        in source
+    )
+
+    assert (
+        "pending_relationship_summaries = tuple("
+        in source
+    )
+
+    assert (
+        "RelationshipReviewState.APPROVED"
+        in source
+    )
+
+    assert (
+        "RelationshipReviewState.REJECTED"
+        in source
+    )
+
+    assert (
+        "RelationshipType.CONTRADICTS"
+        in source
+    )
+
+    assert (
+        '"Approved contradictions: "'
+        in source
+    )
+
+
+def test_findings_workspace_is_projection_only_and_removes_five_column_clutter():
+
+    source = open(
+        "src/ui/matter_analysis_ledger.py",
+        encoding="utf-8",
+    ).read()
+
+    assert (
+        "st.columns(\n"
+        "                            2\n"
+        "                        )"
+        in source
+    )
+
+    assert (
+        "c1, c2, c3, c4, c5"
+        not in source
+    )
+
+    assert (
+        "st.columns(\n"
+        "                        5\n"
+        "                    )"
+        not in source
+    )
+
+    assert (
+        "propose_relationship("
+        in source
+    )
+
+    assert (
+        "review_relationship("
+        in source
+    )
+
+    # The new workspace itself introduces no persistence call.
+    workspace_start = source.index(
+        "# FINDINGS / GAPS / UNCERTAINTY"
+    )
+
+    workspace_end = source.index(
+        "# WHY?",
+        workspace_start,
+    )
+
+    workspace_source = source[
+        workspace_start:
+        workspace_end
+    ]
+
+    assert (
+        "propose_relationship("
+        not in workspace_source
+    )
+
+    assert (
+        "review_relationship("
+        not in workspace_source
+    )
+
+    assert (
+        "openai"
+        not in workspace_source.lower()
+    )
+
+    assert (
+        "chromadb"
+        not in workspace_source.lower()
+    )
