@@ -379,3 +379,100 @@ def test_ui_module_imports():
         ui.matter_analysis_ledger
         is not None
     )
+
+
+
+def test_human_evidence_selector_uses_existing_authority_metadata():
+
+    from ui.matter_analysis_ledger import (
+        _build_evidence_display_index,
+        _format_evidence_option,
+    )
+
+    evidence = SimpleNamespace(
+        evidence_key="E001",
+        source_filename="HR correspondence.pdf",
+        page_number=2,
+        chunk_text=(
+            "The employer received the medical "
+            "information before the relevant decision."
+        ),
+    )
+
+    authority = SimpleNamespace(
+        governed_issue_evidence_map=
+            SimpleNamespace(
+                bindings=(
+                    evidence,
+                ),
+            ),
+
+        governed_evidential_analysis=
+            None,
+
+        structured_legal_analysis_results=
+            (),
+
+        case_matrices=
+            None,
+    )
+
+    index = _build_evidence_display_index(
+        authority,
+        {
+            "E001"
+        },
+    )
+
+    label = _format_evidence_option(
+        "E001",
+        index,
+        {
+            "E001": (
+                "SUPPORTING",
+            )
+        },
+    )
+
+    assert "SUPPORTING" in label
+    assert "HR correspondence.pdf" in label
+    assert "p.2" in label
+    assert "employer received" in label
+    assert "E001" in label
+
+
+def test_human_evidence_selector_preserves_exact_key_fallback():
+
+    from ui.matter_analysis_ledger import (
+        _format_evidence_option,
+    )
+
+    key = (
+        "8081166d-9889-40bb-8add-"
+        "5d0893037ff0__Applicant"
+    )
+
+    label = _format_evidence_option(
+        key,
+        {},
+        {
+            key: (
+                "ADVERSE",
+            )
+        },
+    )
+
+    assert "ADVERSE" in label
+    assert "Applicant" in label
+
+
+def test_mal1_heading_is_ascii_safe():
+
+    source = open(
+        "src/ui/matter_analysis_ledger.py",
+        encoding="utf-8",
+    ).read()
+
+    assert 'st.header(\n        "Matter Analysis Ledger"\n    )' in source
+    assert '"?? Matter Analysis Ledger"' not in source
+    assert 'f"?? {issue.issue_name}"' not in source
