@@ -476,3 +476,219 @@ def test_mal1_heading_is_ascii_safe():
     assert 'st.header(\n        "Matter Analysis Ledger"\n    )' in source
     assert '"?? Matter Analysis Ledger"' not in source
     assert 'f"?? {issue.issue_name}"' not in source
+
+
+
+def test_exact_binding_metadata_does_not_bleed_between_evidence_keys():
+
+    from types import SimpleNamespace
+
+    from ui.matter_analysis_ledger import (
+        _build_evidence_display_index,
+    )
+
+
+    first = SimpleNamespace(
+        evidence_key="E-A",
+        original_filename="A.pdf",
+        page_number=1,
+        citation="A.pdf, p.1",
+        chunk_text="Exact text from A.",
+    )
+
+    second = SimpleNamespace(
+        evidence_key="E-B",
+        original_filename="B.pdf",
+        page_number=7,
+        citation="B.pdf, p.7",
+        chunk_text="Exact text from B.",
+    )
+
+
+    authority = SimpleNamespace(
+        governed_issue_evidence_map=
+            SimpleNamespace(
+                bindings=(
+                    SimpleNamespace(
+                        evidence=first
+                    ),
+                    SimpleNamespace(
+                        evidence=second
+                    ),
+                )
+            ),
+
+        # Deliberately poisoned unrelated containers.
+        governed_evidential_analysis=
+            SimpleNamespace(
+                original_filename=
+                    "WRONG.pdf",
+                page_number=
+                    999,
+                evidence_key=
+                    "E-A",
+            ),
+
+        structured_legal_analysis_results=
+            (
+                SimpleNamespace(
+                    original_filename=
+                        "ALSO-WRONG.pdf",
+                    evidence_key=
+                        "E-B",
+                ),
+            ),
+
+        case_matrices=
+            None,
+    )
+
+
+    index = _build_evidence_display_index(
+        authority,
+        {
+            "E-A",
+            "E-B",
+        },
+    )
+
+
+    assert index["E-A"]["source"] == "A.pdf"
+    assert index["E-A"]["page"] == "p.1"
+    assert index["E-A"]["excerpt"] == "Exact text from A."
+
+    assert index["E-B"]["source"] == "B.pdf"
+    assert index["E-B"]["page"] == "p.7"
+    assert index["E-B"]["excerpt"] == "Exact text from B."
+
+    assert "WRONG" not in repr(index)
+    assert "999" not in repr(index)
+
+
+def test_exact_binding_reads_only_hash_verified_chunk_text():
+
+    import hashlib
+    from types import SimpleNamespace
+
+    from ui.matter_analysis_ledger import (
+        _build_evidence_display_index,
+    )
+
+
+    raw = (
+        b"The employer received the exact "
+        b"governed medical evidence."
+    )
+
+    digest = hashlib.sha256(
+        raw
+    ).hexdigest()
+
+
+    class FakeStore:
+
+        def read_blob(
+            self,
+            requested_digest,
+        ):
+
+            assert requested_digest == digest
+
+            return raw
+
+
+    evidence = SimpleNamespace(
+        evidence_key="E-HASH",
+        original_filename="medical.pdf",
+        page_number=4,
+        citation="medical.pdf, p.4",
+        chunk_text_sha256=digest,
+        chunk_text_byte_length=len(raw),
+    )
+
+
+    authority = SimpleNamespace(
+        governed_issue_evidence_map=
+            SimpleNamespace(
+                bindings=(
+                    SimpleNamespace(
+                        evidence=evidence
+                    ),
+                )
+            )
+    )
+
+
+    index = _build_evidence_display_index(
+        authority,
+        {
+            "E-HASH"
+        },
+        store=FakeStore(),
+    )
+
+
+    assert (
+        index["E-HASH"]["source"]
+        == "medical.pdf"
+    )
+
+    assert (
+        index["E-HASH"]["page"]
+        == "p.4"
+    )
+
+    assert (
+        "employer received"
+        in index["E-HASH"]["excerpt"]
+    )
+
+
+def test_inconsistent_duplicate_governed_reference_fails_closed():
+
+    from types import SimpleNamespace
+
+    from ui.matter_analysis_ledger import (
+        _build_evidence_display_index,
+    )
+
+
+    first = SimpleNamespace(
+        evidence_key="E-CONFLICT",
+        original_filename="one.pdf",
+        page_number=1,
+        chunk_text="first",
+    )
+
+    second = SimpleNamespace(
+        evidence_key="E-CONFLICT",
+        original_filename="two.pdf",
+        page_number=2,
+        chunk_text="second",
+    )
+
+
+    authority = SimpleNamespace(
+        governed_issue_evidence_map=
+            SimpleNamespace(
+                bindings=(
+                    SimpleNamespace(
+                        evidence=first
+                    ),
+                    SimpleNamespace(
+                        evidence=second
+                    ),
+                )
+            )
+    )
+
+
+    index = _build_evidence_display_index(
+        authority,
+        {
+            "E-CONFLICT"
+        },
+    )
+
+
+    assert "E-CONFLICT" not in index
