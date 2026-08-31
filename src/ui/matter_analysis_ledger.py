@@ -36,6 +36,7 @@ MAL1_FOCUSED_WORKSPACE_VERSION = "matter-analysis-ledger-focused-workspace/1.0"
 MAL1_COMPACT_HISTORY_VERSION = "matter-analysis-ledger-compact-history/1.0"
 MAL1_FINDINGS_GAPS_UNCERTAINTY_VERSION = "matter-analysis-ledger-findings-gaps-uncertainty/1.0"
 MAL1_ANALYTICAL_CHANGE_PROPOSAL_VERSION = "matter-analysis-ledger-analytical-change-proposal/1.0"
+MAL1_CHALLENGE_FINDING_VERSION = "matter-analysis-ledger-challenge-finding/1.0"
 
 EVIDENCE_SELECTOR_PRESENTATION_VERSION = (
     "matter-analysis-ledger-evidence-selector/1.1"
@@ -1634,6 +1635,242 @@ def show_matter_analysis_ledger(
                         st.caption(
                             "No formal evidential gaps are recorded."
                         )
+
+                # ----------------------------------------------------------
+                # CHALLENGE THIS FINDING
+                #
+                # Read-only adversarial projection over existing governed
+                # evidence roles, unresolved matters, gaps and reviewed MAL1
+                # relationships. No analytical or persistence state is changed.
+                # ----------------------------------------------------------
+
+                st.markdown(
+                    "### Challenge this finding"
+                )
+
+                st.caption(
+                    "Test the current position against the material "
+                    "that could weaken, qualify or prevent reliance on it. "
+                    "This is a read-only challenge view."
+                )
+
+                show_finding_challenge = (
+                    st.toggle(
+                        "+ Challenge this finding",
+                        value=False,
+                        key=(
+                            "mal_challenge_finding_"
+                            + issue.issue_analysis_id
+                            + "_"
+                            + element.element_id
+                        ),
+                    )
+                )
+
+                if show_finding_challenge:
+
+                    with st.container(
+                        border=True
+                    ):
+
+                        st.write(
+                            "**Position being challenged:** "
+                            + element.analytical_status
+                        )
+
+                        st.caption(
+                            "Current frozen confidence: "
+                            + element.analytical_confidence
+                        )
+
+                        left, right = (
+                            st.columns(
+                                2
+                            )
+                        )
+
+                        left.metric(
+                            "Adverse evidence",
+                            len(
+                                element.adverse_evidence_keys
+                            ),
+                        )
+
+                        right.metric(
+                            "Conflicting evidence",
+                            len(
+                                element.conflicting_evidence_keys
+                            ),
+                        )
+
+                        left, right = (
+                            st.columns(
+                                2
+                            )
+                        )
+
+                        left.metric(
+                            "Approved contradictions",
+                            len(
+                                approved_contradictions
+                            ),
+                        )
+
+                        right.metric(
+                            "Unresolved matters",
+                            len(
+                                element.unresolved_matters
+                            ),
+                        )
+
+                        left, right = (
+                            st.columns(
+                                2
+                            )
+                        )
+
+                        left.metric(
+                            "Formal gaps",
+                            len(
+                                element.evidential_gap_ids
+                            ),
+                        )
+
+                        right.metric(
+                            "Approved corroborations",
+                            len(
+                                approved_corroborations
+                            ),
+                        )
+
+                        challenge_questions: list[
+                            str
+                        ] = []
+
+                        if element.conflicting_evidence_keys:
+
+                            challenge_questions.append(
+                                "How is the mapped conflicting evidence "
+                                "reconciled with the current position?"
+                            )
+
+                        if element.adverse_evidence_keys:
+
+                            challenge_questions.append(
+                                "What weight should be given to the mapped "
+                                "adverse evidence before relying on this "
+                                "position?"
+                            )
+
+                        if approved_contradictions:
+
+                            challenge_questions.append(
+                                "Does the approved contradiction materially "
+                                "weaken or qualify the present position?"
+                            )
+
+                        if element.unresolved_matters:
+
+                            challenge_questions.append(
+                                "Could any unresolved matter change the "
+                                "analytical position if resolved differently?"
+                            )
+
+                        if element.evidential_gap_ids:
+
+                            challenge_questions.append(
+                                "Could a formal evidential gap make the "
+                                "current position premature or incomplete?"
+                            )
+
+                        challenge_questions.append(
+                            "Does the current confidence remain justified "
+                            "after considering the strongest contrary "
+                            "material?"
+                        )
+
+                        st.write(
+                            "**Questions the finding must withstand**"
+                        )
+
+                        for question in (
+                            challenge_questions
+                        ):
+
+                            st.write(
+                                "- "
+                                + question
+                            )
+
+                        if element.unresolved_matters:
+
+                            with st.expander(
+                                "Unresolved matters to test",
+                                expanded=False,
+                            ):
+
+                                for value in (
+                                    element.unresolved_matters
+                                ):
+
+                                    st.write(
+                                        "- "
+                                        + value
+                                    )
+
+                        if element.evidential_gap_ids:
+
+                            with st.expander(
+                                "Formal gaps to test",
+                                expanded=False,
+                            ):
+
+                                st.caption(
+                                    "Governed technical identifiers."
+                                )
+
+                                for value in (
+                                    element.evidential_gap_ids
+                                ):
+
+                                    st.code(
+                                        value,
+                                        language=None,
+                                    )
+
+                        challenge_pressure = any(
+                            (
+                                element.adverse_evidence_keys,
+                                element.conflicting_evidence_keys,
+                                approved_contradictions,
+                                element.unresolved_matters,
+                                element.evidential_gap_ids,
+                            )
+                        )
+
+                        if challenge_pressure:
+
+                            st.warning(
+                                "Challenge signal: contrary or unresolved "
+                                "material exists. The finding should not be "
+                                "treated as free from challenge merely because "
+                                "it has a current analytical classification."
+                            )
+
+                        else:
+
+                            st.info(
+                                "No mapped adverse, conflicting, contradiction, "
+                                "gap or unresolved signal is currently recorded. "
+                                "That does not prove the finding is correct."
+                            )
+
+                        st.caption(
+                            "Read-only challenge. No evidence role, "
+                            "relationship, analytical proposal or governed "
+                            "authority has been changed."
+                        )
+
 
                 # ----------------------------------------------------------
                 # ANALYTICAL CHANGE PROPOSAL

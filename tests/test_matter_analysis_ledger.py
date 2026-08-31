@@ -1347,3 +1347,166 @@ def test_change_proposal_is_bound_to_reviewed_relationship_basis():
         "Resolve the pending evidence-relationship "
         in source
     )
+
+
+
+def test_challenge_this_finding_is_read_only_adversarial_projection():
+
+    source = open(
+        "src/ui/matter_analysis_ledger.py",
+        encoding="utf-8",
+    ).read()
+
+    assert (
+        'MAL1_CHALLENGE_FINDING_VERSION = '
+        '"matter-analysis-ledger-challenge-finding/1.0"'
+        in source
+    )
+
+    assert (
+        '"### Challenge this finding"'
+        in source
+    )
+
+    assert (
+        '"+ Challenge this finding"'
+        in source
+    )
+
+    assert (
+        '"**Position being challenged:** "'
+        in source
+    )
+
+    assert (
+        '"**Questions the finding must withstand**"'
+        in source
+    )
+
+    assert (
+        '"Challenge signal: contrary or unresolved "'
+        in source
+    )
+
+
+def test_challenge_view_projects_all_material_weakness_signals():
+
+    source = open(
+        "src/ui/matter_analysis_ledger.py",
+        encoding="utf-8",
+    ).read()
+
+    challenge_start = source.index(
+        "# CHALLENGE THIS FINDING"
+    )
+
+    challenge_end = source.index(
+        "# ANALYTICAL CHANGE PROPOSAL",
+        challenge_start,
+    )
+
+    challenge = source[
+        challenge_start:
+        challenge_end
+    ]
+
+    assert (
+        "element.adverse_evidence_keys"
+        in challenge
+    )
+
+    assert (
+        "element.conflicting_evidence_keys"
+        in challenge
+    )
+
+    assert (
+        "approved_contradictions"
+        in challenge
+    )
+
+    assert (
+        "element.unresolved_matters"
+        in challenge
+    )
+
+    assert (
+        "element.evidential_gap_ids"
+        in challenge
+    )
+
+    assert (
+        "approved_corroborations"
+        in challenge
+    )
+
+
+def test_challenge_view_cannot_mutate_analysis_or_review_history():
+
+    source = open(
+        "src/ui/matter_analysis_ledger.py",
+        encoding="utf-8",
+    ).read()
+
+    challenge_start = source.index(
+        "# CHALLENGE THIS FINDING"
+    )
+
+    challenge_end = source.index(
+        "# ANALYTICAL CHANGE PROPOSAL",
+        challenge_start,
+    )
+
+    challenge = source[
+        challenge_start:
+        challenge_end
+    ].lower()
+
+    for forbidden in (
+        "propose_relationship(",
+        "review_relationship(",
+        "propose_analytical_change(",
+        "review_analytical_change(",
+        "publish_governed_analytical_authority",
+        "activate_governed_analytical_authority",
+        "openai",
+        "chromadb",
+    ):
+
+        assert (
+            forbidden
+            not in challenge
+        )
+
+
+def test_challenge_view_requires_no_new_persistent_model():
+
+    source = open(
+        "src/ui/matter_analysis_ledger.py",
+        encoding="utf-8",
+    ).read()
+
+    assert (
+        "ChallengeProposalEvent"
+        not in source
+    )
+
+    assert (
+        "ChallengeFindingEvent"
+        not in source
+    )
+
+    assert (
+        "challenge-events.jsonl"
+        not in source
+    )
+
+    assert (
+        '"Unresolved matters to test"'
+        in source
+    )
+
+    assert (
+        '"Formal gaps to test"'
+        in source
+    )
