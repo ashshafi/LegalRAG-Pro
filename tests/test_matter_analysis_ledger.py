@@ -1510,3 +1510,135 @@ def test_challenge_view_requires_no_new_persistent_model():
         '"Formal gaps to test"'
         in source
     )
+
+
+
+def test_work_product_authority_checker_is_structured_and_read_only():
+
+    source = open(
+        "src/ui/matter_analysis_ledger.py",
+        encoding="utf-8",
+    ).read()
+
+    assert (
+        'MAL1_WORK_PRODUCT_AUTHORITY_CHECKER_VERSION = '
+        '"matter-analysis-ledger-work-product-authority-checker/1.0"'
+        in source
+    )
+
+    assert (
+        '"### Work-product authority checker"'
+        in source
+    )
+
+    assert (
+        '"+ Check work product"'
+        in source
+    )
+
+    assert (
+        '"CHECK AGAINST CURRENT AUTHORITY"'
+        in source
+    )
+
+    assert (
+        '"ALIGNED WITH CURRENT AUTHORITY"'
+        in source
+    )
+
+    assert (
+        '"NOT AUTHORIZED BY CURRENT "'
+        in source
+    )
+
+
+def test_work_product_checker_uses_frozen_status_confidence_and_evidence():
+
+    source = open(
+        "src/ui/matter_analysis_ledger.py",
+        encoding="utf-8",
+    ).read()
+
+    start = source.index(
+        "# WORK-PRODUCT AUTHORITY CHECKER"
+    )
+
+    end = source.index(
+        "# ANALYTICAL CHANGE PROPOSAL",
+        start,
+    )
+
+    checker = source[
+        start:
+        end
+    ]
+
+    assert (
+        "element.analytical_status"
+        in checker
+    )
+
+    assert (
+        "element.analytical_confidence"
+        in checker
+    )
+
+    assert (
+        "element.supporting_evidence_keys"
+        in checker
+    )
+
+    assert (
+        "element.adverse_evidence_keys"
+        in checker
+    )
+
+    assert (
+        "element.conflicting_evidence_keys"
+        in checker
+    )
+
+    assert (
+        "approved_contradictions"
+        in checker
+    )
+
+    assert (
+        "element.unresolved_matters"
+        in checker
+    )
+
+
+def test_work_product_checker_has_no_mutation_path():
+
+    source = open(
+        "src/ui/matter_analysis_ledger.py",
+        encoding="utf-8",
+    ).read()
+
+    start = source.index(
+        "# WORK-PRODUCT AUTHORITY CHECKER"
+    )
+
+    end = source.index(
+        "# ANALYTICAL CHANGE PROPOSAL",
+        start,
+    )
+
+    checker = source[
+        start:
+        end
+    ].lower()
+
+    for forbidden in (
+        "propose_relationship(",
+        "review_relationship(",
+        "propose_analytical_change(",
+        "review_analytical_change(",
+        "publish_governed_analytical_authority",
+        "activate_governed_analytical_authority",
+        "openai",
+        "chromadb",
+    ):
+
+        assert forbidden not in checker

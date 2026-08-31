@@ -28,6 +28,12 @@ from analytical_change_proposals import (
     review_analytical_change,
 )
 
+from work_product_authority_checker import (
+    WorkProductAuthorityCheckerError,
+    WorkProductAuthorityResult,
+    check_work_product_authority,
+)
+
 
 
 MAL1_REVIEW_CLARITY_VERSION = "matter-analysis-ledger-review-clarity/1.0"
@@ -37,6 +43,7 @@ MAL1_COMPACT_HISTORY_VERSION = "matter-analysis-ledger-compact-history/1.0"
 MAL1_FINDINGS_GAPS_UNCERTAINTY_VERSION = "matter-analysis-ledger-findings-gaps-uncertainty/1.0"
 MAL1_ANALYTICAL_CHANGE_PROPOSAL_VERSION = "matter-analysis-ledger-analytical-change-proposal/1.0"
 MAL1_CHALLENGE_FINDING_VERSION = "matter-analysis-ledger-challenge-finding/1.0"
+MAL1_WORK_PRODUCT_AUTHORITY_CHECKER_VERSION = "matter-analysis-ledger-work-product-authority-checker/1.0"
 
 EVIDENCE_SELECTOR_PRESENTATION_VERSION = (
     "matter-analysis-ledger-evidence-selector/1.1"
@@ -1870,6 +1877,263 @@ def show_matter_analysis_ledger(
                             "relationship, analytical proposal or governed "
                             "authority has been changed."
                         )
+
+
+                # ----------------------------------------------------------
+                # WORK-PRODUCT AUTHORITY CHECKER
+                #
+                # Deterministic structured authority check only.
+                # It does not infer the meaning of arbitrary prose.
+                # ----------------------------------------------------------
+
+                st.markdown(
+                    "### Work-product authority checker"
+                )
+
+                st.caption(
+                    "Check whether the analytical status, confidence "
+                    "and evidence basis you intend to use in a draft "
+                    "stay within the current frozen governed authority. "
+                    "This deterministic check does not infer the semantic "
+                    "meaning of arbitrary prose."
+                )
+
+                show_work_product_checker = (
+                    st.toggle(
+                        "+ Check work product",
+                        value=False,
+                        key=(
+                            "mal_work_product_checker_"
+                            + issue.issue_analysis_id
+                            + "_"
+                            + element.element_id
+                        ),
+                    )
+                )
+
+                if show_work_product_checker:
+
+                    with st.container(
+                        border=True
+                    ):
+
+                        work_product_statement = (
+                            st.text_area(
+                                "Work-product statement or proposition",
+                                height=120,
+                                key=(
+                                    "mal_work_product_statement_"
+                                    + element.element_id
+                                ),
+                            )
+                        )
+
+                        checker_status_options = tuple(
+                            dict.fromkeys(
+                                (
+                                    element.analytical_status,
+                                    "well_supported",
+                                    "partially_supported",
+                                    "disputed",
+                                    "insufficiently_evidenced",
+                                    "unresolved",
+                                )
+                            )
+                        )
+
+                        checker_confidence_options = tuple(
+                            dict.fromkeys(
+                                (
+                                    element.analytical_confidence,
+                                    "high",
+                                    "medium",
+                                    "low",
+                                )
+                            )
+                        )
+
+                        claimed_status = (
+                            st.selectbox(
+                                "Status expressed by the work product",
+                                checker_status_options,
+                                format_func=lambda value: (
+                                    value.replace(
+                                        "_",
+                                        " ",
+                                    ).title()
+                                ),
+                                key=(
+                                    "mal_work_product_status_"
+                                    + element.element_id
+                                ),
+                            )
+                        )
+
+                        claimed_confidence = (
+                            st.selectbox(
+                                "Confidence expressed by the work product",
+                                checker_confidence_options,
+                                format_func=lambda value: (
+                                    value.replace(
+                                        "_",
+                                        " ",
+                                    ).title()
+                                ),
+                                key=(
+                                    "mal_work_product_confidence_"
+                                    + element.element_id
+                                ),
+                            )
+                        )
+
+                        work_product_role_index = (
+                            _role_index(
+                                element
+                            )
+                        )
+
+                        work_product_evidence_options = tuple(
+                            sorted(
+                                set(
+                                    element.supporting_evidence_keys
+                                    + element.adverse_evidence_keys
+                                    + element.corroborative_evidence_keys
+                                    + element.conflicting_evidence_keys
+                                )
+                            )
+                        )
+
+                        cited_work_product_evidence = (
+                            st.multiselect(
+                                "Governed evidence cited",
+                                work_product_evidence_options,
+                                format_func=lambda evidence_key: (
+                                    _format_evidence_option(
+                                        evidence_key,
+                                        evidence_display_index,
+                                        work_product_role_index,
+                                    )
+                                ),
+                                key=(
+                                    "mal_work_product_evidence_"
+                                    + element.element_id
+                                ),
+                            )
+                        )
+
+                        st.caption(
+                            "The checker uses the frozen authority shown "
+                            "above. An approved but unapplied analytical "
+                            "change proposal does not replace that authority."
+                        )
+
+                        if st.button(
+                            "CHECK AGAINST CURRENT AUTHORITY",
+                            key=(
+                                "mal_check_work_product_"
+                                + element.element_id
+                            ),
+                            use_container_width=True,
+                        ):
+
+                            try:
+
+                                authority_check = (
+                                    check_work_product_authority(
+                                        statement=
+                                            work_product_statement,
+
+                                        current_status=
+                                            element.analytical_status,
+
+                                        current_confidence=
+                                            element.analytical_confidence,
+
+                                        claimed_status=
+                                            claimed_status,
+
+                                        claimed_confidence=
+                                            claimed_confidence,
+
+                                        cited_evidence_keys=
+                                            tuple(
+                                                cited_work_product_evidence
+                                            ),
+
+                                        allowed_evidence_keys=
+                                            work_product_evidence_options,
+
+                                        approved_contradiction_count=
+                                            len(
+                                                approved_contradictions
+                                            ),
+
+                                        unresolved_matter_count=
+                                            len(
+                                                element.unresolved_matters
+                                            ),
+
+                                        formal_gap_count=
+                                            len(
+                                                element.evidential_gap_ids
+                                            ),
+                                    )
+                                )
+
+                            except WorkProductAuthorityCheckerError as exc:
+
+                                st.error(
+                                    str(
+                                        exc
+                                    )
+                                )
+
+                            else:
+
+                                if (
+                                    authority_check.result
+                                    is WorkProductAuthorityResult.ALIGNED
+                                ):
+
+                                    st.success(
+                                        "ALIGNED WITH CURRENT AUTHORITY"
+                                    )
+
+                                elif (
+                                    authority_check.result
+                                    is WorkProductAuthorityResult.CAUTION
+                                ):
+
+                                    st.warning(
+                                        "CAUTION - AUTHORITY HAS "
+                                        "LIMITATIONS OR UNCERTAINTY"
+                                    )
+
+                                else:
+
+                                    st.error(
+                                        "NOT AUTHORIZED BY CURRENT "
+                                        "FROZEN AUTHORITY"
+                                    )
+
+                                st.write(
+                                    "**Authority-check reasons**"
+                                )
+
+                                for reason in (
+                                    authority_check.reasons
+                                ):
+
+                                    st.write(
+                                        "- "
+                                        + reason
+                                    )
+
+                                st.caption(
+                                    "No analytical state, evidence role, "
+                                    "review history or governed authority "
+                                    "has been changed."
+                                )
 
 
                 # ----------------------------------------------------------
