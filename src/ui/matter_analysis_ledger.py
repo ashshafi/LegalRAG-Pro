@@ -19,6 +19,15 @@ from matter_analysis_ledger import (
     review_relationship,
 )
 
+from analytical_change_proposals import (
+    AnalyticalChangeProposalError,
+    AnalyticalChangeProposalState,
+    load_change_proposal_events,
+    project_change_proposals,
+    propose_analytical_change,
+    review_analytical_change,
+)
+
 
 
 MAL1_REVIEW_CLARITY_VERSION = "matter-analysis-ledger-review-clarity/1.0"
@@ -26,6 +35,7 @@ MAL1_ROLE_AWARE_SELECTOR_VERSION = "matter-analysis-ledger-role-aware-selector/1
 MAL1_FOCUSED_WORKSPACE_VERSION = "matter-analysis-ledger-focused-workspace/1.0"
 MAL1_COMPACT_HISTORY_VERSION = "matter-analysis-ledger-compact-history/1.0"
 MAL1_FINDINGS_GAPS_UNCERTAINTY_VERSION = "matter-analysis-ledger-findings-gaps-uncertainty/1.0"
+MAL1_ANALYTICAL_CHANGE_PROPOSAL_VERSION = "matter-analysis-ledger-analytical-change-proposal/1.0"
 
 EVIDENCE_SELECTOR_PRESENTATION_VERSION = (
     "matter-analysis-ledger-evidence-selector/1.1"
@@ -1624,6 +1634,443 @@ def show_matter_analysis_ledger(
                         st.caption(
                             "No formal evidential gaps are recorded."
                         )
+
+                # ----------------------------------------------------------
+                # ANALYTICAL CHANGE PROPOSAL
+                #
+                # Approval records a reviewed proposal only.
+                # It does NOT rewrite the frozen analytical authority.
+                # ----------------------------------------------------------
+
+                st.markdown(
+                    "### Analytical change proposal"
+                )
+
+                st.caption(
+                    "Propose a change to this analytical position. "
+                    "Every proposal requires explicit review. "
+                    "Even an approved proposal does not silently "
+                    "rewrite the frozen governed authority."
+                )
+
+                try:
+
+                    change_events = (
+                        load_change_proposal_events(
+                            case_id=
+                                ledger.case_id,
+                            authority_id=
+                                ledger.authority_id,
+                        )
+                    )
+
+                    element_change_proposals = (
+                        project_change_proposals(
+                            events=
+                                change_events,
+                            issue_analysis_id=
+                                issue.issue_analysis_id,
+                            element_id=
+                                element.element_id,
+                        )
+                    )
+
+                except AnalyticalChangeProposalError as exc:
+
+                    st.error(
+                        "Analytical change proposal history "
+                        "failed closed."
+                    )
+
+                    st.caption(
+                        str(
+                            exc
+                        )
+                    )
+
+                    element_change_proposals = ()
+
+                pending_change_proposals = tuple(
+                    proposal
+                    for proposal
+                    in element_change_proposals
+                    if (
+                        proposal.state
+                        is AnalyticalChangeProposalState.PROPOSED
+                    )
+                )
+
+                terminal_change_proposals = tuple(
+                    proposal
+                    for proposal
+                    in element_change_proposals
+                    if (
+                        proposal.state
+                        is not AnalyticalChangeProposalState.PROPOSED
+                    )
+                )
+
+                if terminal_change_proposals:
+
+                    with st.expander(
+                        "Previous analytical change proposals - "
+                        + str(
+                            len(
+                                terminal_change_proposals
+                            )
+                        ),
+                        expanded=False,
+                    ):
+
+                        for proposal in (
+                            terminal_change_proposals
+                        ):
+
+                            st.write(
+                                "**"
+                                + proposal.state.value
+                                + " CHANGE PROPOSAL**"
+                            )
+
+                            st.write(
+                                proposal.current_status
+                                + " / "
+                                + proposal.current_confidence
+                                + "  ->  "
+                                + proposal.proposed_status
+                                + " / "
+                                + proposal.proposed_confidence
+                            )
+
+                            st.caption(
+                                proposal.rationale
+                            )
+
+                            if proposal.review_note:
+
+                                st.caption(
+                                    "Review note: "
+                                    + proposal.review_note
+                                )
+
+                            if (
+                                proposal.state
+                                is AnalyticalChangeProposalState.APPROVED
+                            ):
+
+                                st.info(
+                                    "Approved proposal only. "
+                                    "The current frozen analytical "
+                                    "authority has not been replaced."
+                                )
+
+                if pending_change_proposals:
+
+                    for proposal in (
+                        pending_change_proposals
+                    ):
+
+                        with st.container(
+                            border=True
+                        ):
+
+                            st.warning(
+                                "PENDING ANALYTICAL CHANGE REVIEW"
+                            )
+
+                            st.write(
+                                "**Current:** "
+                                + proposal.current_status
+                                + " / "
+                                + proposal.current_confidence
+                            )
+
+                            st.write(
+                                "**Proposed:** "
+                                + proposal.proposed_status
+                                + " / "
+                                + proposal.proposed_confidence
+                            )
+
+                            st.write(
+                                "**Reason for proposed change**"
+                            )
+
+                            st.write(
+                                proposal.rationale
+                            )
+
+                            st.caption(
+                                "Reviewed relationship basis: "
+                                + str(
+                                    len(
+                                        proposal.basis_relationship_ids
+                                    )
+                                )
+                            )
+
+                            change_review_note = (
+                                st.text_area(
+                                    "Optional reviewer note "
+                                    "for this analytical change",
+                                    key=(
+                                        "mal_change_review_note_"
+                                        + proposal.proposal_id
+                                    ),
+                                    height=90,
+                                )
+                            )
+
+                            approve_change, reject_change = (
+                                st.columns(
+                                    2
+                                )
+                            )
+
+                            if approve_change.button(
+                                "APPROVE CHANGE PROPOSAL",
+                                key=(
+                                    "mal_approve_change_"
+                                    + proposal.proposal_id
+                                ),
+                                use_container_width=True,
+                            ):
+
+                                try:
+
+                                    review_analytical_change(
+                                        case_id=
+                                            ledger.case_id,
+                                        authority_id=
+                                            ledger.authority_id,
+                                        proposal_id=
+                                            proposal.proposal_id,
+                                        decision=
+                                            AnalyticalChangeProposalState.APPROVED,
+                                        actor=
+                                            "interactive_user",
+                                        review_note=
+                                            change_review_note,
+                                    )
+
+                                except AnalyticalChangeProposalError as exc:
+
+                                    st.error(
+                                        str(
+                                            exc
+                                        )
+                                    )
+
+                                else:
+
+                                    st.rerun()
+
+                            if reject_change.button(
+                                "REJECT CHANGE PROPOSAL",
+                                key=(
+                                    "mal_reject_change_"
+                                    + proposal.proposal_id
+                                ),
+                                use_container_width=True,
+                            ):
+
+                                try:
+
+                                    review_analytical_change(
+                                        case_id=
+                                            ledger.case_id,
+                                        authority_id=
+                                            ledger.authority_id,
+                                        proposal_id=
+                                            proposal.proposal_id,
+                                        decision=
+                                            AnalyticalChangeProposalState.REJECTED,
+                                        actor=
+                                            "interactive_user",
+                                        review_note=
+                                            change_review_note,
+                                    )
+
+                                except AnalyticalChangeProposalError as exc:
+
+                                    st.error(
+                                        str(
+                                            exc
+                                        )
+                                    )
+
+                                else:
+
+                                    st.rerun()
+
+                elif pending_relationship_summaries:
+
+                    st.info(
+                        "Resolve the pending evidence-relationship "
+                        "review before proposing an analytical change."
+                    )
+
+                else:
+
+                    show_change_proposal = (
+                        st.toggle(
+                            "+ Propose analytical change",
+                            value=False,
+                            key=(
+                                "mal_show_change_proposal_"
+                                + issue.issue_analysis_id
+                                + "_"
+                                + element.element_id
+                            ),
+                        )
+                    )
+
+                    if show_change_proposal:
+
+                        status_options = tuple(
+                            dict.fromkeys(
+                                (
+                                    element.analytical_status,
+                                    "well_supported",
+                                    "partially_supported",
+                                    "disputed",
+                                    "insufficiently_evidenced",
+                                    "unresolved",
+                                )
+                            )
+                        )
+
+                        confidence_options = tuple(
+                            dict.fromkeys(
+                                (
+                                    element.analytical_confidence,
+                                    "high",
+                                    "medium",
+                                    "low",
+                                )
+                            )
+                        )
+
+                        proposed_status = (
+                            st.selectbox(
+                                "Proposed analytical status",
+                                status_options,
+                                format_func=lambda value: (
+                                    value.replace(
+                                        "_",
+                                        " ",
+                                    ).title()
+                                ),
+                                key=(
+                                    "mal_change_status_"
+                                    + element.element_id
+                                ),
+                            )
+                        )
+
+                        proposed_confidence = (
+                            st.selectbox(
+                                "Proposed confidence",
+                                confidence_options,
+                                format_func=lambda value: (
+                                    value.replace(
+                                        "_",
+                                        " ",
+                                    ).title()
+                                ),
+                                key=(
+                                    "mal_change_confidence_"
+                                    + element.element_id
+                                ),
+                            )
+                        )
+
+                        change_rationale = (
+                            st.text_area(
+                                "Why should the analytical "
+                                "position change?",
+                                height=140,
+                                key=(
+                                    "mal_change_rationale_"
+                                    + element.element_id
+                                ),
+                            )
+                        )
+
+                        st.caption(
+                            "The proposal will be bound to the "
+                            "current authority and to "
+                            + str(
+                                len(
+                                    approved_contradictions
+                                    + approved_corroborations
+                                )
+                            )
+                            + " approved reviewed evidence "
+                            "relationship(s)."
+                        )
+
+                        if st.button(
+                            "PROPOSE ANALYTICAL CHANGE",
+                            key=(
+                                "mal_submit_change_"
+                                + element.element_id
+                            ),
+                            use_container_width=True,
+                        ):
+
+                            basis_relationship_ids = tuple(
+                                sorted(
+                                    {
+                                        relationship.relationship_id
+                                        for relationship
+                                        in (
+                                            approved_contradictions
+                                            + approved_corroborations
+                                        )
+                                    }
+                                )
+                            )
+
+                            try:
+
+                                propose_analytical_change(
+                                    case_id=
+                                        ledger.case_id,
+                                    authority_id=
+                                        ledger.authority_id,
+                                    issue_analysis_id=
+                                        issue.issue_analysis_id,
+                                    element_id=
+                                        element.element_id,
+                                    current_status=
+                                        element.analytical_status,
+                                    current_confidence=
+                                        element.analytical_confidence,
+                                    proposed_status=
+                                        proposed_status,
+                                    proposed_confidence=
+                                        proposed_confidence,
+                                    rationale=
+                                        change_rationale,
+                                    actor=
+                                        "interactive_user",
+                                    basis_relationship_ids=
+                                        basis_relationship_ids,
+                                )
+
+                            except AnalyticalChangeProposalError as exc:
+
+                                st.error(
+                                    str(
+                                        exc
+                                    )
+                                )
+
+                            else:
+
+                                st.rerun()
+
 
                 # ----------------------------------------------------------
                 # WHY?

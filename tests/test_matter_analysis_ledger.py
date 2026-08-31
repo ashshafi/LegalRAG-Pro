@@ -1251,3 +1251,99 @@ def test_findings_workspace_is_projection_only_and_removes_five_column_clutter()
         "chromadb"
         not in workspace_source.lower()
     )
+
+
+
+def test_analytical_change_proposal_requires_explicit_review():
+
+    source = open(
+        "src/ui/matter_analysis_ledger.py",
+        encoding="utf-8",
+    ).read()
+
+    assert (
+        'MAL1_ANALYTICAL_CHANGE_PROPOSAL_VERSION = '
+        '"matter-analysis-ledger-analytical-change-proposal/1.0"'
+        in source
+    )
+
+    assert (
+        '"### Analytical change proposal"'
+        in source
+    )
+
+    assert (
+        '"+ Propose analytical change"'
+        in source
+    )
+
+    assert (
+        '"PROPOSE ANALYTICAL CHANGE"'
+        in source
+    )
+
+    assert (
+        '"APPROVE CHANGE PROPOSAL"'
+        in source
+    )
+
+    assert (
+        '"REJECT CHANGE PROPOSAL"'
+        in source
+    )
+
+
+def test_approved_change_proposal_does_not_silently_replace_authority():
+
+    source = open(
+        "src/ui/matter_analysis_ledger.py",
+        encoding="utf-8",
+    ).read()
+
+    assert (
+        "does not silently "
+        in source
+    )
+
+    assert (
+        "The current frozen analytical "
+        in source
+    )
+
+    assert (
+        "publish_governed_analytical_authority"
+        not in source
+    )
+
+    assert (
+        "activate_governed_analytical_authority"
+        not in source
+    )
+
+
+def test_change_proposal_is_bound_to_reviewed_relationship_basis():
+
+    source = open(
+        "src/ui/matter_analysis_ledger.py",
+        encoding="utf-8",
+    ).read()
+
+    assert (
+        "basis_relationship_ids = tuple("
+        in source
+    )
+
+    assert (
+        "approved_contradictions"
+        in source
+    )
+
+    assert (
+        "approved_corroborations"
+        in source
+    )
+
+    assert (
+        "Resolve the pending evidence-relationship "
+        in source
+    )
