@@ -24,6 +24,7 @@ from governed_analytical_authority.provider import (
 )
 from legal_issue_dashboard import LegalIssueDashboardError, build_legal_issue_dashboard
 from ui.legal_issue_dashboard import show_legal_issue_dashboard
+from ui.matter_analysis_ledger import show_matter_analysis_ledger
 from ui.matter_overview import (
     is_matter_overview_active,
     show_matter_overview,
@@ -119,6 +120,7 @@ if st.session_state.get("u8_evidence_inspection_view", False):
     show_evidence_inspection(active_case_id)
 elif st.session_state.get("ppr3_legal_issue_dashboard_view", False):
     show_legal_issue_dashboard(active_case_id)
+    show_matter_analysis_ledger(active_case_id)
 elif st.session_state.get("m7_source_evidence_view", False):
     show_source_evidence(active_case_id, report_projection)
 elif st.session_state.get("m6_workspace_view") in {

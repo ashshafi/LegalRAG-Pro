@@ -41,3 +41,6 @@ source_evidence_store/
 derived_transcription_store/
 # Derived transcription search runtime persistence
 /derived_transcription_search_index/
+
+# Matter Analysis Ledger runtime review authority
+matter_analysis_ledger/
