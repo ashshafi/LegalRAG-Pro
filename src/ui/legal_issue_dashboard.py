@@ -126,111 +126,161 @@ def _show_element(element: DashboardElement) -> None:
         )
 
 
+LEGAL_ISSUE_SUMMARY_UI_VERSION = "legal-issue-summary-ui/1.0"
+
+
 def show_legal_issue_dashboard(
     active_case_id: str | None,
     *,
     authority_loader: AuthorityLoader = load_active_governed_analytical_authority,
 ) -> None:
-    """Render only already-validated frozen analytical authority state."""
+    """Render a concise summary of already-validated analytical authority."""
 
-    st.header("\u2696\ufe0f Legal Issue Dashboard")
+    st.header(
+        "Legal Issues"
+    )
+
     if active_case_id is None:
-        st.info("Select an active case to view its governed legal issues.")
+
+        st.info(
+            "Select an active matter to view its governed legal issues."
+        )
         return
 
     try:
-        authority = authority_loader(active_case_id)
+
+        authority = authority_loader(
+            active_case_id
+        )
+
     except GovernedAnalyticalAuthorityProviderError:
+
         st.error(
-            "The activated governed analytical authority could not be validated. "
-            "No dashboard analysis has been displayed."
+            "The activated governed analytical authority "
+            "could not be validated. "
+            "No issue summary has been displayed."
         )
         return
 
     if authority is None:
+
         st.info(
-            "No activated governed analytical authority is available for the active case."
+            "No activated governed analytical authority "
+            "is available for the active matter."
         )
         return
 
     try:
+
         dashboard = build_legal_issue_dashboard(
-            active_case_id=active_case_id,
-            authority=authority,
+            active_case_id=
+                active_case_id,
+            authority=
+                authority,
         )
+
     except LegalIssueDashboardError:
+
         st.error(
-            "The frozen analytical authority could not be projected safely. "
-            "No dashboard analysis has been displayed."
+            "The frozen analytical authority could not "
+            "be projected safely. "
+            "No issue summary has been displayed."
         )
         return
 
-    st.caption(
-        "Read-only governed authority: "
-        + dashboard.authority_id
-        + " | Activation: "
-        + dashboard.activation_id
-    )
     st.info(
-        "Evidence metrics count distinct frozen evidence keys by analytical role. "
-        "One evidence key may appear in more than one role, so role counts must not "
-        "be summed as an overall evidence total."
+        "Summary view only. "
+        "Detailed evidence and review controls are in "
+        "Issue Review & Decisions below."
     )
 
-    for issue in dashboard.issues:
-        st.subheader(
-            f"{issue.issue_definition_id}/{issue.issue_definition_version} - "
-            + issue.issue_name
-        )
-        st.caption("Issue analysis ID: " + issue.issue_analysis_id)
-        st.write(issue.issue_summary)
+    with st.expander(
+        "Governance details",
+        expanded=False,
+    ):
 
-        counts = issue.synthesis_counts
-        _show_metric_rows(
-            (
-                ("Well-supported", counts.well_supported),
-                ("Partially supported", counts.partially_supported),
-                ("Disputed", counts.disputed),
-                ("Insufficient evidence", counts.insufficiently_evidenced),
-                ("Unresolved", counts.unresolved),
-            )
-        )
-
-        confidence = issue.confidence_counts
-        _show_metric_rows(
-            (
-                ("High confidence elements", confidence.high),
-                ("Medium confidence elements", confidence.medium),
-                ("Low confidence elements", confidence.low),
-            )
-        )
-
-        evidence = issue.evidence_counts
-        _show_metric_rows(
-            (
-                ("Supporting evidence", evidence.supporting),
-                ("Adverse evidence", evidence.adverse),
-                ("Corroborative evidence", evidence.corroborative),
-                ("Neutral/context evidence", evidence.neutral),
-                ("Conflicting evidence", evidence.conflicting),
-                ("Distinct evidence involved", evidence.distinct_any_role),
-            )
+        st.caption(
+            "Read-only governed authority: "
+            + dashboard.authority_id
         )
 
         st.caption(
-            f"Element-level evidential gaps: {issue.evidential_gap_count} | "
-            f"Unresolved matters: {issue.unresolved_matter_count}"
+            "Activation: "
+            + dashboard.activation_id
         )
 
-        if issue.overall_limitations:
-            with st.expander("Overall limitations", expanded=False):
-                for limitation in issue.overall_limitations:
-                    st.write("- " + limitation)
+        st.caption(
+            "Evidence counts are role-specific. "
+            "One evidence item may appear in more than one role."
+        )
 
-        for element in issue.elements:
-            _show_element(element)
+    for issue in dashboard.issues:
+
+        with st.container(
+            border=True
+        ):
+
+            st.subheader(
+                issue.issue_name
+            )
+
+            st.caption(
+                issue.issue_definition_id
+                + "/"
+                + issue.issue_definition_version
+            )
+
+            st.write(
+                issue.issue_summary
+            )
+
+            synthesis = (
+                issue.synthesis_counts
+            )
+
+            evidence = (
+                issue.evidence_counts
+            )
+
+            _show_metric_rows(
+                (
+                    (
+                        "Disputed elements",
+                        synthesis.disputed,
+                    ),
+                    (
+                        "Partially supported",
+                        synthesis.partially_supported,
+                    ),
+                    (
+                        "Distinct evidence",
+                        evidence.distinct_any_role,
+                    ),
+                    (
+                        "Conflicting evidence",
+                        evidence.conflicting,
+                    ),
+                )
+            )
+
+            st.caption(
+                "Gaps: "
+                + str(
+                    issue.evidential_gap_count
+                )
+                + " | Unresolved matters: "
+                + str(
+                    issue.unresolved_matter_count
+                )
+            )
+
+            st.caption(
+                "Select this issue below in "
+                "Issue Review & Decisions for the focused view."
+            )
 
         st.divider()
+
 
 
 __all__ = ["show_legal_issue_dashboard"]

@@ -504,20 +504,47 @@ def test_core_has_no_streamlit_retrieval_openai_chroma_or_writer_dependencies():
 
 def test_ui_uses_only_read_only_authority_provider_and_no_unsafe_rendering():
     roots = _imports(UI)
+
     assert "streamlit" in roots
     assert "governed_analytical_authority" in roots
-    assert roots.isdisjoint({"openai", "chromadb", "retriever", "evidence_search"})
-    source = UI.read_text(encoding="utf-8")
-    assert "load_active_governed_analytical_authority" in source
-    assert "publish_governed_analytical_authority" not in source
-    assert "activate_governed_analytical_authority" not in source
+
+    assert roots.isdisjoint(
+        {
+            "openai",
+            "chromadb",
+            "retriever",
+            "evidence_search",
+        }
+    )
+
+    source = UI.read_text(
+        encoding="utf-8"
+    )
+
+    assert (
+        "load_active_governed_analytical_authority"
+        in source
+    )
+
+    assert (
+        "publish_governed_analytical_authority"
+        not in source
+    )
+
+    assert (
+        "activate_governed_analytical_authority"
+        not in source
+    )
+
     assert "unsafe_allow_html" not in source
     assert ".markdown(" not in source
     assert ".html(" not in source
     assert ".download_button(" not in source
-    assert '"Supporting evidence"' in source
-    assert '"Distinct evidence involved"' in source
+
+    assert '"Distinct evidence"' in source
+    assert '"Conflicting evidence"' in source
     assert '"Supporting uses"' not in source
+
 
 
 def test_app_route_order_is_unchanged_u8_dashboard_m7_workspace_reports():
@@ -551,24 +578,22 @@ def test_sidebar_contract_is_unchanged():
     assert 'st.session_state["ppr3_legal_issue_dashboard_view"] = True' in source
 
 def test_dashboard_metric_layout_uses_rows_of_at_most_two_columns():
-    source = UI.read_text(encoding="utf-8")
+    source = UI.read_text(
+        encoding="utf-8"
+    )
+
     assert "def _show_metric_rows(" in source
     assert "range(0, len(metrics), 2)" in source
     assert "st.columns(len(row))" in source
+
     assert "st.columns(5)" not in source
     assert "st.columns(3)" not in source
-    assert '"Well-supported"' in source
+
+    assert '"Disputed elements"' in source
     assert '"Partially supported"' in source
-    assert '"Insufficient evidence"' in source
-    assert '"High confidence elements"' in source
-    assert '"Medium confidence elements"' in source
-    assert '"Low confidence elements"' in source
-    assert '"Supporting evidence"' in source
-    assert '"Adverse evidence"' in source
-    assert '"Corroborative evidence"' in source
-    assert '"Neutral/context evidence"' in source
+    assert '"Distinct evidence"' in source
     assert '"Conflicting evidence"' in source
-    assert '"Distinct evidence involved"' in source
+
 
 
 
@@ -610,3 +635,51 @@ def test_same_evidence_identity_is_preserved_across_multiple_projected_roles():
 
     assert element.supporting_evidence_keys == (shared,)
     assert element.adverse_evidence_keys == (shared,)
+
+
+
+def test_dashboard_ui_is_summary_only_and_defers_detailed_review():
+
+    source = UI.read_text(
+        encoding="utf-8"
+    )
+
+    start = source.index(
+        "def show_legal_issue_dashboard("
+    )
+
+    end = source.index(
+        '__all__ =',
+        start,
+    )
+
+    rendered = source[
+        start:
+        end
+    ]
+
+    assert (
+        'LEGAL_ISSUE_SUMMARY_UI_VERSION = '
+        '"legal-issue-summary-ui/1.0"'
+        in source
+    )
+
+    assert (
+        '"Summary view only. "'
+        in rendered
+    )
+
+    assert (
+        '"Issue Review & Decisions below."'
+        in rendered
+    )
+
+    assert (
+        "_show_element(element)"
+        not in rendered
+    )
+
+    assert (
+        '"Governance details"'
+        in rendered
+    )

@@ -23,6 +23,7 @@ from matter_analysis_ledger import (
 
 MAL1_REVIEW_CLARITY_VERSION = "matter-analysis-ledger-review-clarity/1.0"
 MAL1_ROLE_AWARE_SELECTOR_VERSION = "matter-analysis-ledger-role-aware-selector/1.0"
+MAL1_FOCUSED_WORKSPACE_VERSION = "matter-analysis-ledger-focused-workspace/1.0"
 
 EVIDENCE_SELECTOR_PRESENTATION_VERSION = (
     "matter-analysis-ledger-evidence-selector/1.1"
@@ -1114,7 +1115,12 @@ def show_matter_analysis_ledger(
     st.divider()
 
     st.header(
-        "Matter Analysis Ledger"
+        "Issue Review & Decisions"
+    )
+
+    st.caption(
+        "Technical system: Matter Analysis Ledger. "
+        "Only one issue and one focus area are shown at a time."
     )
 
     st.caption(
@@ -1126,12 +1132,126 @@ def show_matter_analysis_ledger(
         "are not silently overwritten."
     )
 
-    for issue in ledger.issues:
+    if not ledger.issues:
 
-        with st.expander(
-            issue.issue_name,
-            expanded=False,
+        st.info(
+            "No governed issues are available for review."
+        )
+
+        return
+
+    default_issue_index = next(
+        (
+            index
+            for index, candidate
+            in enumerate(
+                ledger.issues
+            )
+            if any(
+                element.relationships
+                for element
+                in candidate.elements
+            )
+        ),
+        0,
+    )
+
+    selected_issue_index = (
+        st.selectbox(
+            "Issue to review",
+            tuple(
+                range(
+                    len(
+                        ledger.issues
+                    )
+                )
+            ),
+            index=
+                default_issue_index,
+            format_func=lambda index: (
+                ledger.issues[
+                    index
+                ].issue_name
+            ),
+            key=(
+                "mal_focused_issue_"
+                + ledger.case_id
+            ),
+        )
+    )
+
+    selected_issue = (
+        ledger.issues[
+            selected_issue_index
+        ]
+    )
+
+    if not selected_issue.elements:
+
+        st.info(
+            "The selected issue contains no governed focus areas."
+        )
+
+        return
+
+    default_element_index = next(
+        (
+            index
+            for index, candidate
+            in enumerate(
+                selected_issue.elements
+            )
+            if candidate.relationships
+        ),
+        0,
+    )
+
+    selected_element_index = (
+        st.selectbox(
+            "Focus area",
+            tuple(
+                range(
+                    len(
+                        selected_issue.elements
+                    )
+                )
+            ),
+            index=
+                default_element_index,
+            format_func=lambda index: (
+                selected_issue.elements[
+                    index
+                ].element_name
+            ),
+            key=(
+                "mal_focused_element_"
+                + selected_issue.issue_analysis_id
+            ),
+        )
+    )
+
+    selected_element = (
+        selected_issue.elements[
+            selected_element_index
+        ]
+    )
+
+    st.caption(
+        "Showing one issue and one focus area only. "
+        "Change either selector above to move elsewhere."
+    )
+
+    for issue in (
+        selected_issue,
+    ):
+
+        with st.container(
+            border=True
         ):
+
+            st.subheader(
+                issue.issue_name
+            )
 
             st.caption(
                 "Issue analysis: "
@@ -1143,7 +1263,9 @@ def show_matter_analysis_ledger(
                     issue.issue_summary
                 )
 
-            for element in issue.elements:
+            for element in (
+                selected_element,
+            ):
 
                 st.markdown(
                     "---"
@@ -1315,7 +1437,7 @@ def show_matter_analysis_ledger(
                 )
 
                 st.markdown(
-                    "#### Relationship review"
+                    "#### Review & decisions"
                 )
 
                 relationships = (
@@ -1511,6 +1633,22 @@ def show_matter_analysis_ledger(
                     )
 
                 elif len(evidence_options) >= 2:
+
+                    proposal_visibility_key = (
+                        "mal_show_proposal_"
+                        + issue.issue_analysis_id
+                        + "_"
+                        + element.element_id
+                    )
+
+                    if not st.toggle(
+                        "+ Propose relationship",
+                        value=False,
+                        key=
+                            proposal_visibility_key,
+                    ):
+
+                        continue
 
                     proposal_key = (
                         "mal_proposal_"

@@ -473,9 +473,18 @@ def test_mal1_heading_is_ascii_safe():
         encoding="utf-8",
     ).read()
 
-    assert 'st.header(\n        "Matter Analysis Ledger"\n    )' in source
-    assert '"?? Matter Analysis Ledger"' not in source
-    assert 'f"?? {issue.issue_name}"' not in source
+    assert (
+        'st.header(\n'
+        '        "Issue Review & Decisions"\n'
+        '    )'
+        in source
+    )
+
+    assert (
+        "Technical system: Matter Analysis Ledger."
+        in source
+    )
+
 
 
 
@@ -938,5 +947,75 @@ def test_role_selector_counts_and_preserves_multi_role_membership():
     # not a single inferred role assigned globally to the evidence key.
     assert (
         "element.conflicting_evidence_keys"
+        in source
+    )
+
+
+
+def test_focused_workspace_shows_one_issue_and_one_element_at_a_time():
+
+    source = open(
+        "src/ui/matter_analysis_ledger.py",
+        encoding="utf-8",
+    ).read()
+
+    assert (
+        'MAL1_FOCUSED_WORKSPACE_VERSION = '
+        '"matter-analysis-ledger-focused-workspace/1.0"'
+        in source
+    )
+
+    assert (
+        '"Issue Review & Decisions"'
+        in source
+    )
+
+    assert '"Issue to review"' in source
+    assert '"Focus area"' in source
+
+    assert (
+        "for issue in (\n"
+        "        selected_issue,\n"
+        "    ):"
+        in source
+    )
+
+    assert (
+        "for element in (\n"
+        "                selected_element,\n"
+        "            ):"
+        in source
+    )
+
+
+def test_focused_workspace_hides_proposal_editor_until_requested():
+
+    source = open(
+        "src/ui/matter_analysis_ledger.py",
+        encoding="utf-8",
+    ).read()
+
+    assert (
+        '"+ Propose relationship"'
+        in source
+    )
+
+    assert (
+        "proposal_visibility_key"
+        in source
+    )
+
+    assert (
+        "if not st.toggle("
+        in source
+    )
+
+    assert (
+        "MAL1_ROLE_AWARE_SELECTOR_VERSION"
+        in source
+    )
+
+    assert (
+        "MAL1_REVIEW_CLARITY_VERSION"
         in source
     )
