@@ -17,25 +17,63 @@ def test_prw2_ui_has_only_prw1_review_write_boundary():
     source = UI_PATH.read_text(encoding="utf-8")
     tree = ast.parse(source)
 
-    imported_names = set()
-    for node in tree.body:
-        if isinstance(node, ast.ImportFrom):
-            for alias in node.names:
-                imported_names.add(alias.name)
-
-    assert "review_agent_observation" in imported_names
-    assert "publish_professional_review_event" in imported_names
-    assert "load_professional_review_inbox" in imported_names
-
-    forbidden = (
-        "propose_analytical_change",
-        "review_analytical_change",
-        "governed_authority_revision",
-        "activate_governed_analytical_authority",
-        "publish_governed_analytical_authority",
+    review_controls = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_review_controls"
     )
-    for value in forbidden:
-        assert value not in source
+    mal1_controls = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_mal1_consideration_controls"
+    )
+
+    review_source = ast.get_source_segment(
+        source,
+        review_controls,
+    )
+    mal1_source = ast.get_source_segment(
+        source,
+        mal1_controls,
+    )
+
+    assert review_source.count(
+        "review_agent_observation("
+    ) == 1
+    assert mal1_source.count(
+        "_propose_mal1_from_prw("
+    ) == 1
+
+    imports = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.ImportFrom)
+        and node.module == "analytical_change_proposals"
+    ]
+    assert len(imports) == 1
+
+    aliases = {
+        alias.name: alias.asname
+        for alias in imports[0].names
+    }
+    assert aliases[
+        "propose_analytical_change_from_professional_review"
+    ] == "_propose_mal1_from_prw"
+
+    assert "propose_analytical_change(" not in source
+    assert "review_analytical_change(" not in source
+
+    for forbidden in (
+        "build_governed_authority_revision",
+        "publish_governed_analytical_authority",
+        "activate_governed_analytical_authority",
+        "responses.create",
+        "openai",
+    ):
+        assert forbidden not in source.casefold()
+
 
 
 def test_prw2_ui_uses_exact_professional_review_decision_enum():

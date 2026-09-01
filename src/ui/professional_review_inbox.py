@@ -27,6 +27,24 @@ from governed_analytical_authority.provider import (
     load_active_governed_analytical_authority,
 )
 
+from analytical_change_proposals import (
+    AnalyticalChangeProposalError as _MAL1ConsiderationError,
+    AnalyticalChangeProposalState as _MAL1ConsiderationState,
+    load_change_proposal_events as _load_mal1_change_events,
+    project_change_proposals as _project_mal1_change_proposals,
+    propose_analytical_change_from_professional_review as _propose_mal1_from_prw,
+)
+from controlled_agentic_analysis_review import (
+    ProfessionalReviewState as _MAL1ProfessionalReviewState,
+)
+from governed_analytical_authority.provider import (
+    load_active_governed_analytical_authority as _load_mal1_active_authority,
+)
+from matter_analysis_ledger import (
+    build_matter_analysis_ledger as _build_mal1_target_ledger,
+    load_relationship_events as _load_mal1_relationship_events,
+)
+
 
 PRW2_UI_VERSION = "controlled-agentic-professional-review-inbox-ui/v1"
 
@@ -300,6 +318,222 @@ def _review_controls(
     st.rerun()
 
 
+def _mal1_consideration_controls(
+    *,
+    item,
+    active_case_id: str,
+) -> None:
+    projection = item.review_projection
+    if (
+        projection is None
+        or projection.state
+        is not _MAL1ProfessionalReviewState.ACCEPTED_FOR_MAL1_CONSIDERATION
+    ):
+        return
+
+    issue_id = item.observation.issue_analysis_id
+    element_id = item.observation.element_id
+    if not issue_id or not element_id:
+        st.caption(
+            "MAL1 consideration is unavailable because this accepted "
+            "observation is not bound to one analytical issue element."
+        )
+        return
+
+    authority = _load_mal1_active_authority(active_case_id)
+    if authority is None:
+        st.warning(
+            "MAL1 consideration is unavailable because there is no active "
+            "governed analytical authority for this matter."
+        )
+        return
+
+    current_authority_id = authority.manifest.authority_id
+    if item.run.active_authority_id != current_authority_id:
+        st.info(
+            "This accepted observation belongs to a prior governed authority. "
+            "MAL1 consideration is read-only and disabled for stale authority."
+        )
+        return
+
+    change_events = _load_mal1_change_events(
+        case_id=active_case_id,
+        authority_id=current_authority_id,
+    )
+    proposals = _project_mal1_change_proposals(
+        events=change_events,
+        issue_analysis_id=issue_id,
+        element_id=element_id,
+    )
+
+    st.markdown("#### Professional MAL1 consideration")
+    st.caption(
+        "Professional-review acceptance permits a separately authored MAL1 "
+        "proposal. It does not itself change the governed analysis."
+    )
+
+    if proposals:
+        latest = proposals[-1]
+        st.write(
+            "**Existing MAL1 proposal state:** "
+            + latest.state.value
+            + " - "
+            + latest.proposal_id
+        )
+    else:
+        st.caption(
+            "No MAL1 proposal currently exists for this analytical element "
+            "under the active governed authority."
+        )
+
+    if any(
+        proposal.state is _MAL1ConsiderationState.PROPOSED
+        for proposal in proposals
+    ):
+        st.info(
+            "A MAL1 proposal is already pending for this analytical element. "
+            "Review it separately in Issue Review & Decisions."
+        )
+        return
+
+    show_editor = st.toggle(
+        "+ Consider accepted observation for MAL1",
+        value=False,
+        key=(
+            "prw_mal1_consider_"
+            + item.observation.observation_id
+        ),
+    )
+    if not show_editor:
+        return
+
+    relationship_events = _load_mal1_relationship_events(
+        case_id=active_case_id,
+        authority_id=current_authority_id,
+    )
+    ledger = _build_mal1_target_ledger(
+        authority=authority,
+        events=relationship_events,
+    )
+
+    issue_matches = tuple(
+        issue
+        for issue in ledger.issues
+        if issue.issue_analysis_id == issue_id
+    )
+    if len(issue_matches) != 1:
+        st.error(
+            "MAL1 consideration cannot resolve the accepted observation "
+            "to exactly one current governed issue."
+        )
+        return
+
+    element_matches = tuple(
+        element
+        for element in issue_matches[0].elements
+        if element.element_id == element_id
+    )
+    if len(element_matches) != 1:
+        st.error(
+            "MAL1 consideration cannot resolve the accepted observation "
+            "to exactly one current governed analytical element."
+        )
+        return
+
+    element = element_matches[0]
+
+    status_options = tuple(
+        dict.fromkeys(
+            (
+                element.analytical_status,
+                "well_supported",
+                "partially_supported",
+                "disputed",
+                "insufficiently_evidenced",
+                "unresolved",
+            )
+        )
+    )
+    confidence_options = tuple(
+        dict.fromkeys(
+            (
+                element.analytical_confidence,
+                "high",
+                "medium",
+                "low",
+            )
+        )
+    )
+
+    st.write(
+        "**Current governed position:** "
+        + element.analytical_status
+        + " / confidence "
+        + element.analytical_confidence
+    )
+    st.caption(
+        "The accepted observation remains qualified by its recorded "
+        "uncertainty, limitations and professional-review note. "
+        "State the proposed MAL1 rationale explicitly."
+    )
+
+    with st.form(
+        key=(
+            "prw_mal1_consideration_form_"
+            + item.observation.observation_id
+        )
+    ):
+        proposed_status = st.selectbox(
+            "Proposed MAL1 analytical status",
+            status_options,
+            format_func=lambda value: value.replace("_", " ").title(),
+        )
+        proposed_confidence = st.selectbox(
+            "Proposed MAL1 confidence",
+            confidence_options,
+            format_func=lambda value: value.replace("_", " ").title(),
+        )
+        rationale = st.text_area(
+            "Professional MAL1 proposal rationale",
+            height=160,
+            help=(
+                "Explain why the accepted observation justifies this "
+                "separate analytical-change proposal while preserving "
+                "its uncertainty and limitations."
+            ),
+        )
+        submitted = st.form_submit_button(
+            "CREATE MAL1 PROPOSAL",
+            use_container_width=True,
+        )
+
+    if not submitted:
+        return
+
+    try:
+        _propose_mal1_from_prw(
+            case_id=active_case_id,
+            authority_id=current_authority_id,
+            issue_analysis_id=issue_id,
+            element_id=element_id,
+            current_status=element.analytical_status,
+            current_confidence=element.analytical_confidence,
+            proposed_status=proposed_status,
+            proposed_confidence=proposed_confidence,
+            rationale=rationale,
+            actor="interactive_user",
+            professional_review_events=tuple(item.review_events),
+            basis_relationship_ids=(),
+        )
+    except _MAL1ConsiderationError as exc:
+        st.error(str(exc))
+    else:
+        st.success(
+            "MAL1 proposal created for separate professional review. "
+            "The governed authority has not been revised or activated."
+        )
+        st.rerun()
+
 def show_professional_review_inbox(
     active_case_id: str | None,
 ) -> None:
@@ -405,6 +639,10 @@ def show_professional_review_inbox(
                 _render_observation_record(item)
                 _render_review_history(item)
                 _review_controls(item=item)
+                _mal1_consideration_controls(
+                    item=item,
+                    active_case_id=active_case_id,
+                )
 
         if stale:
             st.warning(
