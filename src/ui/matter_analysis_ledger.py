@@ -1503,10 +1503,31 @@ def _matter_relationship_proposal_editor(
     )
 
 
+
+def _suppress_streamlit_stale_visual_dimming() -> None:
+    # Streamlit marks prior-run elements data-stale=true during a rerun.
+    # Preserve rerun semantics but keep the visible workspace at full opacity.
+    st.markdown(
+        """
+        <style>
+        [data-testid="stAppViewContainer"] [data-stale="true"],
+        [data-testid="stAppViewContainer"] [data-stale="true"] * {
+            opacity: 1 !important;
+            transition: none !important;
+            filter: none !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 @_matter_ledger_fragment
 def show_matter_analysis_ledger(
     active_case_id: str | None,
 ) -> None:
+
+    _suppress_streamlit_stale_visual_dimming()
 
     if active_case_id is None:
         return
