@@ -1179,6 +1179,43 @@ def _show_terminal_relationship_summary(
         )
 
 
+
+
+def _stable_selectbox(
+    *,
+    label,
+    options,
+    default_value,
+    format_func,
+    state_key,
+):
+    """Render a selectbox whose semantic value is the persisted widget state."""
+
+    stable_options = tuple(options)
+    if not stable_options:
+        raise ValueError("options must not be empty.")
+    if default_value not in stable_options:
+        raise ValueError("default_value must be present in options.")
+
+    current = st.session_state.get(state_key, default_value)
+    if current not in stable_options:
+        current = default_value
+
+    st.session_state[state_key] = current
+
+    selected = st.selectbox(
+        label,
+        stable_options,
+        format_func=format_func,
+        key=state_key,
+    )
+
+    if selected not in stable_options:
+        raise ValueError("selectbox returned a value outside the supplied options.")
+
+    return selected
+
+
 def show_matter_analysis_ledger(
     active_case_id: str | None,
 ) -> None:
@@ -1295,33 +1332,38 @@ def show_matter_analysis_ledger(
         0,
     )
 
-    selected_issue_index = (
-        st.selectbox(
-            "Issue to review",
-            tuple(
-                range(
-                    len(
-                        ledger.issues
-                    )
-                )
-            ),
-            index=
-                default_issue_index,
-            format_func=lambda index: (
-                ledger.issues[
-                    index
-                ].issue_name
-            ),
-            key=(
-                "mal_focused_issue_"
-                + ledger.case_id
-            ),
-        )
+    issue_by_id = {
+        issue.issue_analysis_id: issue
+        for issue in ledger.issues
+    }
+    issue_ids = tuple(
+        issue.issue_analysis_id
+        for issue in ledger.issues
+    )
+    default_issue_id = (
+        ledger.issues[
+            default_issue_index
+        ].issue_analysis_id
+    )
+
+    selected_issue_id = _stable_selectbox(
+        label="Issue to review",
+        options=issue_ids,
+        default_value=default_issue_id,
+        format_func=lambda issue_id: (
+            issue_by_id[
+                issue_id
+            ].issue_name
+        ),
+        state_key=(
+            "mal_focused_issue_state_"
+            + ledger.case_id
+        ),
     )
 
     selected_issue = (
-        ledger.issues[
-            selected_issue_index
+        issue_by_id[
+            selected_issue_id
         ]
     )
 
@@ -1345,33 +1387,40 @@ def show_matter_analysis_ledger(
         0,
     )
 
-    selected_element_index = (
-        st.selectbox(
-            "Focus area",
-            tuple(
-                range(
-                    len(
-                        selected_issue.elements
-                    )
-                )
-            ),
-            index=
-                default_element_index,
-            format_func=lambda index: (
-                selected_issue.elements[
-                    index
-                ].element_name
-            ),
-            key=(
-                "mal_focused_element_"
-                + selected_issue.issue_analysis_id
-            ),
-        )
+    element_by_id = {
+        element.element_id: element
+        for element in selected_issue.elements
+    }
+    element_ids = tuple(
+        element.element_id
+        for element in selected_issue.elements
+    )
+    default_element_id = (
+        selected_issue.elements[
+            default_element_index
+        ].element_id
+    )
+
+    selected_element_id = _stable_selectbox(
+        label="Focus area",
+        options=element_ids,
+        default_value=default_element_id,
+        format_func=lambda element_id: (
+            element_by_id[
+                element_id
+            ].element_name
+        ),
+        state_key=(
+            "mal_focused_element_state_"
+            + ledger.case_id
+            + "_"
+            + selected_issue.issue_analysis_id
+        ),
     )
 
     selected_element = (
-        selected_issue.elements[
-            selected_element_index
+        element_by_id[
+            selected_element_id
         ]
     )
 
