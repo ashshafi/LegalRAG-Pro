@@ -1216,6 +1216,15 @@ def _stable_selectbox(
     return selected
 
 
+
+def _matter_ledger_fragment(function):
+    fragment = getattr(st, "fragment", None)
+    if fragment is None:
+        return function
+    return fragment(function)
+
+
+@_matter_ledger_fragment
 def show_matter_analysis_ledger(
     active_case_id: str | None,
 ) -> None:
