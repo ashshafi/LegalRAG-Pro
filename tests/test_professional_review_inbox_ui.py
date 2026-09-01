@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+from types import SimpleNamespace
+
+from controlled_agentic_analysis_review import ProfessionalReviewDecision
+from ui.professional_review_inbox import _is_duplicate_review_submission
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -83,3 +87,71 @@ def test_app_places_prw2_between_legal_issue_dashboard_and_matter_ledger():
     )
 
     assert dashboard_call < inbox_call < ledger_call
+
+def _review_item(*events):
+    return SimpleNamespace(review_events=events)
+
+
+def _review_event(*, decision, reviewer_reference="reviewer", reviewer_note="note"):
+    return SimpleNamespace(
+        decision=decision,
+        reviewer_reference=reviewer_reference,
+        reviewer_note=reviewer_note,
+    )
+
+
+def test_duplicate_guard_blocks_exact_repeat_of_latest_review():
+    item = _review_item(
+        _review_event(
+            decision=ProfessionalReviewDecision.DEFER,
+            reviewer_reference=" Project Board reviewer ",
+            reviewer_note=" Same professional note ",
+        )
+    )
+
+    assert _is_duplicate_review_submission(
+        item=item,
+        decision=ProfessionalReviewDecision.DEFER,
+        reviewer_reference="Project Board reviewer",
+        reviewer_note="Same professional note",
+    )
+
+
+def test_duplicate_guard_allows_different_decision():
+    item = _review_item(
+        _review_event(
+            decision=ProfessionalReviewDecision.DEFER,
+        )
+    )
+
+    assert not _is_duplicate_review_submission(
+        item=item,
+        decision=ProfessionalReviewDecision.ACCEPT_FOR_MAL1_CONSIDERATION,
+        reviewer_reference="reviewer",
+        reviewer_note="note",
+    )
+
+
+def test_duplicate_guard_allows_substantively_different_review_note():
+    item = _review_item(
+        _review_event(
+            decision=ProfessionalReviewDecision.DEFER,
+            reviewer_note="Initial reason for deferral.",
+        )
+    )
+
+    assert not _is_duplicate_review_submission(
+        item=item,
+        decision=ProfessionalReviewDecision.DEFER,
+        reviewer_reference="reviewer",
+        reviewer_note="New evidence considered; further review remains required.",
+    )
+
+
+def test_duplicate_guard_allows_first_review():
+    assert not _is_duplicate_review_submission(
+        item=_review_item(),
+        decision=ProfessionalReviewDecision.DEFER,
+        reviewer_reference="reviewer",
+        reviewer_note="First professional review.",
+    )

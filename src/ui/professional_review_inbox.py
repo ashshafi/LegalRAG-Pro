@@ -184,6 +184,26 @@ def _render_terminal_result(
         )
 
 
+def _is_duplicate_review_submission(
+    *,
+    item: ProfessionalReviewInboxItem,
+    decision: ProfessionalReviewDecision,
+    reviewer_reference: str,
+    reviewer_note: str,
+) -> bool:
+    """Return True only for an exact repeat of the latest recorded review."""
+
+    if not item.review_events:
+        return False
+
+    latest = item.review_events[-1]
+    return (
+        latest.decision == decision
+        and latest.reviewer_reference.strip() == reviewer_reference.strip()
+        and latest.reviewer_note.strip() == reviewer_note.strip()
+    )
+
+
 def _review_controls(
     *,
     item: ProfessionalReviewInboxItem,
@@ -236,6 +256,18 @@ def _review_controls(
         return
     if not reviewer_note.strip():
         st.warning("Enter a professional review note before recording review.")
+        return
+
+    if _is_duplicate_review_submission(
+        item=item,
+        decision=decision,
+        reviewer_reference=reviewer_reference,
+        reviewer_note=reviewer_note,
+    ):
+        st.warning(
+            "This review is identical to the most recent recorded review. "
+            "No new professional review event was created."
+        )
         return
 
     reviewed_at_utc = datetime.now(
