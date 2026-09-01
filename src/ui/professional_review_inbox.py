@@ -211,42 +211,45 @@ def _review_controls(
     observation = item.observation
     suffix = observation.observation_id[7:23]
 
-    reviewer_reference = st.text_input(
-        "Reviewer reference",
-        key="prw2_reviewer_" + suffix,
-        help=(
-            "Record the professional reviewer identity or internal reviewer "
-            "reference used for this decision."
-        ),
-    )
+    with st.form(
+        key="prw2_form_" + suffix,
+        clear_on_submit=False,
+    ):
+        reviewer_reference = st.text_input(
+            "Reviewer reference",
+            key="prw2_reviewer_" + suffix,
+            help=(
+                "Record the professional reviewer identity or internal reviewer "
+                "reference used for this decision."
+            ),
+        )
 
-    reviewer_note = st.text_area(
-        "Professional review note",
-        height=120,
-        key="prw2_note_" + suffix,
-        help=(
-            "Record the professional basis for deferring, accepting for MAL1 "
-            "consideration, or rejecting this observation."
-        ),
-    )
+        reviewer_note = st.text_area(
+            "Professional review note",
+            height=120,
+            key="prw2_note_" + suffix,
+            help=(
+                "Record the professional basis for deferring, accepting for MAL1 "
+                "consideration, or rejecting this observation."
+            ),
+        )
 
-    decision = st.selectbox(
-        "Professional review decision",
-        tuple(ProfessionalReviewDecision),
-        format_func=_decision_label,
-        key="prw2_decision_" + suffix,
-    )
+        decision = st.selectbox(
+            "Professional review decision",
+            tuple(ProfessionalReviewDecision),
+            format_func=_decision_label,
+            key="prw2_decision_" + suffix,
+        )
 
-    st.caption(
-        "ACCEPT_FOR_MAL1_CONSIDERATION does not create a MAL1 proposal, "
-        "does not approve a MAL1 proposal, and does not change governed authority."
-    )
+        st.caption(
+            "ACCEPT_FOR_MAL1_CONSIDERATION does not create a MAL1 proposal, "
+            "does not approve a MAL1 proposal, and does not change governed authority."
+        )
 
-    submitted = st.button(
-        "RECORD PROFESSIONAL REVIEW",
-        key="prw2_submit_" + suffix,
-        use_container_width=True,
-    )
+        submitted = st.form_submit_button(
+            "RECORD PROFESSIONAL REVIEW",
+            use_container_width=True,
+        )
 
     if not submitted:
         return
