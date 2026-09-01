@@ -312,13 +312,15 @@ def _trace_search_values(key: WorkspaceObjectKey, value: object) -> tuple[object
 
 def _render_traceability(index: WorkspaceIndex) -> None:
     st.header("Exact Traceability")
-    kind = st.selectbox(
-        "Object type",
-        options=_TRACE_ORDER,
-        key="m6_trace_kind",
-        format_func=lambda value: _TRACE_LABELS[value],
-    )
-    query = st.text_input("Literal search", key="m6_trace_query")
+    with st.form(key="workspace_traceability_filter_form", clear_on_submit=False):
+        kind = st.selectbox(
+            "Object type",
+            options=_TRACE_ORDER,
+            key="m6_trace_kind",
+            format_func=lambda value: _TRACE_LABELS[value],
+        )
+        query = st.text_input("Literal search", key="m6_trace_query")
+        st.form_submit_button("APPLY TRACEABILITY FILTER", use_container_width=True)
     keys = tuple(
         key for key in _trace_keys(index, kind)
         if literal_query_matches(query, _trace_search_values(key, index.object_by_key[key]))
@@ -588,15 +590,17 @@ def _render_citation(index: WorkspaceIndex, citation) -> None:
 def _render_evidence(index: WorkspaceIndex) -> None:
     st.header("Evidence Explorer")
     citations = tuple(index.citations_by_id[key.primary_id] for key in index.citation_keys)
-    st.text_input("Literal search", key="m6_evidence_query")
-    st.multiselect("Document group", index.document_group_keys, key="m6_evidence_documents", format_func=_document_label)
-    st.multiselect("Source type", _first_values(item.source_type for item in citations), key="m6_evidence_source_types")
-    st.multiselect("Evidence status", _first_values(item.evidence_status for item in citations), key="m6_evidence_statuses")
-    st.multiselect("Provenance type", _first_values(item.provenance_type for item in citations), key="m6_evidence_provenance_types")
-    st.multiselect("Provenance confidence", _first_values(item.provenance_confidence for item in citations), key="m6_evidence_provenance_confidences")
-    st.multiselect("Author", _first_values(item.author for item in citations), key="m6_evidence_authors")
-    st.multiselect("Party", _first_values(party for item in citations for party in item.parties), key="m6_evidence_parties")
-    st.multiselect("Issue ID", _first_values(coord[0] for item in citations for coord in item.evidence_use_coordinates), key="m6_evidence_issue_ids")
+    with st.form(key="workspace_evidence_filter_form", clear_on_submit=False):
+        st.text_input("Literal search", key="m6_evidence_query")
+        st.multiselect("Document group", index.document_group_keys, key="m6_evidence_documents", format_func=_document_label)
+        st.multiselect("Source type", _first_values(item.source_type for item in citations), key="m6_evidence_source_types")
+        st.multiselect("Evidence status", _first_values(item.evidence_status for item in citations), key="m6_evidence_statuses")
+        st.multiselect("Provenance type", _first_values(item.provenance_type for item in citations), key="m6_evidence_provenance_types")
+        st.multiselect("Provenance confidence", _first_values(item.provenance_confidence for item in citations), key="m6_evidence_provenance_confidences")
+        st.multiselect("Author", _first_values(item.author for item in citations), key="m6_evidence_authors")
+        st.multiselect("Party", _first_values(party for item in citations for party in item.parties), key="m6_evidence_parties")
+        st.multiselect("Issue ID", _first_values(coord[0] for item in citations for coord in item.evidence_use_coordinates), key="m6_evidence_issue_ids")
+        st.form_submit_button("APPLY EVIDENCE FILTERS", use_container_width=True)
 
     selected_documents = _selected("m6_evidence_documents")
     source_types = _selected("m6_evidence_source_types")
@@ -663,13 +667,15 @@ def _event_search_values(event) -> tuple[object, ...]:
 def _render_chronology(index: WorkspaceIndex) -> None:
     st.header("Frozen Chronology")
     events = tuple(index.events_by_id[key.primary_id] for key in index.event_keys)
-    st.text_input("Literal search", key="m6_chronology_query")
-    st.multiselect("Event type", _first_values(item.event_type for item in events), key="m6_chronology_event_types")
-    st.multiselect("Participant", _first_values(value for item in events for value in item.participants), key="m6_chronology_participants")
-    st.multiselect("Occurrence raw status", _first_values(item.occurrence_status.raw_value for item in events), key="m6_chronology_occurrence_statuses")
-    st.multiselect("Timing raw status", _first_values(item.timing_status.raw_value for item in events), key="m6_chronology_timing_statuses")
-    st.multiselect("Confidence raw status", _first_values(item.confidence.raw_value for item in events), key="m6_chronology_confidences")
-    st.multiselect("Related issue ID", _first_values(value for item in events for value in item.related_issue_ids), key="m6_chronology_issue_ids")
+    with st.form(key="workspace_chronology_filter_form", clear_on_submit=False):
+        st.text_input("Literal search", key="m6_chronology_query")
+        st.multiselect("Event type", _first_values(item.event_type for item in events), key="m6_chronology_event_types")
+        st.multiselect("Participant", _first_values(value for item in events for value in item.participants), key="m6_chronology_participants")
+        st.multiselect("Occurrence raw status", _first_values(item.occurrence_status.raw_value for item in events), key="m6_chronology_occurrence_statuses")
+        st.multiselect("Timing raw status", _first_values(item.timing_status.raw_value for item in events), key="m6_chronology_timing_statuses")
+        st.multiselect("Confidence raw status", _first_values(item.confidence.raw_value for item in events), key="m6_chronology_confidences")
+        st.multiselect("Related issue ID", _first_values(value for item in events for value in item.related_issue_ids), key="m6_chronology_issue_ids")
+        st.form_submit_button("APPLY CHRONOLOGY FILTERS", use_container_width=True)
     query = str(st.session_state.get("m6_chronology_query", ""))
     event_types = _selected("m6_chronology_event_types")
     participants = _selected("m6_chronology_participants")
@@ -735,12 +741,14 @@ def _render_people(index: WorkspaceIndex) -> None:
         "Names and party strings are grouped exactly as recorded in the frozen projection. "
         "No entity resolution, alias matching or person/organisation classification is performed."
     )
-    st.text_input("Literal search", key="m6_people_query")
-    contexts = (
-        "case_header.claimant", "case_header.respondent", "event.participants",
-        "citation.author", "citation.parties",
-    )
-    st.multiselect("Occurrence context", contexts, key="m6_people_contexts")
+    with st.form(key="workspace_people_filter_form", clear_on_submit=False):
+        st.text_input("Literal search", key="m6_people_query")
+        contexts = (
+            "case_header.claimant", "case_header.respondent", "event.participants",
+            "citation.author", "citation.parties",
+        )
+        st.multiselect("Occurrence context", contexts, key="m6_people_contexts")
+        st.form_submit_button("APPLY PEOPLE FILTERS", use_container_width=True)
     query = str(st.session_state.get("m6_people_query", ""))
     selected_contexts = _selected("m6_people_contexts")
     visible = tuple(

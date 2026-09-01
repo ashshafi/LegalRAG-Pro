@@ -290,6 +290,29 @@ def _show_conversation_history(active_case_id: str | None) -> None:
             st.write(turn["result"]["answer"])
 
 
+
+def _question_form():
+    form = getattr(st, "form", None)
+    if form is None:
+        from contextlib import nullcontext
+        return nullcontext()
+    return form(key="assistant_question_form", clear_on_submit=False)
+
+
+def _question_text_area(label, **kwargs):
+    text_area = getattr(st, "text_area", None)
+    if text_area is not None:
+        return text_area(label, **kwargs)
+    return st.text_input(label, **kwargs)
+
+
+def _question_form_submit_button(label):
+    submit = getattr(st, "form_submit_button", None)
+    if submit is not None:
+        return submit(label)
+    return st.button(label)
+
+
 def show_chat(
     selected_documents,
     timeline_clicked,
@@ -323,46 +346,47 @@ def show_chat(
 
     _show_conversation_history(active_case_id)
 
-    question = st.text_area(
-        "Ask a legal question",
-        key=_QUESTION_INPUT_KEY,
-    )
+    with _question_form():
+        question = _question_text_area(
+            "Ask a legal question",
+            key=_QUESTION_INPUT_KEY,
+        )
 
-    if st.button("🔍 Ask"):
-        if not question:
-            st.warning("Please enter a question.")
-            return
+        if _question_form_submit_button("🔍 Ask"):
+            if not question:
+                st.warning("Please enter a question.")
+                return
 
-        if active_case_id is not None and not selected_documents:
-            st.warning(
-                "The active case has no selected indexed documents. "
-                "Assign or index documents before asking a case-specific question."
-            )
-            return
+            if active_case_id is not None and not selected_documents:
+                st.warning(
+                    "The active case has no selected indexed documents. "
+                    "Assign or index documents before asking a case-specific question."
+                )
+                return
 
-        submitted_question = question
-        if active_case_id is not None:
-            question = resolve_follow_up_question(
-                question,
-                _history_for_case(active_case_id),
+            submitted_question = question
+            if active_case_id is not None:
+                question = resolve_follow_up_question(
+                    question,
+                    _history_for_case(active_case_id),
+                    active_case_id=active_case_id,
+                )
+
+            with st.spinner("Searching evidence..."):
+                result = ask_with_reference_findings(
+                    question,
+                    selected_documents,
+                    case_id=active_case_id,
+                )
+
+            st.session_state.last_question = submitted_question
+            st.session_state.last_result = result
+            st.session_state.last_result_case_id = active_case_id
+            _append_history_turn(
+                question=submitted_question,
+                result=result,
                 active_case_id=active_case_id,
             )
-
-        with st.spinner("Searching evidence..."):
-            result = ask_with_reference_findings(
-                question,
-                selected_documents,
-                case_id=active_case_id,
-            )
-
-        st.session_state.last_question = submitted_question
-        st.session_state.last_result = result
-        st.session_state.last_result_case_id = active_case_id
-        _append_history_turn(
-            question=submitted_question,
-            result=result,
-            active_case_id=active_case_id,
-        )
 
     if st.session_state.last_result is not None:
         result = st.session_state.last_result

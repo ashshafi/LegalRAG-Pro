@@ -329,10 +329,12 @@ def _render_matrix(index: FinanceWorkspaceIndex) -> None:
     company_options = tuple(dict.fromkeys(index.cells_by_id[k.primary_id].company_id for k in index.cell_keys))
     metric_options = tuple(index.cells_by_metric)
     status_options = tuple(index.cells_by_status)
-    st.text_input("Literal search", key="finance_matrix_query")
-    st.multiselect("Company IDs", company_options, key="finance_matrix_companies")
-    st.multiselect("Metric codes", metric_options, key="finance_matrix_metrics")
-    st.multiselect("Raw statuses", status_options, key="finance_matrix_statuses")
+    with st.form(key="finance_matrix_filter_form", clear_on_submit=False):
+        st.text_input("Literal search", key="finance_matrix_query")
+        st.multiselect("Company IDs", company_options, key="finance_matrix_companies")
+        st.multiselect("Metric codes", metric_options, key="finance_matrix_metrics")
+        st.multiselect("Raw statuses", status_options, key="finance_matrix_statuses")
+        st.form_submit_button("APPLY MATRIX FILTERS", use_container_width=True)
     rows = metric_matrix_rows(
         index,
         query=str(st.session_state.get("finance_matrix_query", "")),
@@ -411,9 +413,11 @@ def _render_calculations(index: FinanceWorkspaceIndex) -> None:
 
 
 def _render_evidence(index: FinanceWorkspaceIndex) -> None:
-    st.text_input("Literal search", key="finance_evidence_query")
-    st.multiselect("Source channels", tuple(index.evidence_by_source_channel), key="finance_evidence_channels")
-    st.multiselect("Binding classes", tuple(index.evidence_by_binding_class), key="finance_evidence_binding_classes")
+    with st.form(key="finance_evidence_filter_form", clear_on_submit=False):
+        st.text_input("Literal search", key="finance_evidence_query")
+        st.multiselect("Source channels", tuple(index.evidence_by_source_channel), key="finance_evidence_channels")
+        st.multiselect("Binding classes", tuple(index.evidence_by_binding_class), key="finance_evidence_binding_classes")
+        st.form_submit_button("APPLY EVIDENCE FILTERS", use_container_width=True)
     rows = evidence_register_rows(
         index,
         query=str(st.session_state.get("finance_evidence_query", "")),
@@ -442,13 +446,15 @@ def _render_limitations(index: FinanceWorkspaceIndex) -> None:
 
 
 def _render_traceability(index: FinanceWorkspaceIndex) -> None:
-    st.selectbox(
-        "Object kind",
-        _KIND_ORDER,
-        format_func=lambda kind: _KIND_LABELS[kind],
-        key="finance_trace_kind",
-    )
-    st.text_input("Literal search", key="finance_trace_query")
+    with st.form(key="finance_traceability_filter_form", clear_on_submit=False):
+        st.selectbox(
+            "Object kind",
+            _KIND_ORDER,
+            format_func=lambda kind: _KIND_LABELS[kind],
+            key="finance_trace_kind",
+        )
+        st.text_input("Literal search", key="finance_trace_query")
+        st.form_submit_button("APPLY TRACEABILITY FILTER", use_container_width=True)
     kind = st.session_state.get("finance_trace_kind", "member")
     query = str(st.session_state.get("finance_trace_query", ""))
     keys = tuple(
