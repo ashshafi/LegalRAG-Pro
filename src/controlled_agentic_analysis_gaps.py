@@ -310,10 +310,20 @@ def build_caa2_evidence_text(
         _fail("EvidenceBinding belongs to a different case.")
     if allowed.get(ref.evidence_key) != ref.evidence_binding_sha256:
         _fail("EvidenceBinding is outside or differs from the frozen CAA1 evidence scope.")
-    bound_text_sha256 = _require_sha(
+    raw_bound_text_sha256 = _text(
         getattr(binding, "bound_text_sha256", None),
         field_name="EvidenceBinding.bound_text_sha256",
     )
+    if (
+        len(raw_bound_text_sha256) == 64
+        and all(ch in "0123456789abcdef" for ch in raw_bound_text_sha256)
+    ):
+        bound_text_sha256 = f"sha256:{raw_bound_text_sha256}"
+    else:
+        bound_text_sha256 = _require_sha(
+            raw_bound_text_sha256,
+            field_name="EvidenceBinding.bound_text_sha256",
+        )
     result = CAA2EvidenceText(
         schema_version=CAA2_EVIDENCE_TEXT_SCHEMA_VERSION,
         case_id=run.case_id,

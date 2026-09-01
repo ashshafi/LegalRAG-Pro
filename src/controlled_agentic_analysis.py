@@ -689,10 +689,20 @@ def _verify_caa1_evidence_inputs(
             _fail("CAA1 evidence input is outside the frozen inspection universe.")
         if ref != expected_ref:
             _fail("CAA1 evidence input binding identity differs from frozen inspection universe.")
-        bound_text_sha = _require_sha256(
+        raw_bound_text_sha = _text(
             getattr(item.binding, "bound_text_sha256", None),
             field_name="EvidenceBinding.bound_text_sha256",
         )
+        if (
+            len(raw_bound_text_sha) == 64
+            and all(ch in "0123456789abcdef" for ch in raw_bound_text_sha)
+        ):
+            bound_text_sha = f"sha256:{raw_bound_text_sha}"
+        else:
+            bound_text_sha = _require_sha256(
+                raw_bound_text_sha,
+                field_name="EvidenceBinding.bound_text_sha256",
+            )
         verified = VerifiedCAA1EvidenceText(
             evidence_key=ref.evidence_key,
             evidence_binding_sha256=ref.evidence_binding_sha256,
