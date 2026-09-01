@@ -816,139 +816,214 @@ def test_why_raw_evidence_keys_are_collapsed():
 
 
 def test_role_aware_selector_filters_from_element_role_fields():
+    import ast
+    from pathlib import Path
 
-    source = open(
-        "src/ui/matter_analysis_ledger.py",
-        encoding="utf-8",
-    ).read()
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "src/ui/matter_analysis_ledger.py"
+    ).read_text(encoding="utf-8")
+    tree = ast.parse(source)
 
-    assert (
-        'MAL1_ROLE_AWARE_SELECTOR_VERSION = '
-        '"matter-analysis-ledger-role-aware-selector/1.0"'
-        in source
+    helper = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_matter_relationship_proposal_editor"
     )
 
-    assert (
-        '"SUPPORTING":\n'
-        '                            tuple(\n'
-        '                                element.supporting_evidence_keys'
-        in source
+    assignment = next(
+        node
+        for node in ast.walk(helper)
+        if isinstance(node, ast.Assign)
+        and any(
+            isinstance(target, ast.Name)
+            and target.id == "role_evidence_options"
+            for target in node.targets
+        )
     )
 
-    assert (
-        '"CONFLICTING":\n'
-        '                            tuple(\n'
-        '                                element.conflicting_evidence_keys'
-        in source
-    )
+    assert isinstance(assignment.value, ast.Dict)
 
-    assert (
-        '"ADVERSE":\n'
-        '                            tuple(\n'
-        '                                element.adverse_evidence_keys'
-        in source
-    )
+    expected = {
+        "SUPPORTING": "supporting_evidence_keys",
+        "ADVERSE": "adverse_evidence_keys",
+        "CORROBORATIVE": "corroborative_evidence_keys",
+        "CONFLICTING": "conflicting_evidence_keys",
+        "NEUTRAL/CONTEXT": "neutral_evidence_keys",
+    }
 
-    assert (
-        '"CORROBORATIVE":\n'
-        '                            tuple(\n'
-        '                                element.corroborative_evidence_keys'
-        in source
-    )
+    actual = {}
+    for key_node, value_node in zip(
+        assignment.value.keys,
+        assignment.value.values,
+        strict=True,
+    ):
+        assert isinstance(key_node, ast.Constant)
+        assert isinstance(key_node.value, str)
+        assert isinstance(value_node, ast.Call)
+        assert isinstance(value_node.func, ast.Name)
+        assert value_node.func.id == "tuple"
+        assert len(value_node.args) == 1
+        attribute = value_node.args[0]
+        assert isinstance(attribute, ast.Attribute)
+        assert isinstance(attribute.value, ast.Name)
+        assert attribute.value.id == "element"
+        actual[key_node.value] = attribute.attr
+
+    assert actual == expected
+
+    helper_source = ast.get_source_segment(source, helper)
+    assert "if keys" in helper_source
+    assert "role_evidence_options.items()" in helper_source
 
 
 def test_contradiction_defaults_evidence_b_to_conflicting_role():
+    import ast
+    from pathlib import Path
 
-    source = open(
-        "src/ui/matter_analysis_ledger.py",
-        encoding="utf-8",
-    ).read()
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "src/ui/matter_analysis_ledger.py"
+    ).read_text(encoding="utf-8")
+    tree = ast.parse(source)
 
-    assert (
-        'preferred_right_role = (\n'
-        '                                "CONFLICTING"'
-        in source
+    helper = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_matter_relationship_proposal_editor"
     )
 
-    assert (
-        '"Evidence B role"'
-        in source
+    helper_source = ast.get_source_segment(source, helper)
+
+    assert "RelationshipType.CONTRADICTS.value" in helper_source
+    assert '"CONFLICTING"' in helper_source
+    assert '"ADVERSE"' in helper_source
+    assert '"CORROBORATIVE"' in helper_source
+    assert "preferred_right_role" in helper_source
+
+    conditional = next(
+        node
+        for node in ast.walk(helper)
+        if isinstance(node, ast.If)
+        and "RelationshipType.CONTRADICTS.value"
+        in ast.get_source_segment(source, node.test)
     )
 
-    assert (
-        '"Evidence B is filtered to "'
-        in source
+    contradiction_source = ast.get_source_segment(source, conditional)
+    assert '"CONFLICTING"' in contradiction_source
+    assert '"ADVERSE"' in contradiction_source
+
+
+def test_role_aware_proposal_is_staged_streamlit_form_bound():
+    import ast
+    from pathlib import Path
+
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "src/ui/matter_analysis_ledger.py"
+    ).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+
+    helper = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_matter_relationship_proposal_editor"
     )
 
+    def call_name(call):
+        if isinstance(call.func, ast.Attribute) and isinstance(call.func.value, ast.Name):
+            return call.func.value.id + "." + call.func.attr
+        if isinstance(call.func, ast.Name):
+            return call.func.id
+        return None
 
-def test_role_aware_proposal_is_dynamic_not_streamlit_form_bound():
+    def label(call):
+        if (
+            call.args
+            and isinstance(call.args[0], ast.Constant)
+            and isinstance(call.args[0].value, str)
+        ):
+            return call.args[0].value
+        return None
 
-    source = open(
-        "src/ui/matter_analysis_ledger.py",
-        encoding="utf-8",
-    ).read()
+    forms = [
+        node
+        for node in ast.walk(helper)
+        if isinstance(node, ast.Call)
+        and call_name(node) == "_matter_entry_form"
+    ]
+    assert len(forms) == 3
 
-    proposal_start = source.index(
-        "proposal_key = ("
-    )
-
-    submit_end = source.index(
-        "if submitted:",
-        proposal_start,
-    )
-
-    proposal_source = source[
-        proposal_start:
-        submit_end
+    submits = [
+        label(node)
+        for node in ast.walk(helper)
+        if isinstance(node, ast.Call)
+        and call_name(node) == "_matter_form_submit_button"
     ]
 
-    assert (
-        "with st.form("
-        not in proposal_source
-    )
+    assert submits.count("SET RELATIONSHIP TYPE") == 1
+    assert submits.count("SET EVIDENCE ROLES") == 1
+    assert submits.count("PROPOSE RELATIONSHIP") == 1
 
-    assert (
-        "st.form_submit_button("
-        not in proposal_source
-    )
-
-    assert (
-        'st.button(\n'
-        '                                "PROPOSE RELATIONSHIP"'
-        in proposal_source
-    )
+    direct_buttons = [
+        node
+        for node in ast.walk(helper)
+        if isinstance(node, ast.Call)
+        and call_name(node) == "st.button"
+    ]
+    assert direct_buttons == []
 
 
 def test_role_selector_counts_and_preserves_multi_role_membership():
+    import ast
+    from pathlib import Path
 
-    source = open(
-        "src/ui/matter_analysis_ledger.py",
-        encoding="utf-8",
-    ).read()
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "src/ui/matter_analysis_ledger.py"
+    ).read_text(encoding="utf-8")
+    tree = ast.parse(source)
 
-    assert (
-        "role_evidence_options = {"
-        in source
+    helper = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_matter_relationship_proposal_editor"
     )
 
-    assert (
-        "for role, keys\n"
-        "                        in role_evidence_options.items()"
-        in source
-    )
+    helper_source = ast.get_source_segment(source, helper)
 
-    assert (
-        "role_evidence_options[\n"
-        "                                right_role"
-        in source
-    )
+    # Each governed role is projected independently from its own element field.
+    # An evidence key may therefore legitimately occur in more than one role;
+    # no set/dedup projection is introduced here.
+    assert "role_evidence_options.items()" in helper_source
+    assert "set(" not in helper_source
+    assert "len(role_evidence_options[role])" in helper_source
 
-    # The filtering source is the element's role-specific tuples,
-    # not a single inferred role assigned globally to the evidence key.
-    assert (
-        "element.conflicting_evidence_keys"
-        in source
-    )
+    selectboxes = [
+        node
+        for node in ast.walk(helper)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "st"
+        and node.func.attr == "selectbox"
+    ]
+
+    labels = []
+    for call in selectboxes:
+        if (
+            call.args
+            and isinstance(call.args[0], ast.Constant)
+            and isinstance(call.args[0].value, str)
+        ):
+            labels.append(call.args[0].value)
+
+    assert "Evidence A role" in labels
+    assert "Evidence B role" in labels
 
 
 
