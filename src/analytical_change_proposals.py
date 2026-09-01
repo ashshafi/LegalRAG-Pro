@@ -12,6 +12,7 @@ from uuid import uuid4
 ANALYTICAL_CHANGE_EVENT_SCHEMA_VERSION = (
     "analytical-change-proposal-event/1.0"
 )
+ANALYTICAL_CHANGE_EVENT_PRW_PROVENANCE_SCHEMA_VERSION = "analytical-change-proposal-event/1.1"
 
 
 class AnalyticalChangeProposalError(
@@ -63,6 +64,17 @@ class AnalyticalChangeProposalEvent:
 
     previous_event_id: str | None = None
     review_note: str = ""
+
+@dataclass(
+    frozen=True
+)
+class ProfessionalReviewBoundAnalyticalChangeProposalEvent(
+    AnalyticalChangeProposalEvent
+):
+    basis_analysis_run_id: str = ""
+    basis_observation_id: str = ""
+    basis_professional_review_event_id: str = ""
+
 
 
 def _text(
@@ -228,306 +240,206 @@ def _event_path(
 
 def _event_to_dict(
     event: AnalyticalChangeProposalEvent,
-) -> dict[
-    str,
-    object,
-]:
-
-    return {
-        "schema_version":
-            event.schema_version,
-
-        "case_id":
-            event.case_id,
-
-        "authority_id":
-            event.authority_id,
-
-        "issue_analysis_id":
-            event.issue_analysis_id,
-
-        "element_id":
-            event.element_id,
-
-        "proposal_id":
-            event.proposal_id,
-
-        "event_id":
-            event.event_id,
-
-        "current_status":
-            event.current_status,
-
-        "current_confidence":
-            event.current_confidence,
-
-        "proposed_status":
-            event.proposed_status,
-
-        "proposed_confidence":
-            event.proposed_confidence,
-
-        "rationale":
-            event.rationale,
-
-        "basis_relationship_ids":
-            list(
-                event.basis_relationship_ids
-            ),
-
-        "state":
-            event.state.value,
-
-        "actor":
-            event.actor,
-
-        "created_at":
-            event.created_at,
-
-        "previous_event_id":
-            event.previous_event_id,
-
-        "review_note":
-            event.review_note,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "schema_version": event.schema_version,
+        "case_id": event.case_id,
+        "authority_id": event.authority_id,
+        "issue_analysis_id": event.issue_analysis_id,
+        "element_id": event.element_id,
+        "proposal_id": event.proposal_id,
+        "event_id": event.event_id,
+        "current_status": event.current_status,
+        "current_confidence": event.current_confidence,
+        "proposed_status": event.proposed_status,
+        "proposed_confidence": event.proposed_confidence,
+        "rationale": event.rationale,
+        "basis_relationship_ids": list(event.basis_relationship_ids),
+        "state": event.state.value,
+        "actor": event.actor,
+        "created_at": event.created_at,
+        "previous_event_id": event.previous_event_id,
+        "review_note": event.review_note,
     }
+    if isinstance(
+        event,
+        ProfessionalReviewBoundAnalyticalChangeProposalEvent,
+    ):
+        payload["basis_analysis_run_id"] = event.basis_analysis_run_id
+        payload["basis_observation_id"] = event.basis_observation_id
+        payload["basis_professional_review_event_id"] = (
+            event.basis_professional_review_event_id
+        )
+    return payload
+
 
 
 def _event_from_dict(
     data: object,
 ) -> AnalyticalChangeProposalEvent:
-
-    if not isinstance(
-        data,
-        dict,
-    ):
-
+    if not isinstance(data, dict):
         raise AnalyticalChangeProposalError(
             "Change-proposal event must be an object."
         )
 
-    if (
-        data.get(
-            "schema_version"
-        )
-        != ANALYTICAL_CHANGE_EVENT_SCHEMA_VERSION
-    ):
-
+    schema = data.get("schema_version")
+    if schema not in {
+        ANALYTICAL_CHANGE_EVENT_SCHEMA_VERSION,
+        ANALYTICAL_CHANGE_EVENT_PRW_PROVENANCE_SCHEMA_VERSION,
+    }:
         raise AnalyticalChangeProposalError(
             "Unsupported change-proposal schema."
         )
 
-    raw_basis = data.get(
-        "basis_relationship_ids"
-    )
-
-    if not isinstance(
-        raw_basis,
-        list,
-    ):
-
+    raw_basis = data.get("basis_relationship_ids")
+    if not isinstance(raw_basis, list):
         raise AnalyticalChangeProposalError(
             "basis_relationship_ids must be a list."
         )
-
     basis = tuple(
-        _text(
-            value,
-            field_name=
-                "basis_relationship_id",
-        )
-        for value in raw_basis
+        _text(v, field_name="basis_relationship_id")
+        for v in raw_basis
     )
 
-    previous = data.get(
-        "previous_event_id"
-    )
-
+    previous = data.get("previous_event_id")
     if previous is not None:
-
-        previous = _text(
-            previous,
-            field_name=
-                "previous_event_id",
-        )
+        previous = _text(previous, field_name="previous_event_id")
 
     try:
-
-        state = (
-            AnalyticalChangeProposalState(
-                _text(
-                    data.get(
-                        "state"
-                    ),
-                    field_name=
-                        "state",
-                )
-            )
+        state = AnalyticalChangeProposalState(
+            _text(data.get("state"), field_name="state")
         )
-
     except ValueError as exc:
-
         raise AnalyticalChangeProposalError(
             "Unknown change-proposal state."
         ) from exc
 
-    event = AnalyticalChangeProposalEvent(
-        schema_version=
-            ANALYTICAL_CHANGE_EVENT_SCHEMA_VERSION,
-
-        case_id=
-            _component(
-                data.get(
-                    "case_id"
-                ),
-                field_name=
-                    "case_id",
-            ),
-
-        authority_id=
-            _text(
-                data.get(
-                    "authority_id"
-                ),
-                field_name=
-                    "authority_id",
-            ),
-
-        issue_analysis_id=
-            _text(
-                data.get(
-                    "issue_analysis_id"
-                ),
-                field_name=
-                    "issue_analysis_id",
-            ),
-
-        element_id=
-            _text(
-                data.get(
-                    "element_id"
-                ),
-                field_name=
-                    "element_id",
-            ),
-
-        proposal_id=
-            _text(
-                data.get(
-                    "proposal_id"
-                ),
-                field_name=
-                    "proposal_id",
-            ),
-
-        event_id=
-            _text(
-                data.get(
-                    "event_id"
-                ),
-                field_name=
-                    "event_id",
-            ),
-
-        current_status=
-            _text(
-                data.get(
-                    "current_status"
-                ),
-                field_name=
-                    "current_status",
-            ),
-
-        current_confidence=
-            _text(
-                data.get(
-                    "current_confidence"
-                ),
-                field_name=
-                    "current_confidence",
-            ),
-
-        proposed_status=
-            _text(
-                data.get(
-                    "proposed_status"
-                ),
-                field_name=
-                    "proposed_status",
-            ),
-
-        proposed_confidence=
-            _text(
-                data.get(
-                    "proposed_confidence"
-                ),
-                field_name=
-                    "proposed_confidence",
-            ),
-
-        rationale=
-            _text(
-                data.get(
-                    "rationale"
-                ),
-                field_name=
-                    "rationale",
-            ),
-
-        basis_relationship_ids=
-            basis,
-
-        state=
-            state,
-
-        actor=
-            _text(
-                data.get(
-                    "actor"
-                ),
-                field_name=
-                    "actor",
-            ),
-
-        created_at=
-            _text(
-                data.get(
-                    "created_at"
-                ),
-                field_name=
-                    "created_at",
-            ),
-
-        previous_event_id=
-            previous,
-
-        review_note=
-            _optional_text(
-                data.get(
-                    "review_note"
-                ),
-                field_name=
-                    "review_note",
-            ),
+    common = dict(
+        schema_version=str(schema),
+        case_id=_component(data.get("case_id"), field_name="case_id"),
+        authority_id=_text(data.get("authority_id"), field_name="authority_id"),
+        issue_analysis_id=_text(
+            data.get("issue_analysis_id"),
+            field_name="issue_analysis_id",
+        ),
+        element_id=_text(data.get("element_id"), field_name="element_id"),
+        proposal_id=_text(data.get("proposal_id"), field_name="proposal_id"),
+        event_id=_text(data.get("event_id"), field_name="event_id"),
+        current_status=_text(
+            data.get("current_status"),
+            field_name="current_status",
+        ),
+        current_confidence=_text(
+            data.get("current_confidence"),
+            field_name="current_confidence",
+        ),
+        proposed_status=_text(
+            data.get("proposed_status"),
+            field_name="proposed_status",
+        ),
+        proposed_confidence=_text(
+            data.get("proposed_confidence"),
+            field_name="proposed_confidence",
+        ),
+        rationale=_text(data.get("rationale"), field_name="rationale"),
+        basis_relationship_ids=basis,
+        state=state,
+        actor=_text(data.get("actor"), field_name="actor"),
+        created_at=_text(data.get("created_at"), field_name="created_at"),
+        previous_event_id=previous,
+        review_note=_optional_text(
+            data.get("review_note"),
+            field_name="review_note",
+        ),
     )
 
-    _validate_event(
-        event
-    )
+    if schema == ANALYTICAL_CHANGE_EVENT_SCHEMA_VERSION:
+        forbidden = {
+            "basis_analysis_run_id",
+            "basis_observation_id",
+            "basis_professional_review_event_id",
+        }
+        if forbidden.intersection(data):
+            raise AnalyticalChangeProposalError(
+                "Legacy events cannot carry professional-review provenance."
+            )
+        event = AnalyticalChangeProposalEvent(**common)
+    else:
+        event = ProfessionalReviewBoundAnalyticalChangeProposalEvent(
+            **common,
+            basis_analysis_run_id=_text(
+                data.get("basis_analysis_run_id"),
+                field_name="basis_analysis_run_id",
+            ),
+            basis_observation_id=_text(
+                data.get("basis_observation_id"),
+                field_name="basis_observation_id",
+            ),
+            basis_professional_review_event_id=_text(
+                data.get("basis_professional_review_event_id"),
+                field_name="basis_professional_review_event_id",
+            ),
+        )
 
+    _validate_event(event)
     return event
 
+
+
+def _require_sha256_identity(
+    value: str,
+    *,
+    field_name: str,
+) -> str:
+    value = _text(value, field_name=field_name)
+    if (
+        len(value) != 71
+        or not value.startswith("sha256:")
+        or any(c not in "0123456789abcdef" for c in value[7:])
+    ):
+        raise AnalyticalChangeProposalError(
+            field_name + " must be canonical sha256:<64 lowercase hex>."
+        )
+    return value
 
 def _validate_event(
     event: AnalyticalChangeProposalEvent,
 ) -> None:
 
-    if (
-        event.schema_version
-        != ANALYTICAL_CHANGE_EVENT_SCHEMA_VERSION
-    ):
-
+    if event.schema_version not in {
+        ANALYTICAL_CHANGE_EVENT_SCHEMA_VERSION,
+        ANALYTICAL_CHANGE_EVENT_PRW_PROVENANCE_SCHEMA_VERSION,
+    }:
         raise AnalyticalChangeProposalError(
             "Unexpected event schema."
+        )
+
+    if isinstance(
+        event,
+        ProfessionalReviewBoundAnalyticalChangeProposalEvent,
+    ):
+        if (
+            event.schema_version
+            != ANALYTICAL_CHANGE_EVENT_PRW_PROVENANCE_SCHEMA_VERSION
+        ):
+            raise AnalyticalChangeProposalError(
+                "Review-bound event must use PRW provenance schema."
+            )
+        _require_sha256_identity(
+            event.basis_analysis_run_id,
+            field_name="basis_analysis_run_id",
+        )
+        _require_sha256_identity(
+            event.basis_observation_id,
+            field_name="basis_observation_id",
+        )
+        _require_sha256_identity(
+            event.basis_professional_review_event_id,
+            field_name="basis_professional_review_event_id",
+        )
+    elif event.schema_version != ANALYTICAL_CHANGE_EVENT_SCHEMA_VERSION:
+        raise AnalyticalChangeProposalError(
+            "PRW provenance schema requires review-bound event type."
         )
 
     _component(
@@ -626,13 +538,10 @@ def _validate_event(
         )
 
 
+
 def _immutable_payload(
     event: AnalyticalChangeProposalEvent,
-) -> tuple[
-    object,
-    ...,
-]:
-
+) -> tuple[object, ...]:
     return (
         event.case_id,
         event.authority_id,
@@ -645,7 +554,11 @@ def _immutable_payload(
         event.proposed_confidence,
         event.rationale,
         event.basis_relationship_ids,
+        getattr(event, "basis_analysis_run_id", None),
+        getattr(event, "basis_observation_id", None),
+        getattr(event, "basis_professional_review_event_id", None),
     )
+
 
 
 def _validate_history(
@@ -1178,6 +1091,158 @@ def propose_analytical_change(
     return event
 
 
+def propose_analytical_change_from_professional_review(
+    *,
+    case_id: str,
+    authority_id: str,
+    issue_analysis_id: str,
+    element_id: str,
+    current_status: str,
+    current_confidence: str,
+    proposed_status: str,
+    proposed_confidence: str,
+    rationale: str,
+    actor: str,
+    professional_review_events: tuple[object, ...],
+    basis_relationship_ids: tuple[str, ...] = (),
+    root: Path | None = None,
+) -> ProfessionalReviewBoundAnalyticalChangeProposalEvent:
+    from controlled_agentic_analysis_review import (
+        ProfessionalReviewDecision,
+        ProfessionalReviewError,
+        assert_review_allows_mal1_consideration,
+    )
+
+    case = _component(case_id, field_name="case_id")
+    authority = _text(authority_id, field_name="authority_id")
+    issue = _text(issue_analysis_id, field_name="issue_analysis_id")
+    element = _text(element_id, field_name="element_id")
+
+    reviews = tuple(professional_review_events)
+    if not reviews:
+        raise AnalyticalChangeProposalError(
+            "Professional-review provenance requires a review chain."
+        )
+    try:
+        projection = assert_review_allows_mal1_consideration(reviews)
+    except ProfessionalReviewError as exc:
+        raise AnalyticalChangeProposalError(
+            "Professional review does not permit MAL1 proposal consideration."
+        ) from exc
+
+    accepted = reviews[-1]
+    if (
+        getattr(accepted, "decision", None)
+        is not ProfessionalReviewDecision.ACCEPT_FOR_MAL1_CONSIDERATION
+        or getattr(accepted, "event_id", None) != projection.event_id
+        or getattr(accepted, "observation_id", None)
+        != projection.observation_id
+    ):
+        raise AnalyticalChangeProposalError(
+            "Professional-review chain does not resolve to terminal acceptance."
+        )
+
+    checks = (
+        ("case_id", getattr(accepted, "case_id", None), case),
+        (
+            "active_authority_id",
+            getattr(accepted, "active_authority_id", None),
+            authority,
+        ),
+        (
+            "issue_analysis_id",
+            getattr(accepted, "issue_analysis_id", None),
+            issue,
+        ),
+        ("element_id", getattr(accepted, "element_id", None), element),
+    )
+    for name, actual, expected in checks:
+        if actual != expected:
+            raise AnalyticalChangeProposalError(
+                "Professional-review "
+                + name
+                + " does not match the MAL1 proposal target."
+            )
+
+    existing = load_change_proposal_events(
+        case_id=case,
+        authority_id=authority,
+        root=root,
+    )
+    projected = project_change_proposals(
+        events=existing,
+        issue_analysis_id=issue,
+        element_id=element,
+    )
+    if any(
+        x.state is AnalyticalChangeProposalState.PROPOSED
+        for x in projected
+    ):
+        raise AnalyticalChangeProposalError(
+            "A change proposal is already pending for this analytical element."
+        )
+
+    basis = tuple(
+        sorted(
+            set(
+                _text(v, field_name="basis_relationship_id")
+                for v in basis_relationship_ids
+            )
+        )
+    )
+
+    event = ProfessionalReviewBoundAnalyticalChangeProposalEvent(
+        schema_version=
+            ANALYTICAL_CHANGE_EVENT_PRW_PROVENANCE_SCHEMA_VERSION,
+        case_id=case,
+        authority_id=authority,
+        issue_analysis_id=issue,
+        element_id=element,
+        proposal_id="acp:" + uuid4().hex,
+        event_id="ace:" + uuid4().hex,
+        current_status=_text(
+            current_status,
+            field_name="current_status",
+        ),
+        current_confidence=_text(
+            current_confidence,
+            field_name="current_confidence",
+        ),
+        proposed_status=_text(
+            proposed_status,
+            field_name="proposed_status",
+        ),
+        proposed_confidence=_text(
+            proposed_confidence,
+            field_name="proposed_confidence",
+        ),
+        rationale=_text(rationale, field_name="rationale"),
+        basis_relationship_ids=basis,
+        state=AnalyticalChangeProposalState.PROPOSED,
+        actor=_text(actor, field_name="actor"),
+        created_at=_utc_now(),
+        previous_event_id=None,
+        review_note="",
+        basis_analysis_run_id=_require_sha256_identity(
+            getattr(accepted, "analysis_run_id", ""),
+            field_name="basis_analysis_run_id",
+        ),
+        basis_observation_id=_require_sha256_identity(
+            getattr(accepted, "observation_id", ""),
+            field_name="basis_observation_id",
+        ),
+        basis_professional_review_event_id=_require_sha256_identity(
+            getattr(accepted, "event_id", ""),
+            field_name="basis_professional_review_event_id",
+        ),
+    )
+    _validate_event(event)
+    _append_event(event, root=root)
+    _validate_history(_read_events(case_id=case, root=root))
+    return event
+
+
+
 def review_analytical_change(
     *,
     case_id: str,
@@ -1188,160 +1253,65 @@ def review_analytical_change(
     review_note: str = "",
     root: Path | None = None,
 ) -> AnalyticalChangeProposalEvent:
+    from dataclasses import replace
 
     if decision not in {
         AnalyticalChangeProposalState.APPROVED,
         AnalyticalChangeProposalState.REJECTED,
     }:
-
         raise AnalyticalChangeProposalError(
             "Review decision must be APPROVED or REJECTED."
         )
 
-    normalized_case = _component(
-        case_id,
-        field_name=
-            "case_id",
-    )
-
-    normalized_authority = _text(
-        authority_id,
-        field_name=
-            "authority_id",
-    )
-
-    normalized_proposal = _text(
-        proposal_id,
-        field_name=
-            "proposal_id",
-    )
+    case = _component(case_id, field_name="case_id")
+    authority = _text(authority_id, field_name="authority_id")
+    proposal = _text(proposal_id, field_name="proposal_id")
 
     events = load_change_proposal_events(
-        case_id=
-            normalized_case,
-        authority_id=
-            normalized_authority,
-        root=
-            root,
+        case_id=case,
+        authority_id=authority,
+        root=root,
     )
-
-    chain = tuple(
-        event
-        for event in events
-        if event.proposal_id
-        == normalized_proposal
-    )
-
+    chain = tuple(x for x in events if x.proposal_id == proposal)
     if not chain:
-
         raise AnalyticalChangeProposalError(
             "Unknown analytical change proposal."
         )
 
-    latest = chain[
-        -1
-    ]
-
-    if (
-        latest.state
-        is not AnalyticalChangeProposalState.PROPOSED
-    ):
-
+    latest = chain[-1]
+    if latest.state is not AnalyticalChangeProposalState.PROPOSED:
         raise AnalyticalChangeProposalError(
-            "Analytical change proposal "
-            "has already been reviewed."
+            "Analytical change proposal has already been reviewed."
         )
 
-    event = AnalyticalChangeProposalEvent(
-        schema_version=
-            latest.schema_version,
-
-        case_id=
-            latest.case_id,
-
-        authority_id=
-            latest.authority_id,
-
-        issue_analysis_id=
-            latest.issue_analysis_id,
-
-        element_id=
-            latest.element_id,
-
-        proposal_id=
-            latest.proposal_id,
-
-        event_id=
-            "ace:"
-            + uuid4().hex,
-
-        current_status=
-            latest.current_status,
-
-        current_confidence=
-            latest.current_confidence,
-
-        proposed_status=
-            latest.proposed_status,
-
-        proposed_confidence=
-            latest.proposed_confidence,
-
-        rationale=
-            latest.rationale,
-
-        basis_relationship_ids=
-            latest.basis_relationship_ids,
-
-        state=
-            decision,
-
-        actor=
-            _text(
-                actor,
-                field_name=
-                    "actor",
-            ),
-
-        created_at=
-            _utc_now(),
-
-        previous_event_id=
-            latest.event_id,
-
-        review_note=
-            _optional_text(
-                review_note,
-                field_name=
-                    "review_note",
-            ),
+    event = replace(
+        latest,
+        event_id="ace:" + uuid4().hex,
+        state=decision,
+        actor=_text(actor, field_name="actor"),
+        created_at=_utc_now(),
+        previous_event_id=latest.event_id,
+        review_note=_optional_text(
+            review_note,
+            field_name="review_note",
+        ),
     )
-
-    _append_event(
-        event,
-        root=
-            root,
-    )
-
-    _validate_history(
-        _read_events(
-            case_id=
-                normalized_case,
-            root=
-                root,
-        )
-    )
-
+    _append_event(event, root=root)
+    _validate_history(_read_events(case_id=case, root=root))
     return event
+
 
 
 __all__ = [
     "ANALYTICAL_CHANGE_EVENT_SCHEMA_VERSION",
+    "ANALYTICAL_CHANGE_EVENT_PRW_PROVENANCE_SCHEMA_VERSION",
     "AnalyticalChangeProposalError",
     "AnalyticalChangeProposalEvent",
+    "ProfessionalReviewBoundAnalyticalChangeProposalEvent",
     "AnalyticalChangeProposalState",
     "load_change_proposal_events",
     "project_change_proposals",
     "propose_analytical_change",
+    "propose_analytical_change_from_professional_review",
     "review_analytical_change",
 ]
