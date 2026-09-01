@@ -91,7 +91,7 @@ def test_mal1_bridge_is_called_exactly_once_and_only_after_submit():
     assert max(node.lineno for node in submitted_guards) < call.lineno
 
 
-def test_rendering_inbox_only_exposes_explicit_helper_call():
+def test_rendering_inbox_binds_mal1_helper_to_terminal_reviewed_items():
     source = UI.read_text(encoding="utf-8")
     tree = ast.parse(source)
     show = _function(tree, "show_professional_review_inbox")
@@ -105,6 +105,19 @@ def test_rendering_inbox_only_exposes_explicit_helper_call():
     ]
     assert len(calls) == 1
     assert source.count("CREATE MAL1 PROPOSAL") == 1
+
+    terminal_loops = [
+        node
+        for node in ast.walk(show)
+        if isinstance(node, ast.For)
+        and (
+            "terminal" in ast.unparse(node.iter).casefold()
+            or "reviewed" in ast.unparse(node.iter).casefold()
+        )
+    ]
+    assert len(terminal_loops) == 1
+    assert calls[0] in set(ast.walk(terminal_loops[0]))
+
 
 
 def test_mal1_consideration_has_no_approval_gar1_activation_or_openai():

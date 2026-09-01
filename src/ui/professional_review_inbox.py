@@ -639,10 +639,6 @@ def show_professional_review_inbox(
                 _render_observation_record(item)
                 _render_review_history(item)
                 _review_controls(item=item)
-                _mal1_consideration_controls(
-                    item=item,
-                    active_case_id=active_case_id,
-                )
 
         if stale:
             st.warning(
@@ -666,6 +662,10 @@ def show_professional_review_inbox(
                     _render_observation_record(item)
                     _render_review_history(item)
                     _render_terminal_result(item)
+                _mal1_consideration_controls(
+                    item=item,
+                    active_case_id=active_case_id,
+                )
 
 
 __all__ = [
