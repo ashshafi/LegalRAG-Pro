@@ -781,12 +781,42 @@ def _engine_request(
     }
 
 
+def _scope_gap_candidates(
+    candidates: tuple[GapCandidate, ...],
+    *,
+    candidate_scope: tuple[str, str] | None,
+) -> tuple[GapCandidate, ...]:
+    """Select a bounded issue/element subset only after full deterministic projection."""
+    if candidate_scope is None:
+        return candidates
+    if (
+        not isinstance(candidate_scope, tuple)
+        or len(candidate_scope) != 2
+        or any(
+            not isinstance(item, str) or not item.strip()
+            for item in candidate_scope
+        )
+    ):
+        _fail("candidate_scope must be a non-empty (issue_analysis_id, element_id) tuple.")
+    issue_analysis_id, element_id = candidate_scope
+    scoped = tuple(
+        candidate
+        for candidate in candidates
+        if candidate.issue_analysis_id == issue_analysis_id
+        and candidate.element_id == element_id
+    )
+    if not scoped:
+        _fail("candidate_scope does not resolve to any deterministic CAA2 candidate.")
+    return scoped
+
+
 def execute_caa2_analysis(
     *,
     run: FrozenInspectionUniverse,
     authority: Any,
     evidence_texts: Iterable[CAA2EvidenceText],
     analysis_engine: Callable[[Mapping[str, Any]], Any],
+    candidate_scope: tuple[str, str] | None = None,
     active_authority_loader: Callable[[str], Any] | None = None,
 ) -> CAA2AnalysisResult:
     """Execute CAA2 without granting the engine authority or mutation capability."""
@@ -822,6 +852,7 @@ def execute_caa2_analysis(
         _fail("CAA2 evidence text coverage must exactly match the frozen CAA1 evidence universe.")
 
     candidates = project_gap_candidates(run=run, authority=authority)
+    candidates = _scope_gap_candidates(candidates, candidate_scope=candidate_scope)
     observations: list[GapAgentObservation] = [
         _structural_observation(run, candidate)
         for candidate in candidates
