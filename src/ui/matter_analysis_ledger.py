@@ -1224,6 +1224,22 @@ def _matter_ledger_fragment(function):
     return fragment(function)
 
 
+
+def _matter_entry_form(*, key: str):
+    form = getattr(st, "form", None)
+    if form is None:
+        from contextlib import nullcontext
+        return nullcontext()
+    return form(key=key, clear_on_submit=False)
+
+
+def _matter_form_submit_button(label: str, **kwargs):
+    submit = getattr(st, "form_submit_button", None)
+    if submit is None:
+        return st.button(label, **kwargs)
+    return submit(label, **kwargs)
+
+
 @_matter_ledger_fragment
 def show_matter_analysis_ledger(
     active_case_id: str | None,
@@ -1975,223 +1991,224 @@ def show_matter_analysis_ledger(
                         border=True
                     ):
 
-                        work_product_statement = (
-                            st.text_area(
-                                "Work-product statement or proposition",
-                                height=120,
-                                key=(
-                                    "mal_work_product_statement_"
-                                    + element.element_id
-                                ),
-                            )
-                        )
-
-                        checker_status_options = tuple(
-                            dict.fromkeys(
-                                (
-                                    element.analytical_status,
-                                    "well_supported",
-                                    "partially_supported",
-                                    "disputed",
-                                    "insufficiently_evidenced",
-                                    "unresolved",
+                        with _matter_entry_form(key="mal_work_product_form_" + element.element_id):
+                            work_product_statement = (
+                                st.text_area(
+                                    "Work-product statement or proposition",
+                                    height=120,
+                                    key=(
+                                        "mal_work_product_statement_"
+                                        + element.element_id
+                                    ),
                                 )
                             )
-                        )
 
-                        checker_confidence_options = tuple(
-                            dict.fromkeys(
-                                (
-                                    element.analytical_confidence,
-                                    "high",
-                                    "medium",
-                                    "low",
-                                )
-                            )
-                        )
-
-                        claimed_status = (
-                            st.selectbox(
-                                "Status expressed by the work product",
-                                checker_status_options,
-                                format_func=lambda value: (
-                                    value.replace(
-                                        "_",
-                                        " ",
-                                    ).title()
-                                ),
-                                key=(
-                                    "mal_work_product_status_"
-                                    + element.element_id
-                                ),
-                            )
-                        )
-
-                        claimed_confidence = (
-                            st.selectbox(
-                                "Confidence expressed by the work product",
-                                checker_confidence_options,
-                                format_func=lambda value: (
-                                    value.replace(
-                                        "_",
-                                        " ",
-                                    ).title()
-                                ),
-                                key=(
-                                    "mal_work_product_confidence_"
-                                    + element.element_id
-                                ),
-                            )
-                        )
-
-                        work_product_role_index = (
-                            _role_index(
-                                element
-                            )
-                        )
-
-                        work_product_evidence_options = tuple(
-                            sorted(
-                                set(
-                                    element.supporting_evidence_keys
-                                    + element.adverse_evidence_keys
-                                    + element.corroborative_evidence_keys
-                                    + element.conflicting_evidence_keys
-                                )
-                            )
-                        )
-
-                        cited_work_product_evidence = (
-                            st.multiselect(
-                                "Governed evidence cited",
-                                work_product_evidence_options,
-                                format_func=lambda evidence_key: (
-                                    _format_evidence_option(
-                                        evidence_key,
-                                        evidence_display_index,
-                                        work_product_role_index,
-                                    )
-                                ),
-                                key=(
-                                    "mal_work_product_evidence_"
-                                    + element.element_id
-                                ),
-                            )
-                        )
-
-                        st.caption(
-                            "The checker uses the frozen authority shown "
-                            "above. An approved but unapplied analytical "
-                            "change proposal does not replace that authority."
-                        )
-
-                        if st.button(
-                            "CHECK AGAINST CURRENT AUTHORITY",
-                            key=(
-                                "mal_check_work_product_"
-                                + element.element_id
-                            ),
-                            use_container_width=True,
-                        ):
-
-                            try:
-
-                                authority_check = (
-                                    check_work_product_authority(
-                                        statement=
-                                            work_product_statement,
-
-                                        current_status=
-                                            element.analytical_status,
-
-                                        current_confidence=
-                                            element.analytical_confidence,
-
-                                        claimed_status=
-                                            claimed_status,
-
-                                        claimed_confidence=
-                                            claimed_confidence,
-
-                                        cited_evidence_keys=
-                                            tuple(
-                                                cited_work_product_evidence
-                                            ),
-
-                                        allowed_evidence_keys=
-                                            work_product_evidence_options,
-
-                                        approved_contradiction_count=
-                                            len(
-                                                approved_contradictions
-                                            ),
-
-                                        unresolved_matter_count=
-                                            len(
-                                                element.unresolved_matters
-                                            ),
-
-                                        formal_gap_count=
-                                            len(
-                                                element.evidential_gap_ids
-                                            ),
+                            checker_status_options = tuple(
+                                dict.fromkeys(
+                                    (
+                                        element.analytical_status,
+                                        "well_supported",
+                                        "partially_supported",
+                                        "disputed",
+                                        "insufficiently_evidenced",
+                                        "unresolved",
                                     )
                                 )
+                            )
 
-                            except WorkProductAuthorityCheckerError as exc:
-
-                                st.error(
-                                    str(
-                                        exc
+                            checker_confidence_options = tuple(
+                                dict.fromkeys(
+                                    (
+                                        element.analytical_confidence,
+                                        "high",
+                                        "medium",
+                                        "low",
                                     )
                                 )
+                            )
 
-                            else:
+                            claimed_status = (
+                                st.selectbox(
+                                    "Status expressed by the work product",
+                                    checker_status_options,
+                                    format_func=lambda value: (
+                                        value.replace(
+                                            "_",
+                                            " ",
+                                        ).title()
+                                    ),
+                                    key=(
+                                        "mal_work_product_status_"
+                                        + element.element_id
+                                    ),
+                                )
+                            )
 
-                                if (
-                                    authority_check.result
-                                    is WorkProductAuthorityResult.ALIGNED
-                                ):
+                            claimed_confidence = (
+                                st.selectbox(
+                                    "Confidence expressed by the work product",
+                                    checker_confidence_options,
+                                    format_func=lambda value: (
+                                        value.replace(
+                                            "_",
+                                            " ",
+                                        ).title()
+                                    ),
+                                    key=(
+                                        "mal_work_product_confidence_"
+                                        + element.element_id
+                                    ),
+                                )
+                            )
 
-                                    st.success(
-                                        "ALIGNED WITH CURRENT AUTHORITY"
+                            work_product_role_index = (
+                                _role_index(
+                                    element
+                                )
+                            )
+
+                            work_product_evidence_options = tuple(
+                                sorted(
+                                    set(
+                                        element.supporting_evidence_keys
+                                        + element.adverse_evidence_keys
+                                        + element.corroborative_evidence_keys
+                                        + element.conflicting_evidence_keys
+                                    )
+                                )
+                            )
+
+                            cited_work_product_evidence = (
+                                st.multiselect(
+                                    "Governed evidence cited",
+                                    work_product_evidence_options,
+                                    format_func=lambda evidence_key: (
+                                        _format_evidence_option(
+                                            evidence_key,
+                                            evidence_display_index,
+                                            work_product_role_index,
+                                        )
+                                    ),
+                                    key=(
+                                        "mal_work_product_evidence_"
+                                        + element.element_id
+                                    ),
+                                )
+                            )
+
+                            st.caption(
+                                "The checker uses the frozen authority shown "
+                                "above. An approved but unapplied analytical "
+                                "change proposal does not replace that authority."
+                            )
+
+                            if _matter_form_submit_button(
+                                "CHECK AGAINST CURRENT AUTHORITY",
+                                key=(
+                                    "mal_check_work_product_"
+                                    + element.element_id
+                                ),
+                                use_container_width=True,
+                            ):
+
+                                try:
+
+                                    authority_check = (
+                                        check_work_product_authority(
+                                            statement=
+                                                work_product_statement,
+
+                                            current_status=
+                                                element.analytical_status,
+
+                                            current_confidence=
+                                                element.analytical_confidence,
+
+                                            claimed_status=
+                                                claimed_status,
+
+                                            claimed_confidence=
+                                                claimed_confidence,
+
+                                            cited_evidence_keys=
+                                                tuple(
+                                                    cited_work_product_evidence
+                                                ),
+
+                                            allowed_evidence_keys=
+                                                work_product_evidence_options,
+
+                                            approved_contradiction_count=
+                                                len(
+                                                    approved_contradictions
+                                                ),
+
+                                            unresolved_matter_count=
+                                                len(
+                                                    element.unresolved_matters
+                                                ),
+
+                                            formal_gap_count=
+                                                len(
+                                                    element.evidential_gap_ids
+                                                ),
+                                        )
                                     )
 
-                                elif (
-                                    authority_check.result
-                                    is WorkProductAuthorityResult.CAUTION
-                                ):
+                                except WorkProductAuthorityCheckerError as exc:
 
-                                    st.warning(
-                                        "CAUTION - AUTHORITY HAS "
-                                        "LIMITATIONS OR UNCERTAINTY"
+                                    st.error(
+                                        str(
+                                            exc
+                                        )
                                     )
 
                                 else:
 
-                                    st.error(
-                                        "NOT AUTHORIZED BY CURRENT "
-                                        "FROZEN AUTHORITY"
-                                    )
+                                    if (
+                                        authority_check.result
+                                        is WorkProductAuthorityResult.ALIGNED
+                                    ):
 
-                                st.write(
-                                    "**Authority-check reasons**"
-                                )
+                                        st.success(
+                                            "ALIGNED WITH CURRENT AUTHORITY"
+                                        )
 
-                                for reason in (
-                                    authority_check.reasons
-                                ):
+                                    elif (
+                                        authority_check.result
+                                        is WorkProductAuthorityResult.CAUTION
+                                    ):
+
+                                        st.warning(
+                                            "CAUTION - AUTHORITY HAS "
+                                            "LIMITATIONS OR UNCERTAINTY"
+                                        )
+
+                                    else:
+
+                                        st.error(
+                                            "NOT AUTHORIZED BY CURRENT "
+                                            "FROZEN AUTHORITY"
+                                        )
 
                                     st.write(
-                                        "- "
-                                        + reason
+                                        "**Authority-check reasons**"
                                     )
 
-                                st.caption(
-                                    "No analytical state, evidence role, "
-                                    "review history or governed authority "
-                                    "has been changed."
-                                )
+                                    for reason in (
+                                        authority_check.reasons
+                                    ):
+
+                                        st.write(
+                                            "- "
+                                            + reason
+                                        )
+
+                                    st.caption(
+                                        "No analytical state, evidence role, "
+                                        "review history or governed authority "
+                                        "has been changed."
+                                    )
 
 
                 # ----------------------------------------------------------
@@ -2510,125 +2527,126 @@ def show_matter_analysis_ledger(
                             )
                         )
 
-                        proposed_status = (
-                            st.selectbox(
-                                "Proposed analytical status",
-                                status_options,
-                                format_func=lambda value: (
-                                    value.replace(
-                                        "_",
-                                        " ",
-                                    ).title()
-                                ),
-                                key=(
-                                    "mal_change_status_"
-                                    + element.element_id
-                                ),
-                            )
-                        )
-
-                        proposed_confidence = (
-                            st.selectbox(
-                                "Proposed confidence",
-                                confidence_options,
-                                format_func=lambda value: (
-                                    value.replace(
-                                        "_",
-                                        " ",
-                                    ).title()
-                                ),
-                                key=(
-                                    "mal_change_confidence_"
-                                    + element.element_id
-                                ),
-                            )
-                        )
-
-                        change_rationale = (
-                            st.text_area(
-                                "Why should the analytical "
-                                "position change?",
-                                height=140,
-                                key=(
-                                    "mal_change_rationale_"
-                                    + element.element_id
-                                ),
-                            )
-                        )
-
-                        st.caption(
-                            "The proposal will be bound to the "
-                            "current authority and to "
-                            + str(
-                                len(
-                                    approved_contradictions
-                                    + approved_corroborations
-                                )
-                            )
-                            + " approved reviewed evidence "
-                            "relationship(s)."
-                        )
-
-                        if st.button(
-                            "PROPOSE ANALYTICAL CHANGE",
-                            key=(
-                                "mal_submit_change_"
-                                + element.element_id
-                            ),
-                            use_container_width=True,
-                        ):
-
-                            basis_relationship_ids = tuple(
-                                sorted(
-                                    {
-                                        relationship.relationship_id
-                                        for relationship
-                                        in (
-                                            approved_contradictions
-                                            + approved_corroborations
-                                        )
-                                    }
+                        with _matter_entry_form(key="mal_analytical_change_form_" + element.element_id):
+                            proposed_status = (
+                                st.selectbox(
+                                    "Proposed analytical status",
+                                    status_options,
+                                    format_func=lambda value: (
+                                        value.replace(
+                                            "_",
+                                            " ",
+                                        ).title()
+                                    ),
+                                    key=(
+                                        "mal_change_status_"
+                                        + element.element_id
+                                    ),
                                 )
                             )
 
-                            try:
-
-                                propose_analytical_change(
-                                    case_id=
-                                        ledger.case_id,
-                                    authority_id=
-                                        ledger.authority_id,
-                                    issue_analysis_id=
-                                        issue.issue_analysis_id,
-                                    element_id=
-                                        element.element_id,
-                                    current_status=
-                                        element.analytical_status,
-                                    current_confidence=
-                                        element.analytical_confidence,
-                                    proposed_status=
-                                        proposed_status,
-                                    proposed_confidence=
-                                        proposed_confidence,
-                                    rationale=
-                                        change_rationale,
-                                    actor=
-                                        "interactive_user",
-                                    basis_relationship_ids=
-                                        basis_relationship_ids,
+                            proposed_confidence = (
+                                st.selectbox(
+                                    "Proposed confidence",
+                                    confidence_options,
+                                    format_func=lambda value: (
+                                        value.replace(
+                                            "_",
+                                            " ",
+                                        ).title()
+                                    ),
+                                    key=(
+                                        "mal_change_confidence_"
+                                        + element.element_id
+                                    ),
                                 )
+                            )
 
-                            except AnalyticalChangeProposalError as exc:
+                            change_rationale = (
+                                st.text_area(
+                                    "Why should the analytical "
+                                    "position change?",
+                                    height=140,
+                                    key=(
+                                        "mal_change_rationale_"
+                                        + element.element_id
+                                    ),
+                                )
+                            )
 
-                                st.error(
-                                    str(
-                                        exc
+                            st.caption(
+                                "The proposal will be bound to the "
+                                "current authority and to "
+                                + str(
+                                    len(
+                                        approved_contradictions
+                                        + approved_corroborations
+                                    )
+                                )
+                                + " approved reviewed evidence "
+                                "relationship(s)."
+                            )
+
+                            if _matter_form_submit_button(
+                                "PROPOSE ANALYTICAL CHANGE",
+                                key=(
+                                    "mal_submit_change_"
+                                    + element.element_id
+                                ),
+                                use_container_width=True,
+                            ):
+
+                                basis_relationship_ids = tuple(
+                                    sorted(
+                                        {
+                                            relationship.relationship_id
+                                            for relationship
+                                            in (
+                                                approved_contradictions
+                                                + approved_corroborations
+                                            )
+                                        }
                                     )
                                 )
 
-                            else:
+                                try:
 
-                                st.rerun()
+                                    propose_analytical_change(
+                                        case_id=
+                                            ledger.case_id,
+                                        authority_id=
+                                            ledger.authority_id,
+                                        issue_analysis_id=
+                                            issue.issue_analysis_id,
+                                        element_id=
+                                            element.element_id,
+                                        current_status=
+                                            element.analytical_status,
+                                        current_confidence=
+                                            element.analytical_confidence,
+                                        proposed_status=
+                                            proposed_status,
+                                        proposed_confidence=
+                                            proposed_confidence,
+                                        rationale=
+                                            change_rationale,
+                                        actor=
+                                            "interactive_user",
+                                        basis_relationship_ids=
+                                            basis_relationship_ids,
+                                    )
+
+                                except AnalyticalChangeProposalError as exc:
+
+                                    st.error(
+                                        str(
+                                            exc
+                                        )
+                                    )
+
+                                else:
+
+                                    st.rerun()
 
 
                 # ----------------------------------------------------------
