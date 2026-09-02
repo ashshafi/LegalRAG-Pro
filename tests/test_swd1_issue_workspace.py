@@ -412,3 +412,43 @@ def test_mw1_task_why_reuses_issue_explanation_not_generic_placeholder():
 
     assert "Resolving this work point is necessary because it remains unresolved" not in text
     assert text.count("why_it_matters=str(") == 2
+
+
+def test_mw1_i3_evidence_to_task_is_issue_workspace_only():
+    text = NEW_UI.read_text(encoding="utf-8")
+    assert "_render_mw1_evidence_task_creator" in text
+    assert 'origin="evidence"' in text
+    assert "origin_evidence_key=" in text
+
+    src_root = NEW_UI.resolve().parents[1]
+    evidence = (src_root / "ui" / "evidence_inspection.py").read_text(encoding="utf-8")
+    source = (src_root / "ui" / "source_evidence.py").read_text(encoding="utf-8")
+    assert "show_issue_task_creator" not in evidence
+    assert "show_issue_task_creator" not in source
+
+
+def test_mw1_i3_references_evidence_without_text_copy():
+    text = NEW_UI.read_text(encoding="utf-8")
+    for required in ("evidence_key", "citation", "document_name", "page"):
+        assert required in text
+    for forbidden in (
+        "origin_evidence_text",
+        "origin_source_text",
+        "origin_passage_text",
+        "origin_chunk_text",
+    ):
+        assert forbidden not in text
+
+
+def test_mw1_i3_binding_failure_is_visible_and_closed():
+    text = NEW_UI.read_text(encoding="utf-8")
+    assert '"case_id": active_case_id' in text
+    assert '"issue_analysis_id": str(selected_issue.issue_analysis_id)' in text
+    assert "Evidence task unavailable because exact matter, issue or evidence identity is missing." in text
+
+def test_mw1_i3_context_binding_guards_absent_selected_issue():
+    text = NEW_UI.read_text(encoding="utf-8")
+
+    assert 'if selected_issue is not None and getattr(selected_issue, "issue_analysis_id", None):' in text
+    assert '"issue_analysis_id": str(selected_issue.issue_analysis_id)' in text
+    assert 'st.session_state.pop("mw1_evidence_task_context", None)' in text

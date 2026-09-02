@@ -130,3 +130,108 @@ def test_task_store_has_no_analytical_authority_dependencies():
         "chromadb",
     ):
         assert forbidden not in source
+
+
+def test_schema_10_history_remains_readable_and_unchanged(tmp_path):
+    task = _create(tmp_path)
+    path = task_event_path(CASE_ID, root=tmp_path)
+    before = path.read_bytes()
+    event = json.loads(before.decode("utf-8").strip())
+    assert event["schema_version"] == "1.0"
+    assert "origin_evidence_key" not in event["task"]
+    assert load_tasks(CASE_ID, root=tmp_path) == (task,)
+    assert path.read_bytes() == before
+
+
+def test_evidence_origin_uses_schema_11_and_exact_evidence_reference(tmp_path):
+    task = create_task(
+        case_id=CASE_ID,
+        title="Establish whether the plan was sent to CACI",
+        priority=TaskPriority.HIGH,
+        issue_analysis_id="issue-id",
+        issue_name="Employer knowledge of disability",
+        originating_question="Transmission and receipt have not been proved.",
+        origin=TaskOrigin.EVIDENCE,
+        why_it_matters="Receipt is material to employer knowledge.",
+        origin_evidence_key="evidence-key-123",
+        origin_evidence_citation="May 2005 rehabilitation plan, p.2",
+        origin_document_name="May 2005 rehabilitation plan.pdf",
+        origin_page=2,
+        root=tmp_path,
+    )
+    event = json.loads(
+        task_event_path(CASE_ID, root=tmp_path).read_text(encoding="utf-8").strip()
+    )
+    assert event["schema_version"] == "1.1"
+    assert task.origin_evidence_key == "evidence-key-123"
+    assert task.origin_evidence_citation == "May 2005 rehabilitation plan, p.2"
+    assert task.origin_document_name == "May 2005 rehabilitation plan.pdf"
+    assert task.origin_page == 2
+
+
+def test_evidence_origin_fails_closed_without_evidence_key(tmp_path):
+    with pytest.raises(SolicitorTaskError):
+        create_task(
+            case_id=CASE_ID,
+            title="Follow up evidence",
+            priority=TaskPriority.NOT_SET,
+            issue_analysis_id="issue-id",
+            issue_name="Issue",
+            originating_question="Investigate limitation.",
+            origin=TaskOrigin.EVIDENCE,
+            why_it_matters="Material follow-up.",
+            origin_evidence_citation="Doc.pdf, p.1",
+            root=tmp_path,
+        )
+
+
+def test_non_evidence_task_rejects_evidence_provenance(tmp_path):
+    with pytest.raises(SolicitorTaskError):
+        create_task(
+            case_id=CASE_ID,
+            title="Task",
+            priority=TaskPriority.NOT_SET,
+            issue_analysis_id="issue-id",
+            issue_name="Issue",
+            originating_question="Question",
+            origin=TaskOrigin.NEXT_LEGAL_ACTION,
+            why_it_matters="Reason",
+            origin_evidence_key="not-permitted",
+            root=tmp_path,
+        )
+
+
+def test_completion_preserves_evidence_and_issue_bindings(tmp_path):
+    task = create_task(
+        case_id=CASE_ID,
+        title="Investigate evidence",
+        priority=TaskPriority.MEDIUM,
+        issue_analysis_id="issue-id",
+        issue_name="Issue",
+        originating_question="Receipt is unproved.",
+        origin=TaskOrigin.EVIDENCE,
+        why_it_matters="Receipt matters.",
+        origin_evidence_key="evidence-key-1",
+        origin_evidence_citation="Doc.pdf, p.3",
+        origin_document_name="Doc.pdf",
+        origin_page=3,
+        root=tmp_path,
+    )
+    completed = update_task(
+        case_id=CASE_ID,
+        task_id=task.task_id,
+        status=TaskStatus.COMPLETED,
+        root=tmp_path,
+    )
+    assert completed.origin_evidence_key == task.origin_evidence_key
+    assert completed.issue_analysis_id == task.issue_analysis_id
+
+
+def test_task_api_has_no_evidence_text_parameters():
+    import inspect
+    import solicitor_tasks
+    forbidden = {
+        "evidence_text", "source_text", "passage_text",
+        "chunk_text", "exact_page_text",
+    }
+    assert forbidden.isdisjoint(inspect.signature(solicitor_tasks.create_task).parameters)

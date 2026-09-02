@@ -37,7 +37,22 @@ def _from_label(mapping, label):
 
 
 def _origin_label(origin: TaskOrigin) -> str:
-    return "Next legal action" if origin is TaskOrigin.NEXT_LEGAL_ACTION else "What remains unclear"
+    if origin is TaskOrigin.NEXT_LEGAL_ACTION:
+        return "Next legal action"
+    if origin is TaskOrigin.WHAT_REMAINS_UNCLEAR:
+        return "What remains unclear"
+    if origin is TaskOrigin.EVIDENCE:
+        return "Evidence"
+    raise ValueError(origin)
+
+
+def _evidence_label(citation, document_name, page) -> str:
+    if citation:
+        return citation
+    value = document_name or "Evidence"
+    if page is not None:
+        value += f" — p.{page}"
+    return value
 
 
 def show_issue_task_creator(
@@ -49,31 +64,83 @@ def show_issue_task_creator(
     originating_question: str,
     default_title: str,
     why_it_matters: str,
+    origin_evidence_key: str | None = None,
+    origin_evidence_citation: str | None = None,
+    origin_document_name: str | None = None,
+    origin_page: int | None = None,
 ) -> None:
     task_origin = TaskOrigin(origin)
-    key = "::".join(("mw1_create_task", case_id, issue_analysis_id, task_origin.value))
+    key = "::".join(
+        (
+            "mw1_create_task",
+            case_id,
+            issue_analysis_id,
+            task_origin.value,
+            origin_evidence_key or "no-evidence",
+        )
+    )
 
     with st.expander("Create task", expanded=False):
-        st.caption(
-            "Creates matter work only. Creating or completing this task does not change the legal assessment."
-        )
-        title = st.text_input("Task title", value=" ".join(str(default_title or "").split()), key=key + "::title")
-        priority_label = st.selectbox(
-            "Priority",
-            options=tuple(_PRIORITY.values()),
-            index=0,
-            key=key + "::priority",
-        )
-        due_date = st.date_input("Due date", value=None, key=key + "::due")
-        assigned_to = st.text_input("Assigned to", value="", key=key + "::assigned")
-        st.markdown("**Related issue**")
-        st.write(issue_name)
-        st.markdown("**Why this matters**")
-        st.write(why_it_matters)
-        st.markdown("**Origin**")
-        st.write(_origin_label(task_origin) + " → " + originating_question)
+        with st.form(
+            key=key + "::form",
+            clear_on_submit=False,
+            border=False,
+        ):
+            st.caption(
+                "Creates matter work only. Creating or completing this task does not change the legal assessment."
+            )
 
-        if st.button("Create task", key=key + "::submit"):
+            title = st.text_input(
+                "Task title",
+                value=" ".join(str(default_title or "").split()),
+                key=key + "::title",
+            )
+            priority_label = st.selectbox(
+                "Priority",
+                options=tuple(_PRIORITY.values()),
+                index=0,
+                key=key + "::priority",
+            )
+            due_date = st.date_input(
+                "Due date",
+                value=None,
+                key=key + "::due",
+            )
+            assigned_to = st.text_input(
+                "Assigned to",
+                value="",
+                key=key + "::assigned",
+            )
+
+            st.markdown("**Related issue**")
+            st.write(issue_name)
+
+            if task_origin is TaskOrigin.EVIDENCE:
+                st.markdown("**Evidence**")
+                st.write(
+                    _evidence_label(
+                        origin_evidence_citation,
+                        origin_document_name,
+                        origin_page,
+                    )
+                )
+
+            st.markdown("**Why this matters**")
+            st.write(why_it_matters)
+
+            st.markdown("**Origin**")
+            st.write(
+                _origin_label(task_origin)
+                + " → "
+                + originating_question
+            )
+
+            submitted = st.form_submit_button(
+                "Create task",
+                type="primary",
+            )
+
+        if submitted:
             try:
                 task = create_task(
                     case_id=case_id,
@@ -86,6 +153,10 @@ def show_issue_task_creator(
                     originating_question=originating_question,
                     origin=task_origin,
                     why_it_matters=why_it_matters,
+                    origin_evidence_key=origin_evidence_key,
+                    origin_evidence_citation=origin_evidence_citation,
+                    origin_document_name=origin_document_name,
+                    origin_page=origin_page,
                 )
             except SolicitorTaskError as exc:
                 st.error(str(exc))
@@ -110,34 +181,66 @@ def _render_task(task: SolicitorTask) -> None:
 
         st.markdown("**Assigned to**")
         st.write(task.assigned_to or "Not assigned")
+
         st.markdown("**Related issue**")
         st.write(task.issue_name)
+
+        if task.origin is TaskOrigin.EVIDENCE:
+            st.markdown("**Evidence**")
+            st.write(
+                _evidence_label(
+                    task.origin_evidence_citation,
+                    task.origin_document_name,
+                    task.origin_page,
+                )
+            )
+
         st.markdown("**Why this matters**")
         st.write(task.why_it_matters)
+
         st.markdown("**Origin**")
         st.write(_origin_label(task.origin) + " → " + task.originating_question)
 
         with st.expander("Update task", expanded=False):
-            title = st.text_input("Task title", value=task.title, key="mw1_title::" + task.task_id)
-            status_label = st.selectbox(
-                "Status",
-                options=tuple(_STATUS.values()),
-                index=list(_STATUS).index(task.status),
-                key="mw1_status::" + task.task_id,
-            )
-            priority_label = st.selectbox(
-                "Priority",
-                options=tuple(_PRIORITY.values()),
-                index=list(_PRIORITY).index(task.priority),
-                key="mw1_priority::" + task.task_id,
-            )
-            due_date = st.date_input("Due date", value=_due_value(task), key="mw1_due::" + task.task_id)
-            assigned_to = st.text_input(
-                "Assigned to",
-                value=task.assigned_to or "",
-                key="mw1_assigned::" + task.task_id,
-            )
-            if st.button("Save task", key="mw1_save::" + task.task_id):
+            with st.form(
+                key="mw1_update_form::" + task.task_id,
+                clear_on_submit=False,
+                border=False,
+            ):
+                title = st.text_input(
+                    "Task title",
+                    value=task.title,
+                    key="mw1_title::" + task.task_id,
+                )
+                status_label = st.selectbox(
+                    "Status",
+                    options=tuple(_STATUS.values()),
+                    index=list(_STATUS).index(task.status),
+                    key="mw1_status::" + task.task_id,
+                )
+                priority_label = st.selectbox(
+                    "Priority",
+                    options=tuple(_PRIORITY.values()),
+                    index=list(_PRIORITY).index(task.priority),
+                    key="mw1_priority::" + task.task_id,
+                )
+                due_date = st.date_input(
+                    "Due date",
+                    value=_due_value(task),
+                    key="mw1_due::" + task.task_id,
+                )
+                assigned_to = st.text_input(
+                    "Assigned to",
+                    value=task.assigned_to or "",
+                    key="mw1_assigned::" + task.task_id,
+                )
+
+                submitted = st.form_submit_button(
+                    "Save task",
+                    type="primary",
+                )
+
+            if submitted:
                 try:
                     update_task(
                         case_id=task.case_id,

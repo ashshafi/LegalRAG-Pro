@@ -413,6 +413,152 @@ def _i3_write_grouped_propositions(group) -> None:
         )
 
 
+
+
+def _mw1_evidence_task_label(item) -> str:
+    citation = str(getattr(item, "citation", "") or "").strip()
+    if citation:
+        return citation
+
+    document_name = str(
+        getattr(item, "document_name", "") or ""
+    ).strip()
+    page = getattr(item, "page", None)
+
+    value = document_name or "Evidence"
+    if isinstance(page, int) and page > 0:
+        value += f" — p.{page}"
+    return value
+
+
+def _mw1_evidence_task_title(item, limitation: str) -> str:
+    limitation = _solicitor_working_text(
+        str(limitation or "").strip()
+    ).rstrip(".")
+
+    if limitation:
+        value = "Investigate: " + limitation
+        if len(value) <= 180:
+            return value
+
+    document_name = str(
+        getattr(item, "document_name", "") or ""
+    ).strip()
+    if document_name:
+        return "Investigate " + document_name
+
+    return "Investigate evidence follow-up"
+
+
+def _render_mw1_evidence_task_creator(items) -> None:
+    context = st.session_state.get("mw1_evidence_task_context")
+    if not isinstance(context, dict):
+        st.caption(
+            "Evidence task unavailable because exact matter, issue or evidence identity is missing."
+        )
+        return
+
+    case_id = str(context.get("case_id") or "").strip()
+    issue_analysis_id = str(
+        context.get("issue_analysis_id") or ""
+    ).strip()
+    issue_name = str(context.get("issue_name") or "").strip()
+
+    bound = tuple(
+        item
+        for item in tuple(items)
+        if str(getattr(item, "evidence_key", "") or "").strip()
+    )
+
+    if (
+        not case_id
+        or not issue_analysis_id
+        or not issue_name
+        or not bound
+    ):
+        st.caption(
+            "Evidence task unavailable because exact matter, issue or evidence identity is missing."
+        )
+        return
+
+    by_key = {}
+    for item in bound:
+        evidence_key = str(
+            getattr(item, "evidence_key", "") or ""
+        ).strip()
+        if evidence_key in by_key:
+            raise ValueError(
+                "Duplicate evidence identity in one task surface."
+            )
+        by_key[evidence_key] = item
+
+    keys = tuple(by_key)
+
+    if len(keys) == 1:
+        selected_key = keys[0]
+    else:
+        selected_key = st.selectbox(
+            "Evidence reference for task",
+            options=keys,
+            format_func=lambda value: _mw1_evidence_task_label(
+                by_key[value]
+            ),
+            key=(
+                "mw1_evidence_task_reference::"
+                + issue_analysis_id
+                + "::"
+                + "::".join(keys)
+            ),
+        )
+
+    item = by_key[selected_key]
+    why, rationale_limitation = _i3_rationale_parts(item)
+    limitation = _i3_limitation(item, rationale_limitation)
+
+    why_text = _solicitor_working_text(
+        str(
+            why
+            or limitation
+            or "This evidence requires professional follow-up."
+        )
+    )
+    reason = _solicitor_working_text(
+        str(limitation or "Follow up this evidence item.")
+    )
+
+    citation = (
+        str(getattr(item, "citation", "") or "").strip()
+        or None
+    )
+    document_name = (
+        str(getattr(item, "document_name", "") or "").strip()
+        or None
+    )
+
+    page_value = getattr(item, "page", None)
+    page = (
+        page_value
+        if isinstance(page_value, int) and page_value > 0
+        else None
+    )
+
+    show_issue_task_creator(
+        case_id=case_id,
+        issue_analysis_id=issue_analysis_id,
+        issue_name=issue_name,
+        origin="evidence",
+        originating_question=reason,
+        default_title=_mw1_evidence_task_title(
+            item,
+            limitation,
+        ),
+        why_it_matters=why_text,
+        origin_evidence_key=selected_key,
+        origin_evidence_citation=citation,
+        origin_document_name=document_name,
+        origin_page=page,
+    )
+
 def _render_i3_document_group(group) -> None:
     first = group[0]
 
@@ -469,6 +615,7 @@ def _render_i3_document_group(group) -> None:
                     else ""
                 ))
             )
+        _render_mw1_evidence_task_creator(tuple(group))
 
 
 
@@ -633,6 +780,7 @@ def _render_i3_evidence_item(item, *, allow_expander: bool = True) -> None:
 
         if item.citation:
             st.caption(_solicitor_working_text("Source: " + item.citation))
+        _render_mw1_evidence_task_creator((item,))
 
 
 def _render_i3_evidence_group(
@@ -885,6 +1033,18 @@ def show_swd1_issue_workspace(
         ),
         None,
     )
+    if selected_issue is not None and getattr(selected_issue, "issue_analysis_id", None):
+        st.session_state["mw1_evidence_task_context"] = {
+            "case_id": active_case_id,
+            "issue_analysis_id": str(selected_issue.issue_analysis_id),
+            "issue_name": str(
+                getattr(selected_issue, "issue_name", "")
+                or getattr(selected_issue, "title", "")
+                or "Legal issue"
+            ),
+        }
+    else:
+        st.session_state.pop("mw1_evidence_task_context", None)
 
     if selected_issue is None:
         st.info(
