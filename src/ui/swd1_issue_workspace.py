@@ -127,19 +127,19 @@ def _citation_caption(citations) -> str:
 def _write_statement(text: str, citations, *, allow_full_text: bool) -> None:
     with st.container(border=True):
         if len(text) <= _PREVIEW_LIMIT:
-            st.write(text)
+            st.write(_solicitor_working_text(text))
         else:
             preview = text[:_PREVIEW_LIMIT].rsplit(" ", 1)[0].rstrip()
-            st.write(preview + "…")
+            st.write(_solicitor_working_text(preview + "…"))
             if allow_full_text:
                 with st.expander("Read full passage", expanded=False):
-                    st.write(text)
+                    st.write(_solicitor_working_text(text))
             else:
-                st.caption("Full passage available in the cited source.")
+                st.caption(_solicitor_working_text("Full passage available in the cited source."))
 
         caption = _citation_caption(citations)
         if caption:
-            st.caption(caption)
+            st.caption(_solicitor_working_text(caption))
 
 
 def _first_open_point(issue) -> str | None:
@@ -192,7 +192,7 @@ def _render_evidence(title: str, statements, *, empty_message: str) -> None:
     substantive, technical = _group_display_statements(statements)
 
     if not substantive:
-        st.caption(empty_message)
+        st.caption(_solicitor_working_text(empty_message))
     else:
         for text, citations in substantive[:3]:
             _write_statement(text, citations, allow_full_text=True)
@@ -211,8 +211,8 @@ def _render_evidence(title: str, statements, *, empty_message: str) -> None:
             expanded=False,
         ):
             st.caption(
-                "Technical mapping material is retained here for traceability "
-                "but is not part of the primary solicitor view."
+                _solicitor_working_text("Technical mapping material is retained here for traceability "
+                "but is not part of the primary solicitor view.")
             )
             for text, citations in technical:
                 _write_statement(text, citations, allow_full_text=False)
@@ -348,7 +348,7 @@ def _i3_write_grouped_passages(group) -> None:
     if not passages:
         return
 
-    st.markdown("**Relevant passage" + ("s" if len(passages) != 1 else "") + "**")
+    st.markdown(_solicitor_working_text("**Relevant passage" + ("s" if len(passages) != 1 else "") + "**"))
 
     for item in passages[:3]:
         prefix = (
@@ -363,7 +363,7 @@ def _i3_write_grouped_passages(group) -> None:
         else:
             preview = text
 
-        st.write(prefix + preview)
+        st.write(_solicitor_working_text(prefix + preview))
 
     if len(passages) > 3:
         with st.expander(
@@ -376,7 +376,7 @@ def _i3_write_grouped_passages(group) -> None:
                     if item.page is not None
                     else ""
                 )
-                st.write(prefix + str(item.summary).strip())
+                st.write(_solicitor_working_text(prefix + str(item.summary).strip()))
 
 
 def _i3_write_grouped_propositions(group) -> None:
@@ -398,16 +398,16 @@ def _i3_write_grouped_propositions(group) -> None:
     for proposition in propositions[:2]:
         status = str(proposition.status).strip().lower()
         if status == "established_by_current_evidence":
-            st.markdown("**What the current evidence establishes**")
+            st.markdown(_solicitor_working_text("**What the current evidence establishes**"))
         else:
-            st.markdown("**What it may support**")
-        st.write(proposition.text)
+            st.markdown(_solicitor_working_text("**What it may support**"))
+        st.write(_solicitor_working_text(proposition.text))
 
     if len(propositions) > 2:
         st.caption(
-            f"{len(propositions) - 2} additional governed proposition link"
+            _solicitor_working_text(f"{len(propositions) - 2} additional governed proposition link"
             + ("s" if len(propositions) - 2 != 1 else "")
-            + " retained."
+            + " retained.")
         )
 
 
@@ -416,11 +416,11 @@ def _render_i3_document_group(group) -> None:
 
     with st.container(border=True):
         title = str(first.document_name).strip() or _i3_item_title(first)
-        st.markdown("**" + title + "**")
+        st.markdown(_solicitor_working_text("**" + title + "**"))
 
         characters = _i3_group_source_characters(group)
         if characters:
-            st.caption(" · ".join(characters))
+            st.caption(_solicitor_working_text(" · ".join(characters)))
 
         _i3_write_grouped_passages(group)
 
@@ -440,16 +440,16 @@ def _render_i3_document_group(group) -> None:
                 limitation_values.append(limitation)
 
         if why_values:
-            st.markdown("**Why it matters**")
+            st.markdown(_solicitor_working_text("**Why it matters**"))
             for value in why_values[:2]:
-                st.write(value)
+                st.write(_solicitor_working_text(value))
 
         _i3_write_grouped_propositions(group)
 
         if limitation_values:
-            st.markdown("**Limitation**")
+            st.markdown(_solicitor_working_text("**Limitation**"))
             for value in limitation_values[:2]:
-                st.write(value)
+                st.write(_solicitor_working_text(value))
 
         citations = _i3_group_unique_text(
             group,
@@ -457,7 +457,7 @@ def _render_i3_document_group(group) -> None:
         )
         if citations:
             st.caption(
-                "Source"
+                _solicitor_working_text("Source"
                 + ("s" if len(citations) != 1 else "")
                 + ": "
                 + " | ".join(citations[:3])
@@ -465,7 +465,7 @@ def _render_i3_document_group(group) -> None:
                     f" · +{len(citations) - 3} more"
                     if len(citations) > 3
                     else ""
-                )
+                ))
             )
 
 
@@ -543,16 +543,16 @@ def _i3_write_summary(summary: str, *, allow_expander: bool) -> None:
     if not text or _i3_is_low_signal_summary(text):
         return
 
-    st.markdown("**Relevant passage**")
+    st.markdown(_solicitor_working_text("**Relevant passage**"))
     if len(text) <= _PREVIEW_LIMIT:
-        st.write(text)
+        st.write(_solicitor_working_text(text))
         return
 
     preview = text[:_PREVIEW_LIMIT].rsplit(" ", 1)[0].rstrip()
-    st.write(preview + "…")
+    st.write(_solicitor_working_text(preview + "…"))
     if allow_expander:
         with st.expander("Read full passage", expanded=False):
-            st.write(text)
+            st.write(_solicitor_working_text(text))
 
 
 def _i3_write_propositions(item) -> None:
@@ -564,23 +564,23 @@ def _i3_write_propositions(item) -> None:
         status = str(proposition.status).strip().lower()
 
         if status == "established_by_current_evidence":
-            st.markdown("**What the current evidence establishes**")
+            st.markdown(_solicitor_working_text("**What the current evidence establishes**"))
         else:
-            st.markdown("**What it may support**")
+            st.markdown(_solicitor_working_text("**What it may support**"))
 
-        st.write(proposition.text)
+        st.write(_solicitor_working_text(proposition.text))
 
         if proposition.confidence:
             st.caption(
-                "Evidential confidence: "
-                + str(proposition.confidence).replace("_", " ").title()
+                _solicitor_working_text("Evidential confidence: "
+                + str(proposition.confidence).replace("_", " ").title())
             )
 
     if len(propositions) > 2:
         st.caption(
-            f"{len(propositions) - 2} additional proposition link"
+            _solicitor_working_text(f"{len(propositions) - 2} additional proposition link"
             + ("s" if len(propositions) - 2 != 1 else "")
-            + " retained in the governed assessment."
+            + " retained in the governed assessment.")
         )
 
 
@@ -606,11 +606,11 @@ def _i3_limitation(item, rationale_limitation: str) -> str:
 
 def _render_i3_evidence_item(item, *, allow_expander: bool = True) -> None:
     with st.container(border=True):
-        st.markdown("**" + _i3_item_title(item) + "**")
+        st.markdown(_solicitor_working_text("**" + _i3_item_title(item) + "**"))
 
         source_character = _i3_source_character(item)
         if source_character:
-            st.caption(source_character)
+            st.caption(_solicitor_working_text(source_character))
 
         _i3_write_summary(
             item.summary,
@@ -619,18 +619,18 @@ def _render_i3_evidence_item(item, *, allow_expander: bool = True) -> None:
 
         why, rationale_limitation = _i3_rationale_parts(item)
         if why:
-            st.markdown("**Why it matters**")
-            st.write(why)
+            st.markdown(_solicitor_working_text("**Why it matters**"))
+            st.write(_solicitor_working_text(why))
 
         _i3_write_propositions(item)
 
         limitation = _i3_limitation(item, rationale_limitation)
         if limitation:
-            st.markdown("**Limitation**")
-            st.write(limitation)
+            st.markdown(_solicitor_working_text("**Limitation**"))
+            st.write(_solicitor_working_text(limitation))
 
         if item.citation:
-            st.caption("Source: " + item.citation)
+            st.caption(_solicitor_working_text("Source: " + item.citation))
 
 
 def _render_i3_evidence_group(
@@ -658,7 +658,7 @@ def _render_i3_evidence_group(
     grouped = _i3_group_by_document(primary)
 
     if not grouped:
-        st.caption(empty_message)
+        st.caption(_solicitor_working_text(empty_message))
     else:
         for group in grouped[:3]:
             _render_i3_document_group(group)
@@ -673,16 +673,16 @@ def _render_i3_evidence_group(
 
     if secondary:
         with st.expander(
-            f"Additional mapped material ({len(secondary)})",
+            f"Additional evidence ({len(secondary)})",
             expanded=False,
         ):
             st.caption(
-                "Routine form, procedural, footer or other low-signal material "
-                "is retained for traceability but kept out of the primary legal view."
+                _solicitor_working_text("Routine form, procedural, footer or other low-signal material "
+                "is retained for traceability but kept out of the primary legal view.")
             )
             for item in secondary:
                 if item.citation:
-                    st.write("• " + item.citation)
+                    st.write(_solicitor_working_text("• " + item.citation))
 def _render_i3_secondary_context(items) -> None:
     ordered = tuple(items)
     if not ordered:
@@ -693,15 +693,135 @@ def _render_i3_secondary_context(items) -> None:
         expanded=False,
     ):
         st.caption(
-            "The governed assessment records these items as context rather "
-            "than evidence helping or challenging the selected proposition."
+            _solicitor_working_text("The governed assessment records these items as context rather "
+            "than evidence helping or challenging the selected proposition.")
         )
         for item in ordered:
             label = item.citation or _i3_item_title(item)
             why, _ = _i3_rationale_parts(item)
-            st.write("**" + label + "**")
+            st.write(_solicitor_working_text("**" + label + "**"))
             if why:
-                st.caption(why)
+                st.caption(_solicitor_working_text(why))
+
+
+
+# ---------------------------------------------------------------------------
+# SWD1 solicitor-facing post-validation refinement.
+# Presentation only: no analytical state, ranking or authority mutation.
+# ---------------------------------------------------------------------------
+
+def _solicitor_working_text(value):
+    if not isinstance(value, str):
+        return value
+
+    text = value
+
+    replacements = (
+        (
+            "M4 does not determine credibility",
+            "The current material does not determine credibility",
+        ),
+        (
+            "M4 does not resolve credibility",
+            "The current material does not resolve credibility",
+        ),
+        (
+            "M4 does not promote the raw excerpt itself into an established proposition",
+            "The current assessment does not treat the raw excerpt itself as an established proposition",
+        ),
+        (
+            "Mapped evidence",
+            "Current evidence",
+        ),
+        (
+            "mapped evidence",
+            "current evidence",
+        ),
+    )
+
+    for old, new in replacements:
+        text = text.replace(old, new)
+
+    return text
+
+
+def _issue_requires_attention(issue) -> bool:
+    elements = tuple(getattr(issue, "elements", ()) or ())
+
+    for element in elements:
+        unresolved = tuple(
+            getattr(element, "unresolved_matters", ()) or ()
+        )
+        gaps = tuple(
+            getattr(element, "evidential_gaps", ()) or ()
+        )
+        status = str(
+            getattr(element, "provisional_status", "") or ""
+        ).strip().lower().replace(" ", "_")
+
+        if unresolved or gaps:
+            return True
+
+        if status and status not in {
+            "well_supported",
+            "established",
+            "supported",
+        }:
+            return True
+
+    return bool(tuple(getattr(issue, "overall_limitations", ()) or ()))
+
+
+def _attention_issues(dashboard):
+    """Return attention-bearing issues in frozen/canonical case order."""
+
+    return tuple(
+        issue
+        for issue in tuple(getattr(dashboard, "issues", ()) or ())
+        if _issue_requires_attention(issue)
+    )
+
+
+def _first_open_point(issue) -> str:
+    for element in tuple(getattr(issue, "elements", ()) or ()):
+        unresolved = tuple(
+            getattr(element, "unresolved_matters", ()) or ()
+        )
+        if unresolved:
+            return _solicitor_working_text(str(unresolved[0]))
+
+        gaps = tuple(
+            getattr(element, "evidential_gaps", ()) or ()
+        )
+        if gaps:
+            gap = gaps[0]
+            for attr in ("description", "text", "gap", "question"):
+                value = getattr(gap, attr, None)
+                if value:
+                    return _solicitor_working_text(str(value))
+
+    return ""
+
+
+def _render_issue_attention(dashboard) -> None:
+    issues = _attention_issues(dashboard)
+    if not issues:
+        return
+
+    st.subheader("Issues requiring attention")
+    st.caption(
+        _solicitor_working_text("These issues contain unresolved or disputed matters in the current "
+        "assessment. They are shown in case order, not ranked by importance.")
+    )
+
+    for issue in issues:
+        with st.container(border=True):
+            st.markdown(
+                _solicitor_working_text("**" + _solicitor_working_text(str(issue.issue_name)) + "**")
+            )
+            open_point = _first_open_point(issue)
+            if open_point:
+                st.write(_solicitor_working_text(open_point))
 
 
 
@@ -714,7 +834,7 @@ def show_swd1_issue_workspace(
 
     st.header("Legal Issues")
     st.caption(
-        "Current case assessment — work the legal issue, evidence and next action here."
+        _solicitor_working_text("Current case assessment — work the legal issue, evidence and next action here.")
     )
 
     if active_case_id is None:
@@ -762,6 +882,8 @@ def show_swd1_issue_workspace(
             "and what should be done next."
         )
 
+        _render_issue_attention(dashboard)
+
         for issue in dashboard.issues:
             position = _issue_position(issue)
             support = _issue_confidence(issue)
@@ -772,24 +894,24 @@ def show_swd1_issue_workspace(
 
                 left, right = st.columns(2)
                 with left:
-                    st.caption("CURRENT POSITION")
-                    st.write(position)
+                    st.caption(_solicitor_working_text("CURRENT POSITION"))
+                    st.write(_solicitor_working_text(position))
                 with right:
-                    st.caption("EVIDENTIAL SUPPORT")
-                    st.write(support.title())
+                    st.caption(_solicitor_working_text("EVIDENTIAL SUPPORT"))
+                    st.write(_solicitor_working_text(support.title()))
 
-                st.write(_position_explanation(position))
+                st.write(_solicitor_working_text(_position_explanation(position)))
 
                 if open_point:
-                    st.markdown("**Main weakness**")
-                    st.write(open_point)
+                    st.markdown(_solicitor_working_text("**Main weakness**"))
+                    st.write(_solicitor_working_text(open_point))
                 else:
                     st.caption(
-                        "No specific unresolved point is recorded for this issue."
+                        _solicitor_working_text("No specific unresolved point is recorded for this issue.")
                     )
 
                 st.caption(
-                    "Open the issue to review the evidence and decide the next legal action."
+                    _solicitor_working_text("Open the issue to review the evidence and decide the next legal action.")
                 )
 
                 if st.button(
@@ -804,8 +926,8 @@ def show_swd1_issue_workspace(
                     st.rerun()
 
         with st.expander("Audit", expanded=False):
-            st.caption("Current governed authority: " + dashboard.authority_id)
-            st.caption("Activation: " + dashboard.activation_id)
+            st.caption(_solicitor_working_text("Current governed authority: " + dashboard.authority_id))
+            st.caption(_solicitor_working_text("Activation: " + dashboard.activation_id))
         return
 
     if st.button("← Back to issues", key="swd1_back_to_issues"):
@@ -814,16 +936,16 @@ def show_swd1_issue_workspace(
         st.rerun()
 
     st.header(selected_issue.issue_name)
-    st.caption("Legal question: " + selected_issue.original_user_question)
+    st.caption(_solicitor_working_text("Legal question: " + selected_issue.original_user_question))
 
     position = _issue_position(selected_issue)
     support = _issue_confidence(selected_issue)
 
     with st.container(border=True):
-        st.caption("CURRENT POSITION")
+        st.caption(_solicitor_working_text("CURRENT POSITION"))
         st.subheader(position)
-        st.write("Overall evidential support: " + support.title())
-        st.write(_position_explanation(position))
+        st.write(_solicitor_working_text("Overall issue evidential support: " + support.title()))
+        st.write(_solicitor_working_text(_position_explanation(position)))
 
     elements = tuple(selected_issue.elements)
     if not elements:
@@ -854,10 +976,10 @@ def show_swd1_issue_workspace(
     element = next(item for item in elements if item.element_id == chosen)
 
     st.caption(
-        "Selected question — position: "
+        _solicitor_working_text("Selected question — position: "
         + _label(element.provisional_status)
         + " · Evidential support: "
-        + _label(element.analysis_confidence).title()
+        + _label(element.analysis_confidence).title())
     )
 
     weakness = (
@@ -873,10 +995,10 @@ def show_swd1_issue_workspace(
     if weakness:
         with st.container(border=True):
             st.subheader("Main weakness")
-            st.write(weakness)
+            st.write(_solicitor_working_text(weakness))
 
     st.subheader("Why this matters")
-    st.write(element.legal_significance)
+    st.write(_solicitor_working_text(element.legal_significance))
 
     evidence_items = build_swd1_evidence_items(
         authority=authority,
@@ -935,36 +1057,36 @@ def show_swd1_issue_workspace(
         ):
             for item in other:
                 label = item.citation or _i3_item_title(item)
-                st.write("• " + label)
+                st.write(_solicitor_working_text("• " + label))
 
     st.subheader("What remains unclear")
     if element.unresolved_matters:
         for item in element.unresolved_matters:
-            st.write("• " + item)
+            st.write(_solicitor_working_text("• " + item))
     else:
-        st.caption("No unresolved matter is recorded for this question.")
+        st.caption(_solicitor_working_text("No unresolved matter is recorded for this question."))
 
     if element.limitations:
         with st.expander("Important limitations", expanded=False):
             for item in element.limitations:
-                st.write("• " + item)
+                st.write(_solicitor_working_text("• " + item))
 
     st.subheader("Next legal action")
-    st.write(_recommended_next_action(element))
+    st.write(_solicitor_working_text(_recommended_next_action(element)))
 
     with st.expander("Audit", expanded=False):
-        st.caption("Issue analysis ID: " + selected_issue.issue_analysis_id)
+        st.caption(_solicitor_working_text("Issue analysis ID: " + selected_issue.issue_analysis_id))
         st.caption(
-            "Issue definition: "
+            _solicitor_working_text("Issue definition: "
             + selected_issue.issue_definition_id
             + "/"
-            + selected_issue.issue_definition_version
+            + selected_issue.issue_definition_version)
         )
-        st.caption("Element ID: " + element.element_id)
-        st.caption("Raw question position: " + element.provisional_status)
-        st.caption("Raw analysis confidence: " + element.analysis_confidence)
-        st.caption("Current governed authority: " + dashboard.authority_id)
-        st.caption("Activation: " + dashboard.activation_id)
+        st.caption(_solicitor_working_text("Element ID: " + element.element_id))
+        st.caption(_solicitor_working_text("Raw question position: " + element.provisional_status))
+        st.caption(_solicitor_working_text("Raw analysis confidence: " + element.analysis_confidence))
+        st.caption(_solicitor_working_text("Current governed authority: " + dashboard.authority_id))
+        st.caption(_solicitor_working_text("Activation: " + dashboard.activation_id))
 
 
 __all__ = ["show_swd1_issue_workspace"]

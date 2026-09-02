@@ -160,7 +160,7 @@ def test_i3_evidence_surface_uses_frozen_significance_not_counts_or_ranking():
         "What it may support",
         "Limitation",
         "Source: ",
-        "Additional mapped material",
+        "Additional evidence",
         "Other relevant context",
         "build_swd1_evidence_items",
     ):
@@ -273,3 +273,115 @@ def test_i3_claimant_account_separates_relevance_from_party_evidence_limitation(
     assert "claimant's account" in why.lower()
     assert "party evidence" in limitation.lower()
     assert "independent confirmation" in limitation.lower()
+
+
+# ---------------------------------------------------------------------------
+# SWD1 post-validation solicitor refinement tests
+# ---------------------------------------------------------------------------
+
+def test_solicitor_working_text_removes_residual_internal_m4_wording():
+    rendered = ui._solicitor_working_text(
+        "M4 does not determine credibility; a factual conflict remains."
+    )
+
+    assert "M4" not in rendered
+    assert "current material does not determine credibility" in rendered
+
+
+def test_solicitor_working_text_replaces_mapped_evidence_language():
+    assert (
+        ui._solicitor_working_text(
+            "Mapped evidence remains incomplete."
+        )
+        == "Current evidence remains incomplete."
+    )
+    assert (
+        ui._solicitor_working_text(
+            "The mapped evidence remains incomplete."
+        )
+        == "The current evidence remains incomplete."
+    )
+
+
+def test_attention_issues_preserve_input_order_without_priority_ranking():
+    from types import SimpleNamespace as NS
+
+    clear = NS(
+        provisional_status="well_supported",
+        unresolved_matters=(),
+        evidential_gaps=(),
+    )
+    open_one = NS(
+        provisional_status="materially_disputed",
+        unresolved_matters=("Question one",),
+        evidential_gaps=(),
+    )
+    open_two = NS(
+        provisional_status="well_supported",
+        unresolved_matters=("Question two",),
+        evidential_gaps=(),
+    )
+
+    first = NS(
+        issue_name="First",
+        elements=(open_one,),
+        overall_limitations=(),
+    )
+    second = NS(
+        issue_name="Second",
+        elements=(clear,),
+        overall_limitations=(),
+    )
+    third = NS(
+        issue_name="Third",
+        elements=(open_two,),
+        overall_limitations=(),
+    )
+
+    dashboard = NS(issues=(first, second, third))
+
+    assert tuple(
+        item.issue_name
+        for item in ui._attention_issues(dashboard)
+    ) == ("First", "Third")
+
+
+def test_attention_orientation_explicitly_disclaims_ranking():
+    text = NEW_UI.read_text(encoding="utf-8")
+
+    assert "Issues requiring attention" in text
+    assert "shown in case order, not ranked by importance" in text
+
+    for forbidden in (
+        "highest priority",
+        "top priority",
+        "most important issue",
+        "deal with this first",
+        "urgent issue",
+        "strongest evidence",
+    ):
+        assert forbidden.lower() not in text.lower()
+
+
+def test_overall_support_label_is_explicitly_issue_level():
+    text = NEW_UI.read_text(encoding="utf-8")
+
+    assert "Overall issue evidential support:" in text
+    assert 'st.write("Overall evidential support: "' not in text
+
+
+def test_solicitor_working_text_removes_residual_m4_resolve_wording():
+    rendered = ui._solicitor_working_text(
+        "The source takes a materially incompatible position; "
+        "M4 does not resolve credibility."
+    )
+
+    assert "M4" not in rendered
+    assert "current material does not resolve credibility" in rendered
+
+
+def test_working_view_uses_additional_evidence_not_mapped_material():
+    text = NEW_UI.read_text(encoding="utf-8")
+
+    assert "Additional mapped material" not in text
+    assert "Additional evidence" in text
