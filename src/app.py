@@ -120,9 +120,20 @@ else:
 if st.session_state.get("u8_evidence_inspection_view", False):
     show_evidence_inspection(active_case_id)
 elif st.session_state.get("ppr3_legal_issue_dashboard_view", False):
-    show_legal_issue_dashboard(active_case_id)
-    show_professional_review_inbox(active_case_id)
-    show_matter_analysis_ledger(active_case_id)
+    st.markdown("### Legal work")
+    _solicitor_view = st.radio(
+        "Choose what you want to review",
+        ("Legal issues", "AI findings", "Issue assessment"),
+        horizontal=True,
+        key="solicitor_ux_v1_working_view",
+        label_visibility="collapsed",
+    )
+    if _solicitor_view == "Legal issues":
+        show_legal_issue_dashboard(active_case_id)
+    elif _solicitor_view == "AI findings":
+        show_professional_review_inbox(active_case_id)
+    else:
+        show_matter_analysis_ledger(active_case_id)
 elif st.session_state.get("m7_source_evidence_view", False):
     show_source_evidence(active_case_id, report_projection)
 elif st.session_state.get("m6_workspace_view") in {

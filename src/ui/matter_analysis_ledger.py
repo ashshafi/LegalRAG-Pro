@@ -1600,22 +1600,22 @@ def show_matter_analysis_ledger(
     st.divider()
 
     st.header(
-        "Issue Review & Decisions"
+        'Issue assessment'
     )
 
     st.caption(
-        "Technical system: Matter Analysis Ledger. "
-        "Only one issue and one focus area are shown at a time."
+        'Review one legal issue and one question at a time.'
     )
 
-    st.caption(
-        "Relationship review is bound to analytical authority "
-        f"{ledger.authority_id}. "
-        "A relationship begins as PROPOSED and becomes "
-        "APPROVED or REJECTED only through an explicit reviewer action. "
-        "The underlying source evidence and governed analytical authority "
-        "are not silently overwritten."
-    )
+    with st.expander("Audit trail", expanded=False):
+        st.caption(
+            "Relationship review is bound to analytical authority "
+            f"{ledger.authority_id}. "
+            "A relationship begins as PROPOSED and becomes "
+            "APPROVED or REJECTED only through an explicit reviewer action. "
+            "The underlying source evidence and governed analytical authority "
+            "are not silently overwritten."
+        )
 
     if not ledger.issues:
 
@@ -1828,7 +1828,7 @@ def show_matter_analysis_ledger(
                 )
 
                 st.markdown(
-                    "### Findings, gaps & uncertainty"
+                    '### Current assessment'
                 )
 
                 with st.container(
@@ -1836,7 +1836,7 @@ def show_matter_analysis_ledger(
                 ):
 
                     st.write(
-                        "**Current position:** "
+                        "**Current case assessment:** "
                         + element.analytical_status
                     )
 
@@ -1846,7 +1846,7 @@ def show_matter_analysis_ledger(
                     )
 
                     with st.expander(
-                        "Current governed explanation",
+                        'Why this is the current assessment',
                         expanded=False,
                     ):
 
@@ -1877,7 +1877,7 @@ def show_matter_analysis_ledger(
                     )
 
                     right.metric(
-                        "Conflicting evidence",
+                        'Evidence against / qualifying',
                         len(
                             element.conflicting_evidence_keys
                         ),
@@ -1955,7 +1955,7 @@ def show_matter_analysis_ledger(
                     )
 
                     st.write(
-                        "**What remains unresolved**"
+                        '**What remains unclear**'
                     )
 
                     if element.unresolved_matters:
@@ -2010,7 +2010,7 @@ def show_matter_analysis_ledger(
                 # ----------------------------------------------------------
 
                 st.markdown(
-                    "### Challenge this finding"
+                    '### Test this assessment'
                 )
 
                 st.caption(
@@ -2021,7 +2021,7 @@ def show_matter_analysis_ledger(
 
                 show_finding_challenge = (
                     st.toggle(
-                        "+ Challenge this finding",
+                        '+ Test this assessment',
                         value=False,
                         key=(
                             "mal_challenge_finding_"
@@ -2062,7 +2062,7 @@ def show_matter_analysis_ledger(
                         )
 
                         right.metric(
-                            "Conflicting evidence",
+                            'Evidence against / qualifying',
                             len(
                                 element.conflicting_evidence_keys
                             ),
@@ -2245,15 +2245,11 @@ def show_matter_analysis_ledger(
                 # ----------------------------------------------------------
 
                 st.markdown(
-                    "### Work-product authority checker"
+                    '### Check draft against case assessment'
                 )
 
                 st.caption(
-                    "Check whether the analytical status, confidence "
-                    "and evidence basis you intend to use in a draft "
-                    "stay within the current frozen governed authority. "
-                    "This deterministic check does not infer the semantic "
-                    "meaning of arbitrary prose."
+                    'Check whether a draft stays within the current case assessment and evidence basis.'
                 )
 
                 show_work_product_checker = (
@@ -2503,7 +2499,7 @@ def show_matter_analysis_ledger(
                 # ----------------------------------------------------------
 
                 st.markdown(
-                    "### Analytical change proposal"
+                    '### Suggested change'
                 )
 
                 st.caption(
@@ -2538,8 +2534,7 @@ def show_matter_analysis_ledger(
                 except AnalyticalChangeProposalError as exc:
 
                     st.error(
-                        "Analytical change proposal history "
-                        "failed closed."
+                        'Suggested change history failed closed.'
                     )
 
                     st.caption(
@@ -2619,9 +2614,7 @@ def show_matter_analysis_ledger(
                             ):
 
                                 st.info(
-                                    "Approved proposal only. "
-                                    "The current frozen analytical "
-                                    "authority has not been replaced."
+                                    'Approved change. The current case assessment has not yet been updated.'
                                 )
 
                 if pending_change_proposals:
@@ -2635,7 +2628,7 @@ def show_matter_analysis_ledger(
                         ):
 
                             st.warning(
-                                "PENDING ANALYTICAL CHANGE REVIEW"
+                                'SUGGESTED CHANGE - DECISION REQUIRED'
                             )
 
                             st.write(
@@ -2661,7 +2654,7 @@ def show_matter_analysis_ledger(
                             )
 
                             st.caption(
-                                "Reviewed relationship basis: "
+                                'Evidence relationships reviewed: '
                                 + str(
                                     len(
                                         proposal.basis_relationship_ids
@@ -2671,8 +2664,7 @@ def show_matter_analysis_ledger(
 
                             change_review_note = (
                                 st.text_area(
-                                    "Optional reviewer note "
-                                    "for this analytical change",
+                                    'Optional review note',
                                     key=(
                                         "mal_change_review_note_"
                                         + proposal.proposal_id
@@ -2688,7 +2680,7 @@ def show_matter_analysis_ledger(
                             )
 
                             if approve_change.button(
-                                "APPROVE CHANGE PROPOSAL",
+                                'APPROVE SUGGESTED CHANGE',
                                 key=(
                                     "mal_approve_change_"
                                     + proposal.proposal_id
@@ -2726,7 +2718,7 @@ def show_matter_analysis_ledger(
                                     st.rerun()
 
                             if reject_change.button(
-                                "REJECT CHANGE PROPOSAL",
+                                'REJECT SUGGESTED CHANGE',
                                 key=(
                                     "mal_reject_change_"
                                     + proposal.proposal_id
@@ -2774,7 +2766,7 @@ def show_matter_analysis_ledger(
 
                     show_change_proposal = (
                         st.toggle(
-                            "+ Propose analytical change",
+                            '+ Suggest a change',
                             value=False,
                             key=(
                                 "mal_show_change_proposal_"
@@ -2872,7 +2864,7 @@ def show_matter_analysis_ledger(
                             )
 
                             if _matter_form_submit_button(
-                                "PROPOSE ANALYTICAL CHANGE",
+                                'SUGGEST CHANGE',
                                 key=(
                                     "mal_submit_change_"
                                     + element.element_id
@@ -2968,7 +2960,7 @@ def show_matter_analysis_ledger(
                     )
 
                     _evidence_list(
-                        "Conflicting evidence",
+                        'Evidence against / qualifying',
                         element.conflicting_evidence_keys,
                     )
 
@@ -3040,7 +3032,7 @@ def show_matter_analysis_ledger(
                 )
 
                 st.markdown(
-                    "#### Review & decisions"
+                    '#### Previous decisions'
                 )
 
                 relationships = (

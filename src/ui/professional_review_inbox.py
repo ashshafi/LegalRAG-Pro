@@ -109,13 +109,13 @@ def _render_observation_record(
 
     st.write("**" + observation.title + "**")
     st.caption(
-        "Source agent: "
+        'Analysis source: '
         + item.source_agent.value
         + " | Review state: "
         + _state_label(item)
         + " | Materiality: "
         + observation.materiality.value.upper()
-        + " | Observation confidence: "
+        + " | AI confidence: "
         + observation.observation_confidence.value.upper()
     )
 
@@ -139,7 +139,7 @@ def _render_observation_record(
             st.write("- " + limitation)
 
     st.caption(
-        "Agent recommendation: "
+        'AI recommendation: '
         + observation.recommended_action.value
         + ". Agent recommendations are not authority and do not create "
         "analytical-change proposals."
@@ -169,7 +169,7 @@ def _render_review_history(
         st.caption("No professional review event has yet been recorded.")
         return
 
-    st.write("**Professional review history**")
+    st.write('**Review history**')
     for event in item.review_events:
         st.caption(
             event.reviewed_at_utc
@@ -193,8 +193,7 @@ def _render_terminal_result(
         is ProfessionalReviewState.ACCEPTED_FOR_MAL1_CONSIDERATION
     ):
         st.success(
-            "ACCEPTED FOR MAL1 CONSIDERATION. This is review eligibility only; "
-            "no MAL1 proposal has been created or approved."
+            'ACCEPTED FOR FURTHER REVIEW. The current case assessment has not changed.'
         )
     elif projection.state is ProfessionalReviewState.REJECTED:
         st.info(
@@ -366,10 +365,9 @@ def _mal1_consideration_controls(
         element_id=element_id,
     )
 
-    st.markdown("#### Professional MAL1 consideration")
+    st.markdown('#### Suggested change')
     st.caption(
-        "Professional-review acceptance permits a separately authored MAL1 "
-        "proposal. It does not itself change the governed analysis."
+        'An accepted AI finding can support a suggested change. Accepting the finding does not itself change the current case assessment.'
     )
 
     if proposals:
@@ -391,8 +389,7 @@ def _mal1_consideration_controls(
         for proposal in proposals
     ):
         st.info(
-            "A MAL1 proposal is already pending for this analytical element. "
-            "Review it separately in Issue Review & Decisions."
+            'A suggested change is already waiting for professional review. Open Issue assessment to review it.'
         )
         return
 
@@ -602,18 +599,17 @@ def show_professional_review_inbox(
 
     st.divider()
     with st.expander(
-        "Controlled Agent Professional Review Inbox"
+        'AI findings'
         + (" (" + str(len(pending)) + " pending)" if pending else ""),
         expanded=bool(pending),
     ):
         st.caption(
-            "PRW2 surfaces immutable CAA observations for explicit human review. "
-            "Review decisions are append-only PRW1 events. Acceptance means only "
-            "eligibility for separately authored MAL1 consideration."
+            'Review new AI findings that may affect the case assessment. Nothing changes unless you make an explicit professional decision.'
         )
-        st.caption(
-            "Current governed authority: " + current_authority_id
-        )
+        with st.expander("Audit trail", expanded=False):
+            st.caption(
+                "Current governed authority: " + current_authority_id
+            )
 
         if not items:
             st.info(
@@ -656,7 +652,7 @@ def show_professional_review_inbox(
                     )
 
         if terminal:
-            st.markdown("### Reviewed observations")
+            st.markdown('### Previous AI findings')
             for item in terminal:
                 with st.container(border=True):
                     _render_observation_record(item)

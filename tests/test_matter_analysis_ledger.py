@@ -474,14 +474,12 @@ def test_mal1_heading_is_ascii_safe():
     ).read()
 
     assert (
-        'st.header(\n'
-        '        "Issue Review & Decisions"\n'
-        '    )'
+        'Issue assessment'
         in source
     )
 
     assert (
-        "Technical system: Matter Analysis Ledger."
+        'Review one legal issue and one question at a time.'
         in source
     )
 
@@ -1041,7 +1039,7 @@ def test_focused_workspace_shows_one_issue_and_one_element_at_a_time():
     )
 
     assert (
-        '"Issue Review & Decisions"'
+        'Issue assessment'
         in source
     )
 
@@ -1173,17 +1171,17 @@ def test_findings_gaps_uncertainty_workspace_projects_existing_state():
     )
 
     assert (
-        '"### Findings, gaps & uncertainty"'
+        '### Current assessment'
         in source
     )
 
     assert (
-        '"**Current position:** "'
+        '"**Current case assessment:** "'
         in source
     )
 
     assert (
-        '"Current governed explanation"'
+        'Why this is the current assessment'
         in source
     )
 
@@ -1193,7 +1191,7 @@ def test_findings_gaps_uncertainty_workspace_projects_existing_state():
     )
 
     assert (
-        '"Conflicting evidence"'
+        'Evidence against / qualifying'
         in source
     )
 
@@ -1343,27 +1341,27 @@ def test_analytical_change_proposal_requires_explicit_review():
     )
 
     assert (
-        '"### Analytical change proposal"'
+        '### Suggested change'
         in source
     )
 
     assert (
-        '"+ Propose analytical change"'
+        '+ Suggest a change'
         in source
     )
 
     assert (
-        '"PROPOSE ANALYTICAL CHANGE"'
+        'SUGGEST CHANGE'
         in source
     )
 
     assert (
-        '"APPROVE CHANGE PROPOSAL"'
+        'APPROVE SUGGESTED CHANGE'
         in source
     )
 
     assert (
-        '"REJECT CHANGE PROPOSAL"'
+        'REJECT SUGGESTED CHANGE'
         in source
     )
 
@@ -1381,7 +1379,7 @@ def test_approved_change_proposal_does_not_silently_replace_authority():
     )
 
     assert (
-        "The current frozen analytical "
+        'The current case assessment '
         in source
     )
 
@@ -1439,12 +1437,12 @@ def test_challenge_this_finding_is_read_only_adversarial_projection():
     )
 
     assert (
-        '"### Challenge this finding"'
+        '### Test this assessment'
         in source
     )
 
     assert (
-        '"+ Challenge this finding"'
+        '+ Test this assessment'
         in source
     )
 
@@ -1602,7 +1600,7 @@ def test_work_product_authority_checker_is_structured_and_read_only():
     )
 
     assert (
-        '"### Work-product authority checker"'
+        '### Check draft against case assessment'
         in source
     )
 

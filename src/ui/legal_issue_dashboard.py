@@ -190,13 +190,11 @@ def show_legal_issue_dashboard(
         return
 
     st.info(
-        "Summary view only. "
-        "Detailed evidence and review controls are in "
-        "Issue Review & Decisions below."
+        'Choose a legal issue to see the current assessment, evidence and any action that needs your attention.'
     )
 
     with st.expander(
-        "Governance details",
+        'Audit trail',
         expanded=False,
     ):
 
@@ -264,11 +262,11 @@ def show_legal_issue_dashboard(
                         synthesis.partially_supported,
                     ),
                     (
-                        "Distinct evidence",
+                        'Evidence considered',
                         evidence.distinct_any_role,
                     ),
                     (
-                        "Conflicting evidence",
+                        'Evidence against / qualifying',
                         evidence.conflicting,
                     ),
                 )
@@ -286,8 +284,7 @@ def show_legal_issue_dashboard(
             )
 
             st.caption(
-                "Select this issue below in "
-                "Issue Review & Decisions for the focused view."
+                'Open Issue assessment above, then select this issue for the focused view.'
             )
 
         st.divider()

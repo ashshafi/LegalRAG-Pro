@@ -541,8 +541,8 @@ def test_ui_uses_only_read_only_authority_provider_and_no_unsafe_rendering():
     assert ".html(" not in source
     assert ".download_button(" not in source
 
-    assert '"Distinct evidence"' in source
-    assert '"Conflicting evidence"' in source
+    assert 'Evidence considered' in source
+    assert 'Evidence against / qualifying' in source
     assert '"Supporting uses"' not in source
 
 
@@ -591,8 +591,8 @@ def test_dashboard_metric_layout_uses_rows_of_at_most_two_columns():
 
     assert '"Disputed elements"' in source
     assert '"Partially supported"' in source
-    assert '"Distinct evidence"' in source
-    assert '"Conflicting evidence"' in source
+    assert 'Evidence considered' in source
+    assert 'Evidence against / qualifying' in source
 
 
 
@@ -665,12 +665,12 @@ def test_dashboard_ui_is_summary_only_and_defers_detailed_review():
     )
 
     assert (
-        '"Summary view only. "'
+        'Choose a legal issue to see the current assessment, evidence and any action that needs your attention.'
         in rendered
     )
 
     assert (
-        '"Issue Review & Decisions below."'
+        'Open Issue assessment above'
         in rendered
     )
 
@@ -680,7 +680,7 @@ def test_dashboard_ui_is_summary_only_and_defers_detailed_review():
     )
 
     assert (
-        '"Governance details"'
+        'Audit trail'
         in rendered
     )
 
