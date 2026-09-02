@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ui.solicitor_tasks import show_issue_task_creator, show_solicitor_tasks
+
 from collections.abc import Callable
 from typing import Any
 
@@ -830,9 +832,17 @@ def show_swd1_issue_workspace(
     *,
     authority_loader: AuthorityLoader = load_active_governed_analytical_authority,
 ) -> None:
+    if st.session_state.get("mw1_task_workspace_case_id") == active_case_id:
+        show_solicitor_tasks(active_case_id)
+        return
+
     """Render SWD1-I1/I2 without changing analytical or authority state."""
 
     st.header("Legal Issues")
+
+    if st.button("Tasks", key="mw1_open_tasks::" + active_case_id):
+        st.session_state["mw1_task_workspace_case_id"] = active_case_id
+        st.rerun()
     st.caption(
         _solicitor_working_text("Current case assessment — work the legal issue, evidence and next action here.")
     )
@@ -1071,8 +1081,33 @@ def show_swd1_issue_workspace(
             for item in element.limitations:
                 st.write(_solicitor_working_text("• " + item))
 
+
+    show_issue_task_creator(
+        case_id=active_case_id,
+        issue_analysis_id=str(selected_issue.issue_analysis_id),
+        issue_name=str(getattr(selected_issue, "issue_name", "") or getattr(selected_issue, "title", "") or "Legal issue"),
+        origin="what_remains_unclear",
+        originating_question=_solicitor_working_text(str(getattr(element, "question", "") or getattr(element, "legal_question", "") or getattr(element, "element_question", "") or "Resolve the selected unresolved point.")),
+        default_title=_solicitor_working_text(str(getattr(element, "question", "") or getattr(element, "legal_question", "") or getattr(element, "element_question", "") or "Resolve the selected unresolved point.")),
+        why_it_matters=str(_solicitor_working_text(element.legal_significance)),
+    )
+
     st.subheader("Next legal action")
     st.write(_solicitor_working_text(_recommended_next_action(element)))
+
+    show_issue_task_creator(
+        case_id=active_case_id,
+        issue_analysis_id=str(selected_issue.issue_analysis_id),
+        issue_name=str(getattr(selected_issue, "issue_name", "") or getattr(selected_issue, "title", "") or "Legal issue"),
+        origin="next_legal_action",
+        originating_question=_solicitor_working_text(str(getattr(element, "question", "") or getattr(element, "legal_question", "") or getattr(element, "element_question", "") or "Resolve the selected unresolved point.")),
+        default_title=str(_solicitor_working_text(_recommended_next_action(element))),
+        why_it_matters=str(_solicitor_working_text(element.legal_significance)),
+    )
+
+    if st.button("View tasks", key="mw1_view_tasks::" + active_case_id):
+        st.session_state["mw1_task_workspace_case_id"] = active_case_id
+        st.rerun()
 
     with st.expander("Audit", expanded=False):
         st.caption(_solicitor_working_text("Issue analysis ID: " + selected_issue.issue_analysis_id))

@@ -122,19 +122,20 @@ if st.session_state.get("u8_evidence_inspection_view", False):
     show_evidence_inspection(active_case_id)
 elif st.session_state.get("ppr3_legal_issue_dashboard_view", False):
     show_swd1_issue_workspace(active_case_id)
-    with st.expander("Previous analysis tools", expanded=False):
-        st.caption("Previous analytical views are retained here while the solicitor workspace is introduced.")
-        _previous_analysis_view = st.radio(
-            "Choose previous analysis tool",
-            ("AI review", "Issue decisions"),
-            horizontal=True,
-            key="swd1_previous_analysis_view",
-            label_visibility="collapsed",
-        )
-        if _previous_analysis_view == "AI review":
-            show_professional_review_inbox(active_case_id)
-        else:
-            show_matter_analysis_ledger(active_case_id)
+    if not st.session_state.get("mw1_task_workspace_case_id"):
+        with st.expander("Previous analysis tools", expanded=False):
+            st.caption("Previous analytical views are retained here while the solicitor workspace is introduced.")
+            _previous_analysis_view = st.radio(
+                "Choose previous analysis tool",
+                ("AI review", "Issue decisions"),
+                horizontal=True,
+                key="swd1_previous_analysis_view",
+                label_visibility="collapsed",
+            )
+            if _previous_analysis_view == "AI review":
+                show_professional_review_inbox(active_case_id)
+            else:
+                show_matter_analysis_ledger(active_case_id)
 elif st.session_state.get("m7_source_evidence_view", False):
     show_source_evidence(active_case_id, report_projection)
 elif st.session_state.get("m6_workspace_view") in {

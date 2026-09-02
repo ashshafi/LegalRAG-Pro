@@ -385,3 +385,30 @@ def test_working_view_uses_additional_evidence_not_mapped_material():
 
     assert "Additional mapped material" not in text
     assert "Additional evidence" in text
+
+
+def test_mw1_issue_workspace_exposes_task_creation_from_both_origins():
+    text = NEW_UI.read_text(encoding="utf-8")
+    assert "show_issue_task_creator" in text
+    assert '"next_legal_action"' in text
+    assert '"what_remains_unclear"' in text
+
+
+def test_mw1_issue_workspace_exposes_matter_task_workspace_without_nav_rewrite():
+    text = NEW_UI.read_text(encoding="utf-8")
+    assert "show_solicitor_tasks" in text
+    assert "mw1_task_workspace_case_id" in text
+    assert '"Tasks"' in text
+
+def test_mw1_issue_workspace_has_direct_view_tasks_control():
+    text = NEW_UI.read_text(encoding="utf-8")
+
+    assert '"View tasks"' in text
+    assert '"mw1_view_tasks::"' in text
+
+
+def test_mw1_task_why_reuses_issue_explanation_not_generic_placeholder():
+    text = NEW_UI.read_text(encoding="utf-8")
+
+    assert "Resolving this work point is necessary because it remains unresolved" not in text
+    assert text.count("why_it_matters=str(") == 2
