@@ -711,3 +711,116 @@ def test_compact_summary_hides_long_frozen_text_by_default():
     assert '"About this assessment"' in source
     assert "issue.issue_summary" in source
     assert "The concise metrics below are the normal working view." in source
+
+
+# ---------------------------------------------------------------------------
+# SWD1-I3 focused projection tests
+# ---------------------------------------------------------------------------
+
+def test_swd1_i3_projects_frozen_evidence_assessment_without_reordering():
+    from types import SimpleNamespace as NS
+
+    from legal_issue_dashboard import build_swd1_evidence_items
+
+    p1 = NS(
+        text="The direct record documents a relevant communication.",
+        status="established_by_current_evidence",
+        confidence="high",
+        rationale="Direct record only.",
+        evidence_keys=("e1",),
+    )
+    p2 = NS(
+        text="A second proposition is supported.",
+        status="supported_but_not_established",
+        confidence="medium",
+        rationale="Supported but not established.",
+        evidence_keys=("e2",),
+    )
+
+    def raw_item(key, role, citation, status):
+        evidence = NS(
+            chunk_id=key,
+            citation=citation,
+            document_name=citation.split(",")[0],
+            page=1,
+            evidence_status=status,
+            provenance_type="employer_record",
+            source_type="employer_record",
+            summary="Relevant source passage.",
+        )
+        return NS(
+            analytical_role=role,
+            assessment_confidence="medium",
+            assessment_rationale="Frozen rationale " + key,
+            mapping=NS(evidence=evidence),
+        )
+
+    element = NS(
+        element_id="EK-X",
+        assessed_propositions=(p1, p2),
+        evidence_assessments=(
+            raw_item("e1", "supporting", "Doc A, p.1", "employer_evidence"),
+            raw_item("e2", "adverse", "Doc B, p.1", "respondent_evidence"),
+        ),
+    )
+    result = NS(
+        issue_analysis_id="issue-1",
+        assessment_result=NS(element_assessments=(element,)),
+    )
+    authority = NS(structured_legal_analysis_results=(result,))
+
+    projected = build_swd1_evidence_items(
+        authority=authority,
+        issue_analysis_id="issue-1",
+        element_id="EK-X",
+    )
+
+    assert tuple(item.evidence_key for item in projected) == ("e1", "e2")
+    assert tuple(item.analytical_role for item in projected) == (
+        "supporting",
+        "adverse",
+    )
+    assert projected[0].assessment_rationale == "Frozen rationale e1"
+    assert projected[0].citation == "Doc A, p.1"
+    assert projected[0].proposition_links[0].text == p1.text
+    assert projected[1].proposition_links[0].text == p2.text
+
+
+def test_swd1_i3_projection_does_not_create_priority_or_merits_fields():
+    import dataclasses
+
+    from legal_issue_dashboard import DashboardEvidenceItem
+
+    names = {field.name for field in dataclasses.fields(DashboardEvidenceItem)}
+
+    assert "priority" not in names
+    assert "rank" not in names
+    assert "score" not in names
+    assert "merits" not in names
+    assert {
+        "analytical_role",
+        "assessment_confidence",
+        "assessment_rationale",
+        "citation",
+        "evidence_status",
+        "summary",
+        "proposition_links",
+    } <= names
+
+
+def test_swd1_i3_projection_returns_empty_when_legacy_result_has_no_assessment():
+    from types import SimpleNamespace as NS
+
+    from legal_issue_dashboard import build_swd1_evidence_items
+
+    authority = NS(
+        structured_legal_analysis_results=(
+            NS(issue_analysis_id="issue-1", assessment_result=None),
+        )
+    )
+
+    assert build_swd1_evidence_items(
+        authority=authority,
+        issue_analysis_id="issue-1",
+        element_id="EK-X",
+    ) == ()

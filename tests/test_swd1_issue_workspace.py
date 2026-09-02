@@ -145,3 +145,131 @@ def test_new_renderer_read_only():
 def test_sources_parse():
     ast.parse(APP.read_text(encoding="utf-8"))
     ast.parse(NEW_UI.read_text(encoding="utf-8"))
+
+
+# ---------------------------------------------------------------------------
+# SWD1-I3 focused solicitor evidence tests
+# ---------------------------------------------------------------------------
+
+def test_i3_evidence_surface_uses_frozen_significance_not_counts_or_ranking():
+    text = NEW_UI.read_text(encoding="utf-8")
+
+    for value in (
+        "Why it matters",
+        "What the current evidence establishes",
+        "What it may support",
+        "Limitation",
+        "Source: ",
+        "Additional mapped material",
+        "Other relevant context",
+        "build_swd1_evidence_items",
+    ):
+        assert value in text
+
+    for value in (
+        "strongest evidence",
+        "evidence priority",
+        "priority score",
+        "rank evidence",
+    ):
+        assert value.lower() not in text.lower()
+
+
+def test_i3_source_assertion_is_not_presented_as_established_fact():
+    from types import SimpleNamespace as NS
+
+    item = NS(
+        evidence_status="source_assertion",
+        assessment_rationale=(
+            "The source makes a relevant assertion, but the underlying "
+            "proposition is not independently established by that assertion alone."
+        ),
+    )
+
+    why, limitation = ui._i3_rationale_parts(item)
+
+    assert "relevant assertion" in why.lower()
+    assert "does not by itself establish" in limitation.lower()
+
+
+def test_i3_respondent_position_remains_a_party_position():
+    from types import SimpleNamespace as NS
+
+    item = NS(
+        evidence_status="respondent_evidence",
+        assessment_rationale=(
+            "The mapped source expressly records a denial or contrary position "
+            "relevant to this element."
+        ),
+    )
+
+    why, limitation = ui._i3_rationale_parts(item)
+
+    assert "denial or contrary position" in why.lower()
+    assert "party position" in limitation.lower()
+    assert "established fact" in limitation.lower()
+
+
+def test_i3_low_signal_email_footer_is_secondary():
+    assert ui._i3_is_low_signal_summary(
+        "This electronic message contains information from CACI "
+        "and is intended to be used solely by the recipient."
+    )
+    assert not ui._i3_is_low_signal_summary(
+        "A graduated return to work is recommended."
+    )
+
+
+def test_i3_procedural_forms_are_secondary_not_primary_merits_evidence():
+    from types import SimpleNamespace as NS
+
+    procedural = NS(
+        evidence_status="source_assertion",
+        provenance_type="tribunal_record",
+        source_type="tribunal_record",
+        document_name="ET hearing (1).pdf",
+        summary="13.4 Are you interested in attending a judicial mediation?",
+    )
+    substantive = NS(
+        evidence_status="source_assertion",
+        provenance_type="mixed_correspondence",
+        source_type="mixed_correspondence",
+        document_name="Appendix H6.pdf",
+        summary="A graduated return to work is recommended.",
+    )
+
+    assert ui._i3_is_procedural_material(procedural)
+    assert not ui._i3_is_procedural_material(substantive)
+
+
+def test_i3_groups_repeated_pages_from_same_document_preserving_first_order():
+    from types import SimpleNamespace as NS
+
+    items = (
+        NS(document_name="Grounds.pdf", citation="Grounds.pdf, p.1", evidence_key="e1"),
+        NS(document_name="Grounds.pdf", citation="Grounds.pdf, p.2", evidence_key="e2"),
+        NS(document_name="Plan.pdf", citation="Plan.pdf, p.1", evidence_key="e3"),
+        NS(document_name="Grounds.pdf", citation="Grounds.pdf, p.3", evidence_key="e4"),
+    )
+
+    groups = ui._i3_group_by_document(items)
+
+    assert tuple(item.evidence_key for item in groups[0]) == ("e1", "e2", "e4")
+    assert tuple(item.evidence_key for item in groups[1]) == ("e3",)
+
+
+def test_i3_claimant_account_separates_relevance_from_party_evidence_limitation():
+    from types import SimpleNamespace as NS
+
+    item = NS(
+        assessment_rationale=(
+            "Claimant-authored evidence is relevant to the factual proposition "
+            "but remains party evidence rather than independent confirmation."
+        )
+    )
+
+    why, limitation = ui._i3_rationale_parts(item)
+
+    assert "claimant's account" in why.lower()
+    assert "party evidence" in limitation.lower()
+    assert "independent confirmation" in limitation.lower()

@@ -14,6 +14,7 @@ from governed_analytical_authority.provider import (
 from legal_issue_dashboard import (
     LegalIssueDashboardError,
     build_legal_issue_dashboard,
+    build_swd1_evidence_items,
 )
 
 AuthorityLoader = Callable[[str], Any]
@@ -217,6 +218,493 @@ def _render_evidence(title: str, statements, *, empty_message: str) -> None:
                 _write_statement(text, citations, allow_full_text=False)
 
 
+def _i3_source_character(item) -> str:
+    value = str(item.evidence_status).strip().lower()
+    return {
+        "claimant_evidence": "Claimant evidence",
+        "respondent_evidence": "Respondent position",
+        "employer_evidence": "Employer record",
+        "insurer_evidence": "Insurer record",
+        "medical_evidence": "Medical evidence",
+        "occupational_health_evidence": "Occupational health evidence",
+        "source_assertion": "Source assertion",
+        "mixed_evidence": "Mixed-source evidence",
+    }.get(value, str(item.evidence_status).replace("_", " ").strip().title())
+
+
+def _i3_is_low_signal_summary(summary: str) -> bool:
+    text = str(summary).lower()
+    boilerplate = (
+        "this electronic message contains information",
+        "virus free",
+        "registered in england & wales",
+        "registration no.",
+        "intended to be used solely by the recipient",
+        "if you are not an intended recipient",
+    )
+    return any(marker in text for marker in boilerplate)
+
+
+def _i3_is_technical_proposition(text: str) -> bool:
+    value = str(text)
+    low = value.lower()
+    return (
+        _TECHNICAL_MAPPING_TEXT in value
+        or "mapped respondent evidence contains factual material" in low
+        or "mapped employer evidence contains factual material" in low
+        or "mapped claimant evidence contains factual material" in low
+    )
+
+
+def _i3_is_procedural_material(item) -> bool:
+    """Presentation-only gate for obvious procedural/form material.
+
+    This does not change the governed analytical role.  It only prevents
+    routine tribunal/form administration from occupying the primary merits
+    evidence surface.
+    """
+
+    source_markers = " ".join(
+        (
+            str(item.evidence_status),
+            str(item.provenance_type),
+            str(item.source_type),
+        )
+    ).lower()
+
+    if any(
+        marker in source_markers
+        for marker in (
+            "procedural",
+            "tribunal_form",
+            "court_form",
+            "administrative_form",
+        )
+    ):
+        return True
+
+    name = str(item.document_name).lower()
+    if "atos_export" in name:
+        return True
+    if name.startswith("et hearing") or "et hearing (" in name:
+        return True
+
+    summary = str(item.summary).lower()
+    procedural_markers = (
+        "judicial mediation?",
+        "are you interested in attending a judicial mediation",
+        "judicial use only",
+        "name of representative",
+        "name of organisation",
+        "how would you prefer us to communicate",
+        "which types of hearing can you attend",
+    )
+    return any(marker in summary for marker in procedural_markers)
+
+
+def _i3_group_by_document(items):
+    groups = []
+    index_by_key = {}
+
+    for item in tuple(items):
+        key = (
+            str(item.document_name).strip()
+            or str(item.citation).split(", p.")[0].strip()
+            or str(item.evidence_key)
+        )
+        if key not in index_by_key:
+            index_by_key[key] = len(groups)
+            groups.append([item])
+        else:
+            groups[index_by_key[key]].append(item)
+
+    return tuple(tuple(group) for group in groups)
+
+
+def _i3_group_source_characters(group) -> tuple[str, ...]:
+    values = []
+    for item in group:
+        label = _i3_source_character(item)
+        if label and label not in values:
+            values.append(label)
+    return tuple(values)
+
+
+def _i3_group_unique_text(group, selector):
+    values = []
+    for item in group:
+        value = selector(item)
+        if value and value not in values:
+            values.append(value)
+    return tuple(values)
+
+
+def _i3_write_grouped_passages(group) -> None:
+    passages = tuple(
+        item for item in group
+        if item.summary and not _i3_is_low_signal_summary(item.summary)
+    )
+
+    if not passages:
+        return
+
+    st.markdown("**Relevant passage" + ("s" if len(passages) != 1 else "") + "**")
+
+    for item in passages[:3]:
+        prefix = (
+            f"p.{item.page}: "
+            if item.page is not None
+            else ""
+        )
+        text = str(item.summary).strip()
+
+        if len(text) > 360:
+            preview = text[:360].rsplit(" ", 1)[0].rstrip() + "…"
+        else:
+            preview = text
+
+        st.write(prefix + preview)
+
+    if len(passages) > 3:
+        with st.expander(
+            f"More passages from this source ({len(passages) - 3})",
+            expanded=False,
+        ):
+            for item in passages[3:]:
+                prefix = (
+                    f"p.{item.page}: "
+                    if item.page is not None
+                    else ""
+                )
+                st.write(prefix + str(item.summary).strip())
+
+
+def _i3_write_grouped_propositions(group) -> None:
+    propositions = []
+    seen = set()
+
+    for item in group:
+        for proposition in _i3_substantive_propositions(item):
+            key = (
+                proposition.text,
+                proposition.status,
+                proposition.confidence,
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            propositions.append(proposition)
+
+    for proposition in propositions[:2]:
+        status = str(proposition.status).strip().lower()
+        if status == "established_by_current_evidence":
+            st.markdown("**What the current evidence establishes**")
+        else:
+            st.markdown("**What it may support**")
+        st.write(proposition.text)
+
+    if len(propositions) > 2:
+        st.caption(
+            f"{len(propositions) - 2} additional governed proposition link"
+            + ("s" if len(propositions) - 2 != 1 else "")
+            + " retained."
+        )
+
+
+def _render_i3_document_group(group) -> None:
+    first = group[0]
+
+    with st.container(border=True):
+        title = str(first.document_name).strip() or _i3_item_title(first)
+        st.markdown("**" + title + "**")
+
+        characters = _i3_group_source_characters(group)
+        if characters:
+            st.caption(" · ".join(characters))
+
+        _i3_write_grouped_passages(group)
+
+        why_values = []
+        limitation_values = []
+
+        for item in group:
+            why, rationale_limitation = _i3_rationale_parts(item)
+            if why and why not in why_values:
+                why_values.append(why)
+
+            limitation = _i3_limitation(
+                item,
+                rationale_limitation,
+            )
+            if limitation and limitation not in limitation_values:
+                limitation_values.append(limitation)
+
+        if why_values:
+            st.markdown("**Why it matters**")
+            for value in why_values[:2]:
+                st.write(value)
+
+        _i3_write_grouped_propositions(group)
+
+        if limitation_values:
+            st.markdown("**Limitation**")
+            for value in limitation_values[:2]:
+                st.write(value)
+
+        citations = _i3_group_unique_text(
+            group,
+            lambda item: str(item.citation).strip(),
+        )
+        if citations:
+            st.caption(
+                "Source"
+                + ("s" if len(citations) != 1 else "")
+                + ": "
+                + " | ".join(citations[:3])
+                + (
+                    f" · +{len(citations) - 3} more"
+                    if len(citations) > 3
+                    else ""
+                )
+            )
+
+
+
+def _i3_rationale_parts(item) -> tuple[str, str]:
+    rationale = str(item.assessment_rationale).strip()
+    low = rationale.lower()
+
+    if (
+        "source makes a relevant assertion" in low
+        and "not independently established" in low
+    ):
+        return (
+            "This source contains a relevant assertion about the selected question.",
+            "The assertion does not by itself establish that the underlying fact is true.",
+        )
+
+    if "direct/non-derivative mapped record" in low:
+        return (
+            "This is a direct record bearing on the factual question.",
+            "",
+        )
+
+    if "expressly records a denial or contrary position" in low:
+        return (
+            "This source records a denial or contrary position relevant to the question.",
+            "It records a party position; the interface does not treat that position as an established fact.",
+        )
+
+    if "claimant-authored evidence is relevant" in low:
+        return (
+            "This records the claimant's account relevant to the selected question.",
+            "It remains party evidence rather than independent confirmation.",
+        )
+
+    if "independent or third-party record" in low:
+        return (
+            "This is an independent or third-party record relevant to the factual question.",
+            "Corroborative status is assigned only where another source independently records the same matter.",
+        )
+
+    if (
+        "relevant to the element" in low
+        and "cannot be classified safely" in low
+    ):
+        return (
+            "This item is relevant context for the selected question.",
+            "The current assessment does not safely classify it as helping or challenging the proposition.",
+        )
+
+    return (rationale, "")
+
+
+def _i3_substantive_propositions(item):
+    return tuple(
+        proposition
+        for proposition in tuple(item.proposition_links)
+        if proposition.text
+        and not _i3_is_technical_proposition(proposition.text)
+    )
+
+
+def _i3_item_title(item) -> str:
+    if item.document_name:
+        if item.page is not None:
+            return f"{item.document_name} — p.{item.page}"
+        return item.document_name
+    if item.citation:
+        return item.citation
+    return "Evidence item"
+
+
+def _i3_write_summary(summary: str, *, allow_expander: bool) -> None:
+    text = str(summary).strip()
+    if not text or _i3_is_low_signal_summary(text):
+        return
+
+    st.markdown("**Relevant passage**")
+    if len(text) <= _PREVIEW_LIMIT:
+        st.write(text)
+        return
+
+    preview = text[:_PREVIEW_LIMIT].rsplit(" ", 1)[0].rstrip()
+    st.write(preview + "…")
+    if allow_expander:
+        with st.expander("Read full passage", expanded=False):
+            st.write(text)
+
+
+def _i3_write_propositions(item) -> None:
+    propositions = _i3_substantive_propositions(item)
+    if not propositions:
+        return
+
+    for proposition in propositions[:2]:
+        status = str(proposition.status).strip().lower()
+
+        if status == "established_by_current_evidence":
+            st.markdown("**What the current evidence establishes**")
+        else:
+            st.markdown("**What it may support**")
+
+        st.write(proposition.text)
+
+        if proposition.confidence:
+            st.caption(
+                "Evidential confidence: "
+                + str(proposition.confidence).replace("_", " ").title()
+            )
+
+    if len(propositions) > 2:
+        st.caption(
+            f"{len(propositions) - 2} additional proposition link"
+            + ("s" if len(propositions) - 2 != 1 else "")
+            + " retained in the governed assessment."
+        )
+
+
+def _i3_limitation(item, rationale_limitation: str) -> str:
+    if rationale_limitation:
+        return rationale_limitation
+
+    evidence_status = str(item.evidence_status).strip().lower()
+    if evidence_status == "source_assertion":
+        return (
+            "This is a source assertion. It does not by itself establish "
+            "the truth of the underlying proposition."
+        )
+
+    if evidence_status == "respondent_evidence":
+        return (
+            "This records the respondent's position. It is not treated here "
+            "as an established fact."
+        )
+
+    return ""
+
+
+def _render_i3_evidence_item(item, *, allow_expander: bool = True) -> None:
+    with st.container(border=True):
+        st.markdown("**" + _i3_item_title(item) + "**")
+
+        source_character = _i3_source_character(item)
+        if source_character:
+            st.caption(source_character)
+
+        _i3_write_summary(
+            item.summary,
+            allow_expander=allow_expander,
+        )
+
+        why, rationale_limitation = _i3_rationale_parts(item)
+        if why:
+            st.markdown("**Why it matters**")
+            st.write(why)
+
+        _i3_write_propositions(item)
+
+        limitation = _i3_limitation(item, rationale_limitation)
+        if limitation:
+            st.markdown("**Limitation**")
+            st.write(limitation)
+
+        if item.citation:
+            st.caption("Source: " + item.citation)
+
+
+def _render_i3_evidence_group(
+    title: str,
+    items,
+    *,
+    empty_message: str,
+) -> None:
+    st.subheader(title)
+
+    ordered = tuple(items)
+
+    primary = tuple(
+        item
+        for item in ordered
+        if not _i3_is_low_signal_summary(item.summary)
+        and not _i3_is_procedural_material(item)
+    )
+    secondary = tuple(
+        item
+        for item in ordered
+        if item not in primary
+    )
+
+    grouped = _i3_group_by_document(primary)
+
+    if not grouped:
+        st.caption(empty_message)
+    else:
+        for group in grouped[:3]:
+            _render_i3_document_group(group)
+
+        if len(grouped) > 3:
+            with st.expander(
+                f"Show more evidence sources ({len(grouped) - 3})",
+                expanded=False,
+            ):
+                for group in grouped[3:]:
+                    _render_i3_document_group(group)
+
+    if secondary:
+        with st.expander(
+            f"Additional mapped material ({len(secondary)})",
+            expanded=False,
+        ):
+            st.caption(
+                "Routine form, procedural, footer or other low-signal material "
+                "is retained for traceability but kept out of the primary legal view."
+            )
+            for item in secondary:
+                if item.citation:
+                    st.write("• " + item.citation)
+def _render_i3_secondary_context(items) -> None:
+    ordered = tuple(items)
+    if not ordered:
+        return
+
+    with st.expander(
+        f"Other relevant context ({len(ordered)})",
+        expanded=False,
+    ):
+        st.caption(
+            "The governed assessment records these items as context rather "
+            "than evidence helping or challenging the selected proposition."
+        )
+        for item in ordered:
+            label = item.citation or _i3_item_title(item)
+            why, _ = _i3_rationale_parts(item)
+            st.write("**" + label + "**")
+            if why:
+                st.caption(why)
+
+
+
 def show_swd1_issue_workspace(
     active_case_id: str | None,
     *,
@@ -390,33 +878,64 @@ def show_swd1_issue_workspace(
     st.subheader("Why this matters")
     st.write(element.legal_significance)
 
-    indicating = _unique_statements(
-        element.established_matters,
-        element.supported_matters,
-        element.corroborative_material,
-    )
-    challenging = _unique_statements(
-        element.not_supported_matters,
-        element.adverse_material,
-        element.conflicting_material,
+    evidence_items = build_swd1_evidence_items(
+        authority=authority,
+        issue_analysis_id=selected_issue.issue_analysis_id,
+        element_id=element.element_id,
     )
 
-    _render_evidence(
+    indicating = tuple(
+        item
+        for item in evidence_items
+        if str(item.analytical_role).strip().lower()
+        in {"supporting", "corroborative"}
+    )
+    challenging = tuple(
+        item
+        for item in evidence_items
+        if str(item.analytical_role).strip().lower()
+        in {"adverse", "conflicting"}
+    )
+    context = tuple(
+        item
+        for item in evidence_items
+        if str(item.analytical_role).strip().lower()
+        in {"neutral", "contextual"}
+    )
+    classified_ids = {id(item) for item in indicating + challenging + context}
+    other = tuple(
+        item
+        for item in evidence_items
+        if id(item) not in classified_ids
+    )
+
+    _render_i3_evidence_group(
         "Evidence indicating the proposition",
         indicating,
         empty_message=(
-            "No established, supporting or corroborative proposition "
-            "is recorded for this question."
+            "No governed evidence item is presently classified as supporting "
+            "or corroborative for this question."
         ),
     )
-    _render_evidence(
+    _render_i3_evidence_group(
         "Evidence challenging or limiting that conclusion",
         challenging,
         empty_message=(
-            "No adverse, conflicting or not-supported proposition "
-            "is recorded for this question."
+            "No governed evidence item is presently classified as adverse "
+            "or conflicting for this question."
         ),
     )
+
+    _render_i3_secondary_context(context)
+
+    if other:
+        with st.expander(
+            f"Other governed evidence ({len(other)})",
+            expanded=False,
+        ):
+            for item in other:
+                label = item.citation or _i3_item_title(item)
+                st.write("• " + label)
 
     st.subheader("What remains unclear")
     if element.unresolved_matters:

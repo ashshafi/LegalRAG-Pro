@@ -561,3 +561,186 @@ __all__ = [
     "LegalIssueDashboardError",
     "build_legal_issue_dashboard",
 ]
+
+# ---------------------------------------------------------------------------
+# SWD1-I3 — solicitor evidence-by-significance projection.
+# Read-only projection of already-frozen M4 assessment data.
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class DashboardEvidenceProposition:
+    text: str
+    status: str
+    confidence: str
+    rationale: str
+    evidence_keys: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class DashboardEvidenceItem:
+    evidence_key: str
+    analytical_role: str
+    assessment_confidence: str
+    assessment_rationale: str
+    citation: str
+    document_name: str
+    page: int | None
+    evidence_status: str
+    provenance_type: str
+    source_type: str
+    summary: str
+    proposition_links: tuple[DashboardEvidenceProposition, ...]
+
+
+def _swd1_i3_text(value: object) -> str:
+    if value is None:
+        return ""
+    raw = getattr(value, "value", value)
+    if raw is None:
+        return ""
+    return str(raw).strip()
+
+
+def _swd1_i3_proposition(value: object) -> DashboardEvidenceProposition:
+    return DashboardEvidenceProposition(
+        text=_swd1_i3_text(getattr(value, "text", "")),
+        status=_swd1_i3_text(getattr(value, "status", "")),
+        confidence=_swd1_i3_text(getattr(value, "confidence", "")),
+        rationale=_swd1_i3_text(getattr(value, "rationale", "")),
+        evidence_keys=tuple(
+            str(item)
+            for item in tuple(getattr(value, "evidence_keys", ()) or ())
+        ),
+    )
+
+
+def build_swd1_evidence_items(
+    *,
+    authority: object,
+    issue_analysis_id: str,
+    element_id: str,
+) -> tuple[DashboardEvidenceItem, ...]:
+    """Project frozen M4 evidence assessment for one solicitor issue question.
+
+    The supplied evidence-assessment order is preserved.  Existing analytical
+    roles, rationales, source identity, citations and proposition links are
+    copied without creating a new ranking or analytical conclusion.
+    """
+
+    results = tuple(
+        result
+        for result in tuple(
+            getattr(authority, "structured_legal_analysis_results", ()) or ()
+        )
+        if _swd1_i3_text(getattr(result, "issue_analysis_id", ""))
+        == str(issue_analysis_id)
+    )
+
+    if len(results) != 1:
+        raise LegalIssueDashboardError(
+            "The requested issue does not resolve to exactly one frozen "
+            "structured legal analysis result."
+        )
+
+    assessment_result = getattr(results[0], "assessment_result", None)
+    if assessment_result is None:
+        return ()
+
+    element_assessments = tuple(
+        item
+        for item in tuple(
+            getattr(assessment_result, "element_assessments", ()) or ()
+        )
+        if _swd1_i3_text(getattr(item, "element_id", ""))
+        == str(element_id)
+    )
+
+    if not element_assessments:
+        return ()
+
+    if len(element_assessments) != 1:
+        raise LegalIssueDashboardError(
+            "The requested element does not resolve to exactly one frozen "
+            "evidence assessment."
+        )
+
+    element_assessment = element_assessments[0]
+
+    propositions_by_evidence_key: dict[
+        str,
+        list[DashboardEvidenceProposition],
+    ] = {}
+
+    for raw_proposition in tuple(
+        getattr(element_assessment, "assessed_propositions", ()) or ()
+    ):
+        proposition = _swd1_i3_proposition(raw_proposition)
+        for evidence_key in proposition.evidence_keys:
+            propositions_by_evidence_key.setdefault(
+                evidence_key,
+                [],
+            ).append(proposition)
+
+    projected: list[DashboardEvidenceItem] = []
+
+    for raw_assessment in tuple(
+        getattr(element_assessment, "evidence_assessments", ()) or ()
+    ):
+        mapping = getattr(raw_assessment, "mapping", None)
+        mapped_evidence = (
+            getattr(mapping, "evidence", None)
+            if mapping is not None
+            else None
+        )
+        if mapped_evidence is None:
+            continue
+
+        evidence_key = _swd1_i3_text(
+            getattr(mapped_evidence, "evidence_key", "")
+        )
+        if not evidence_key:
+            evidence_key = _swd1_i3_text(
+                getattr(mapped_evidence, "chunk_id", "")
+            )
+
+        page_value = getattr(mapped_evidence, "page", None)
+        page = page_value if isinstance(page_value, int) else None
+
+        projected.append(
+            DashboardEvidenceItem(
+                evidence_key=evidence_key,
+                analytical_role=_swd1_i3_text(
+                    getattr(raw_assessment, "analytical_role", "")
+                ),
+                assessment_confidence=_swd1_i3_text(
+                    getattr(raw_assessment, "assessment_confidence", "")
+                ),
+                assessment_rationale=_swd1_i3_text(
+                    getattr(raw_assessment, "assessment_rationale", "")
+                ),
+                citation=_swd1_i3_text(
+                    getattr(mapped_evidence, "citation", "")
+                ),
+                document_name=_swd1_i3_text(
+                    getattr(mapped_evidence, "document_name", "")
+                ),
+                page=page,
+                evidence_status=_swd1_i3_text(
+                    getattr(mapped_evidence, "evidence_status", "")
+                ),
+                provenance_type=_swd1_i3_text(
+                    getattr(mapped_evidence, "provenance_type", "")
+                ),
+                source_type=_swd1_i3_text(
+                    getattr(mapped_evidence, "source_type", "")
+                ),
+                summary=_swd1_i3_text(
+                    getattr(mapped_evidence, "summary", "")
+                ),
+                proposition_links=tuple(
+                    propositions_by_evidence_key.get(evidence_key, ())
+                ),
+            )
+        )
+
+    return tuple(projected)
