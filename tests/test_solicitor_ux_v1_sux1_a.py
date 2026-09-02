@@ -15,18 +15,21 @@ def source(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def test_workflow_is_split_into_three_focused_solicitor_views():
+def test_swd1_replaces_architecture_shaped_top_views():
     text = source(APP)
-    assert '"Legal issues", "AI findings", "Issue assessment"' in text
-    assert 'key="solicitor_ux_v1_working_view"' in text
 
-    dashboard = text.index("show_legal_issue_dashboard(active_case_id)")
+    assert '"Legal issues", "AI findings", "Issue assessment"' not in text
+    assert 'key="solicitor_ux_v1_working_view"' not in text
+
+    workspace = text.index("show_swd1_issue_workspace(active_case_id)")
+    previous = text.index(
+        'with st.expander("Previous analysis tools", expanded=False):'
+    )
     inbox = text.index("show_professional_review_inbox(active_case_id)")
     ledger = text.index("show_matter_analysis_ledger(active_case_id)")
 
-    assert dashboard < inbox < ledger
-    assert 'if _solicitor_view == "Legal issues":' in text
-    assert 'elif _solicitor_view == "AI findings":' in text
+    assert workspace < previous < inbox < ledger
+    assert '("AI review", "Issue decisions")' in text
 
 
 def test_legal_issue_dashboard_starts_with_solicitor_orientation():

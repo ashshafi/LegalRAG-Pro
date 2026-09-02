@@ -349,26 +349,22 @@ def test_projection_reuses_existing_matrix_roles():
     )
 
 
-def test_app_renders_ledger_after_existing_legal_issue_dashboard():
 
+def test_app_renders_ledger_after_swd1_issue_workspace():
     source = open(
         "src/app.py",
         encoding="utf-8",
     ).read()
 
     dashboard = source.index(
-        "show_legal_issue_dashboard(active_case_id)"
+        "show_swd1_issue_workspace(active_case_id)"
     )
-
     ledger = source.index(
-        "show_matter_analysis_ledger(active_case_id)",
-        dashboard,
+        "show_matter_analysis_ledger(active_case_id)"
     )
 
-    assert (
-        dashboard
-        < ledger
-    )
+    assert dashboard < ledger
+    assert "show_legal_issue_dashboard(active_case_id)" not in source
 
 
 def test_ui_module_imports():

@@ -99,7 +99,8 @@ def test_prw2_ui_uses_exact_professional_review_decision_enum():
     assert "does not create a MAL1 proposal" in source
 
 
-def test_app_places_prw2_between_legal_issue_dashboard_and_matter_ledger():
+
+def test_app_places_prw2_between_swd1_issue_workspace_and_matter_ledger():
     source = APP_PATH.read_text(encoding="utf-8")
     tree = ast.parse(source)
 
@@ -115,16 +116,17 @@ def test_app_places_prw2_between_legal_issue_dashboard_and_matter_ledger():
     ]
 
     dashboard_call = source.index(
-        "show_legal_issue_dashboard(active_case_id)"
+        "show_swd1_issue_workspace(active_case_id)"
     )
-    inbox_call = source.index(
+    prw_call = source.index(
         "show_professional_review_inbox(active_case_id)"
     )
     ledger_call = source.index(
         "show_matter_analysis_ledger(active_case_id)"
     )
 
-    assert dashboard_call < inbox_call < ledger_call
+    assert dashboard_call < prw_call < ledger_call
+    assert "show_legal_issue_dashboard(active_case_id)" not in source
 
 def _review_item(*events):
     return SimpleNamespace(review_events=events)

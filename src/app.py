@@ -24,6 +24,7 @@ from governed_analytical_authority.provider import (
 )
 from legal_issue_dashboard import LegalIssueDashboardError, build_legal_issue_dashboard
 from ui.legal_issue_dashboard import show_legal_issue_dashboard
+from ui.swd1_issue_workspace import show_swd1_issue_workspace
 from ui.matter_analysis_ledger import show_matter_analysis_ledger
 from ui.professional_review_inbox import show_professional_review_inbox
 from ui.matter_overview import (
@@ -120,20 +121,20 @@ else:
 if st.session_state.get("u8_evidence_inspection_view", False):
     show_evidence_inspection(active_case_id)
 elif st.session_state.get("ppr3_legal_issue_dashboard_view", False):
-    st.markdown("### Legal work")
-    _solicitor_view = st.radio(
-        "Choose what you want to review",
-        ("Legal issues", "AI findings", "Issue assessment"),
-        horizontal=True,
-        key="solicitor_ux_v1_working_view",
-        label_visibility="collapsed",
-    )
-    if _solicitor_view == "Legal issues":
-        show_legal_issue_dashboard(active_case_id)
-    elif _solicitor_view == "AI findings":
-        show_professional_review_inbox(active_case_id)
-    else:
-        show_matter_analysis_ledger(active_case_id)
+    show_swd1_issue_workspace(active_case_id)
+    with st.expander("Previous analysis tools", expanded=False):
+        st.caption("Previous analytical views are retained here while the solicitor workspace is introduced.")
+        _previous_analysis_view = st.radio(
+            "Choose previous analysis tool",
+            ("AI review", "Issue decisions"),
+            horizontal=True,
+            key="swd1_previous_analysis_view",
+            label_visibility="collapsed",
+        )
+        if _previous_analysis_view == "AI review":
+            show_professional_review_inbox(active_case_id)
+        else:
+            show_matter_analysis_ledger(active_case_id)
 elif st.session_state.get("m7_source_evidence_view", False):
     show_source_evidence(active_case_id, report_projection)
 elif st.session_state.get("m6_workspace_view") in {

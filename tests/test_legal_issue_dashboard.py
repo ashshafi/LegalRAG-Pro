@@ -547,19 +547,29 @@ def test_ui_uses_only_read_only_authority_provider_and_no_unsafe_rendering():
 
 
 
+
 def test_app_route_order_is_unchanged_u8_dashboard_m7_workspace_reports():
     source = APP.read_text(encoding="utf-8")
-    u8 = source.index('if st.session_state.get("u8_evidence_inspection_view", False):')
+
+    u8 = source.index(
+        'if st.session_state.get("u8_evidence_inspection_view", False):'
+    )
     dashboard = source.index(
         'elif st.session_state.get("ppr3_legal_issue_dashboard_view", False):'
     )
-    m7 = source.index('elif st.session_state.get("m7_source_evidence_view", False):')
-    workspace = source.index('elif st.session_state.get("m6_workspace_view")')
+    m7 = source.index(
+        'elif st.session_state.get("m7_source_evidence_view", False):'
+    )
+    workspace = source.index(
+        'elif st.session_state.get("m6_workspace_view")'
+    )
     reports = source.index(
         'elif st.session_state.get("m55_main_view", "assistant") == "reports"'
     )
+
     assert u8 < dashboard < m7 < workspace < reports
-    assert "show_legal_issue_dashboard(active_case_id)" in source
+    assert "show_swd1_issue_workspace(active_case_id)" in source
+    assert "show_legal_issue_dashboard(active_case_id)" not in source
 
 
 def test_sidebar_contract_is_unchanged():
