@@ -177,18 +177,18 @@ def show_sidebar(
     st.sidebar.caption("LEGAL WORK")
 
     workspace_clicked = st.sidebar.button(
-        "🧠 Analysis",
+        "📚 Matter workspace",
         width="stretch",
         disabled=not reports_available,
         help=(
             None
             if reports_available
-            else "A validated frozen report projection is required for the active matter."
+            else "A validated report is required for the active matter."
         ),
     )
     if workspace_clicked:
         st.session_state["m7_source_evidence_view"] = False
-        st.session_state["m6_workspace_view"] = "traceability"
+        st.session_state["m6_workspace_view"] = "review"
 
     assistant_clicked = st.sidebar.button(
         "💬 Assistant",

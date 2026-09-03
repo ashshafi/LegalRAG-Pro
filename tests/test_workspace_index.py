@@ -309,3 +309,42 @@ def test_literal_filtering_can_preserve_input_order_without_scores():
     values = ("Zulu Smith", "alpha", "SMITH Beta")
     result = tuple(value for value in values if wi.literal_query_matches("smith", (value,)))
     assert result == ("Zulu Smith", "SMITH Beta")
+
+
+
+def test_exact_same_projection_object_reuses_validated_workspace_index(monkeypatch):
+    calls = {"count": 0}
+
+    def validate(_projection):
+        calls["count"] += 1
+
+    monkeypatch.setattr(wi, "validate_case_report_projection", validate)
+    wi._WORKSPACE_INDEX_CACHE.clear()
+    wi._WORKSPACE_INDEX_CACHE_ORDER.clear()
+
+    projection = _projection()
+    first = wi.build_workspace_index(projection)
+    second = wi.build_workspace_index(projection)
+
+    assert second is first
+    assert calls["count"] == 1
+
+
+def test_distinct_projection_object_with_same_declared_identity_is_revalidated(monkeypatch):
+    calls = {"count": 0}
+
+    def validate(_projection):
+        calls["count"] += 1
+
+    monkeypatch.setattr(wi, "validate_case_report_projection", validate)
+    wi._WORKSPACE_INDEX_CACHE.clear()
+    wi._WORKSPACE_INDEX_CACHE_ORDER.clear()
+
+    first_projection = _projection()
+    second_projection = _projection()
+
+    first = wi.build_workspace_index(first_projection)
+    second = wi.build_workspace_index(second_projection)
+
+    assert first is not second
+    assert calls["count"] == 2

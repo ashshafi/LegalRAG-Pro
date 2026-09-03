@@ -47,6 +47,7 @@ class _FakeStreamlit:
             self.session_state[key] = current
         return current
     def columns(self, number): return tuple(_NullContext() for _ in range(number))
+    def expander(self, label, **kwargs): return _NullContext()
     def rerun(self):
         self.rerun_called = True
         raise RuntimeError("rerun")
@@ -229,7 +230,7 @@ def _review_index():
 
 
 def test_issue_review_is_projection_only_and_routes_to_existing_evidence_view(monkeypatch):
-    fake = _FakeStreamlit(buttons={"Review issue evidence"})
+    fake = _FakeStreamlit(buttons={"Review evidence"})
     fake.session_state["m6_workspace_view"] = "review"
     monkeypatch.setattr(workspace, "st", fake)
 
@@ -239,12 +240,12 @@ def test_issue_review_is_projection_only_and_routes_to_existing_evidence_view(mo
     assert fake.session_state["ierw_review_issue_id"] == "issue-1"
     assert fake.session_state["m6_evidence_issue_ids"] == ["issue-1"]
     assert fake.session_state["m6_workspace_view"] == "evidence"
-    assert fake.header_calls == ["Issue Review"]
+    assert fake.header_calls == ["Legal issue review"]
     assert any("Reasonable adjustments" in value for value in fake.subheader_calls)
 
 
 def test_issue_review_routes_to_existing_traceability_without_new_authority(monkeypatch):
-    fake = _FakeStreamlit(buttons={"Open issue in Exact Traceability"})
+    fake = _FakeStreamlit(buttons={"Open audit / traceability"})
     fake.session_state["m6_workspace_view"] = "review"
     monkeypatch.setattr(workspace, "st", fake)
 
@@ -257,7 +258,7 @@ def test_issue_review_routes_to_existing_traceability_without_new_authority(monk
 
 
 def test_issue_review_routes_to_existing_frozen_chronology(monkeypatch):
-    fake = _FakeStreamlit(buttons={"Review issue chronology"})
+    fake = _FakeStreamlit(buttons={"Review chronology"})
     fake.session_state["m6_workspace_view"] = "review"
     monkeypatch.setattr(workspace, "st", fake)
 
@@ -325,3 +326,28 @@ def test_issue_review_fails_closed_on_nonmatching_evidential_issue_identity(monk
             _review_index(),
             _review_evidential_dashboard(issue_id="different-issue"),
         )
+
+
+def test_uxr1_workspace_defaults_to_legal_issue_review(monkeypatch):
+    fake = _FakeStreamlit()
+    monkeypatch.setattr(workspace, "st", fake)
+    monkeypatch.setattr(workspace, "validate_case_report_projection", lambda projection: None)
+    monkeypatch.setattr(workspace, "build_workspace_index", lambda projection: _index())
+
+    workspace.show_workspace(CASE_ID, _projection())
+
+    assert fake.session_state["m6_workspace_view"] == "review"
+    assert fake.title_calls == ["Matter workspace"]
+    assert workspace._VIEW_ORDER[0] == "review"
+    assert workspace._VIEW_LABELS["traceability"] == "Audit / traceability"
+
+
+def test_uxr1_machine_chronology_type_is_humanised_for_working_view():
+    event = NS(
+        canonical_temporal_extent=NS(display_text="17 August 2026"),
+        event_type="return_to_work",
+    )
+    assert workspace._chronology_event_heading(event) == "17 August 2026 · Return to work"
+    assert workspace._chronology_task_title(event) == (
+        "Follow up chronology event · 17 August 2026 · Return to work"
+    )

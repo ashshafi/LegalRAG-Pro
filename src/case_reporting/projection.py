@@ -504,7 +504,9 @@ def _event_report(event, evidence_by_key) -> EventReport:
         evidence_keys=event.evidence_keys,
         citation_ids=event.evidence_keys,
         related_issue_ids=event.related_issue_analysis_ids,
-        related_element_coordinates=tuple((item.issue_analysis_id, item.element_id) for item in event.assertions),
+        related_element_coordinates=tuple(
+            sorted({(item.issue_analysis_id, item.element_id) for item in event.assertions})
+        ),
         assertions=assertions,
     )
 

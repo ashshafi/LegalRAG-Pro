@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+import case_reporting.projection as projection_module
 from case_analysis.foundation import build_case_analysis_foundation
 from case_analysis.m2.matrices import build_case_matrices
 from case_analysis.m2.matrix_serialization import dumps_case_matrices
@@ -149,6 +150,38 @@ def test_occurrence_and_timing_remain_independent_in_projection_and_manifest():
     assert "supported" in raw.values()
     assert "established" in raw.values()
     assert "Established Event" not in dumps_case_report_projection(value)
+
+
+def test_event_projection_deduplicates_element_coordinates_without_dropping_assertions():
+    _, matrices, chronology, _, _ = sources_and_projection()
+    event = chronology.events[0]
+    first = event.assertions[0]
+    second = replace(
+        first,
+        assertion_id="00000000-0000-4000-8000-000000000001",
+        extraction_ordinal=first.extraction_ordinal + 1,
+    )
+    repeated_coordinate_event = replace(
+        event,
+        assertions=(*event.assertions, second),
+    )
+    evidence_by_key = {item.evidence_key: item for item in matrices.evidence_matrix}
+
+    report = projection_module._event_report(repeated_coordinate_event, evidence_by_key)
+
+    assert report.related_element_coordinates == tuple(
+        sorted(
+            {
+                (item.issue_analysis_id, item.element_id)
+                for item in repeated_coordinate_event.assertions
+            }
+        )
+    )
+    assert len(report.related_element_coordinates) < len(repeated_coordinate_event.assertions)
+    assert len(report.assertions) == len(repeated_coordinate_event.assertions)
+    assert tuple(item.assertion_id for item in report.assertions) == tuple(
+        item.assertion_id for item in repeated_coordinate_event.assertions
+    )
 
 
 def test_neutral_medium_explanations_do_not_create_importance_or_urgency():

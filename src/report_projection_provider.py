@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
+from hashlib import sha256
 from pathlib import Path
 import stat
+from threading import RLock
 from uuid import UUID
 
 from case_reporting.models import CaseReportProjection
@@ -16,6 +19,60 @@ from case_reporting.validation import validate_case_report_projection
 
 class ReportProjectionProviderError(RuntimeError):
     """Raised when the governed active report projection cannot be trusted."""
+
+
+_REPORT_PROJECTION_CACHE_LIMIT = 4
+_REPORT_PROJECTION_CACHE: OrderedDict[
+    tuple[str, str, str],
+    CaseReportProjection,
+] = OrderedDict()
+_REPORT_PROJECTION_CACHE_LOCK = RLock()
+
+
+def _drop_report_projection_cache(case_id: str) -> None:
+    with _REPORT_PROJECTION_CACHE_LOCK:
+        stale = tuple(
+            key for key in _REPORT_PROJECTION_CACHE
+            if key[0] == case_id
+        )
+        for key in stale:
+            _REPORT_PROJECTION_CACHE.pop(key, None)
+
+
+def _report_projection_cache_get(
+    *,
+    case_id: str,
+    path_identity: str,
+    payload_sha256: str,
+) -> CaseReportProjection | None:
+    key = (case_id, path_identity, payload_sha256)
+    with _REPORT_PROJECTION_CACHE_LOCK:
+        value = _REPORT_PROJECTION_CACHE.get(key)
+        if value is None:
+            return None
+        _REPORT_PROJECTION_CACHE.move_to_end(key)
+        return value
+
+
+def _report_projection_cache_put(
+    *,
+    case_id: str,
+    path_identity: str,
+    payload_sha256: str,
+    projection: CaseReportProjection,
+) -> None:
+    key = (case_id, path_identity, payload_sha256)
+    with _REPORT_PROJECTION_CACHE_LOCK:
+        stale = tuple(
+            candidate for candidate in _REPORT_PROJECTION_CACHE
+            if candidate[0] == case_id and candidate != key
+        )
+        for candidate in stale:
+            _REPORT_PROJECTION_CACHE.pop(candidate, None)
+        _REPORT_PROJECTION_CACHE[key] = projection
+        _REPORT_PROJECTION_CACHE.move_to_end(key)
+        while len(_REPORT_PROJECTION_CACHE) > _REPORT_PROJECTION_CACHE_LIMIT:
+            _REPORT_PROJECTION_CACHE.popitem(last=False)
 
 
 def _canonical_case_id(case_id: str) -> str:
@@ -59,6 +116,7 @@ def load_active_case_report_projection(
     try:
         file_stat = active_path.lstat()
     except FileNotFoundError:
+        _drop_report_projection_cache(canonical_case_id)
         return None
     except OSError as exc:
         raise ReportProjectionProviderError(
@@ -80,6 +138,21 @@ def load_active_case_report_projection(
         raise ReportProjectionProviderError(
             "The active report projection could not be read."
         ) from exc
+
+    try:
+        path_identity = str(active_path.resolve(strict=True))
+    except OSError as exc:
+        raise ReportProjectionProviderError(
+            "The active report projection path could not be resolved."
+        ) from exc
+    payload_sha256 = sha256(stored_bytes).hexdigest()
+    cached = _report_projection_cache_get(
+        case_id=canonical_case_id,
+        path_identity=path_identity,
+        payload_sha256=payload_sha256,
+    )
+    if cached is not None:
+        return cached
 
     try:
         stored_text = stored_bytes.decode("utf-8")
@@ -113,4 +186,10 @@ def load_active_case_report_projection(
             "The active report projection does not belong to the requested case."
         )
 
+    _report_projection_cache_put(
+        case_id=canonical_case_id,
+        path_identity=path_identity,
+        payload_sha256=payload_sha256,
+        projection=projection,
+    )
     return projection

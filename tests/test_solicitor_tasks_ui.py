@@ -77,3 +77,44 @@ def test_task_editing_batches_fields_until_explicit_submit():
     assert '"Save task"' in SOURCE
     assert 'if st.button("Create task"' not in SOURCE
     assert 'if st.button("Save task"' not in SOURCE
+
+
+def test_chronology_origin_is_solicitor_facing_and_reference_only():
+    assert "TaskOrigin.CHRONOLOGY" in SOURCE
+    assert '"**Chronology event**"' in SOURCE
+    assert "origin_chronology_event_id" in SOURCE
+    for forbidden in (
+        "event_description", "assertion_text", "event_evidence_keys", "event_citations",
+    ):
+        assert forbidden not in SOURCE
+
+
+def test_chronology_creator_uses_same_batched_explicit_form():
+    assert '_chronology_label(' in SOURCE
+    assert 'origin_chronology_event_id=origin_chronology_event_id' in SOURCE
+    assert 'with st.form(' in SOURCE
+    assert 'st.form_submit_button(' in SOURCE
+    assert 'if st.button("Create task"' not in SOURCE
+
+
+def test_multi_issue_choice_is_inside_create_form():
+    form = SOURCE.index("with st.form(")
+    issue = SOURCE.index('resolved_issue_id = st.selectbox(', form)
+    submit = SOURCE.index('st.form_submit_button(', issue)
+    assert form < issue < submit
+
+
+def test_chronology_origin_uses_solicitor_facing_event_type_without_losing_identity():
+    assert task_ui._chronology_label(
+        "event-uuid",
+        "17 August 2026",
+        "return_to_work",
+    ) == "17 August 2026 · Return to work"
+    assert task_ui._chronology_label(
+        "event-uuid",
+        None,
+        None,
+    ) == "Chronology event"
+
+    # Immutable identity remains in the persisted task contract.
+    assert "origin_chronology_event_id=origin_chronology_event_id" in SOURCE

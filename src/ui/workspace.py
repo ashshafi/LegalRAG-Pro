@@ -1,4 +1,4 @@
-"""Native read-only M6 interactive workspace over CaseReportProjection."""
+"""Native M6 workspace over a read-only CaseReportProjection with bounded operational task actions."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import streamlit as st
 from case_reporting.models import CaseReportProjection, StatusView
 from legal_issue_dashboard import LegalIssueDashboard
 from case_reporting.validation import validate_case_report_projection
+from ui.solicitor_tasks import show_issue_task_creator
 from workspace_index import (
     DocumentGroupKey,
     WorkspaceIndex,
@@ -29,14 +30,21 @@ _EMPTY_FROZEN_TEXT = "None recorded in the frozen report projection."
 _NO_FILTER_MATCH_TEXT = "No items match the current workspace filters."
 _UNIQUE_ELEMENT_TEXT = "No unique element coordinate can be resolved from the frozen projection."
 _VIEW_LABELS = {
-    "traceability": "Exact Traceability",
-    "evidence": "Evidence Explorer",
-    "chronology": "Frozen Chronology",
-    "people": "People / Participants Explorer",
-    "comparison": "Projection Evidence-Use Comparison",
-    "review": "Issue Review",
+    "review": "Legal issue review",
+    "evidence": "Evidence",
+    "chronology": "Chronology",
+    "people": "People",
+    "comparison": "Compare evidence use",
+    "traceability": "Audit / traceability",
 }
-_VIEW_ORDER = tuple(_VIEW_LABELS)
+_VIEW_ORDER = (
+    "review",
+    "evidence",
+    "chronology",
+    "people",
+    "comparison",
+    "traceability",
+)
 _TRACE_LABELS = {
     "issue": "Issue",
     "element": "Element",
@@ -311,7 +319,11 @@ def _trace_search_values(key: WorkspaceObjectKey, value: object) -> tuple[object
 
 
 def _render_traceability(index: WorkspaceIndex) -> None:
-    st.header("Exact Traceability")
+    st.header("Audit / traceability")
+    st.caption(
+        "Technical identifiers, exact frozen references and relationship links "
+        "are shown here for audit purposes."
+    )
     with st.form(key="workspace_traceability_filter_form", clear_on_submit=False):
         kind = st.selectbox(
             "Object type",
@@ -397,15 +409,15 @@ def _render_review_collection(
         value = index.object_by_key.get(key)
         if value is None:
             raise WorkspaceIndexError(
-                f"Issue Review references an unknown frozen {kind} object: {primary_id!r}."
+                f"Legal issue review references an unknown frozen {kind} object: {primary_id!r}."
             )
-        st.text(_format_key(key))
-        _render_scalar_fields(value)
-        _review_open_traceability(
-            f"Open in Exact Traceability · {_format_key(key)}",
-            key,
-            token=f"{heading}:{ordinal}",
-        )
+        with st.expander(f"{heading} · {ordinal}", expanded=False):
+            _render_scalar_fields(value)
+            _review_open_traceability(
+                "Open audit / traceability",
+                key,
+                token=f"{heading}:{ordinal}",
+            )
 
 
 _IERW_EVIDENTIAL_ROLE_FIELDS = (
@@ -420,15 +432,15 @@ _IERW_EVIDENTIAL_ROLE_FIELDS = (
 def _render_evidential_position(dashboard_issue) -> None:
     """Render exact frozen role memberships without reclassifying evidence."""
 
-    st.subheader("Evidential Position")
+    st.subheader("Evidence position")
     st.caption(
-        "Read-only role memberships copied from the frozen governed Case Matrices. "
-        "One evidence key may appear in more than one role."
+        "This shows how the current case assessment uses the evidence. "
+        "The underlying evidence references remain unchanged."
     )
     for element in dashboard_issue.elements:
-        st.text(f"{element.element_id} · {element.element_name}")
+        st.text(element.element_name)
         st.caption("Legal question: " + element.legal_question)
-        st.caption("Current evidential position: " + element.current_evidential_position)
+        st.caption("Current position: " + element.current_evidential_position)
         for label, field_name in _IERW_EVIDENTIAL_ROLE_FIELDS:
             evidence_keys = tuple(getattr(element, field_name))
             st.text(f"{label} ({len(evidence_keys)})")
@@ -475,16 +487,15 @@ def _render_issue_review(
 ) -> None:
     """Compose one issue-centric review from separately governed projections."""
 
-    st.header("Issue Review")
+    st.header("Legal issue review")
     st.caption(
-        "Read-only review of the validated frozen report projection and, when available, "
-        "the separately bound governed evidential-position projection. "
-        "This view creates no analytical state and performs no retrieval."
+        "Review the current assessment, evidence, chronology and next legal work "
+        "for one issue. Technical identifiers remain available under Audit / traceability."
     )
 
     issue_ids = tuple(key.primary_id for key in index.issue_keys)
     if not issue_ids:
-        st.info("No frozen legal issues are available in this report projection.")
+        st.info("No legal issues are available for review.")
         st.session_state["ierw_review_issue_id"] = None
         return
 
@@ -493,7 +504,7 @@ def _render_issue_review(
         st.session_state["ierw_review_issue_id"] = issue_ids[0]
 
     selected_issue_id = st.selectbox(
-        "Frozen issue",
+        "Legal issue",
         options=issue_ids,
         key="ierw_review_issue_id",
         format_func=lambda value: index.issues_by_id[value].issue_name,
@@ -502,10 +513,14 @@ def _render_issue_review(
     issue_key = WorkspaceObjectKey("issue", selected_issue_id)
 
     st.subheader(issue.issue_name)
-    _text("Issue analysis ID", issue.issue_analysis_id)
-    _text("Issue summary", issue.issue_summary)
-    _status("Position status", issue.position_status)
-    _status("Position confidence", issue.confidence)
+    st.subheader("Current assessment")
+    st.text(issue.issue_summary)
+    st.caption(
+        "Position: "
+        + issue.position_status.label
+        + " · Confidence: "
+        + issue.confidence.label
+    )
 
     dashboard_issue = _review_dashboard_issue(evidential_dashboard, selected_issue_id)
     if dashboard_issue is None:
@@ -513,18 +528,18 @@ def _render_issue_review(
     else:
         _render_evidential_position(dashboard_issue)
 
-    if st.button("Open issue in Exact Traceability", key="ierw_review_open_issue_trace"):
+    if st.button("Open audit / traceability", key="ierw_review_open_issue_trace"):
         st.session_state["m6_trace_kind"] = "issue"
         st.session_state["m6_trace_selected_key"] = issue_key
         st.session_state["m6_workspace_view"] = "traceability"
         st.rerun()
 
-    if st.button("Review issue evidence", key="ierw_review_open_issue_evidence"):
+    if st.button("Review evidence", key="ierw_review_open_issue_evidence"):
         st.session_state["m6_evidence_issue_ids"] = [selected_issue_id]
         st.session_state["m6_workspace_view"] = "evidence"
         st.rerun()
 
-    if st.button("Review issue chronology", key="ierw_review_open_issue_chronology"):
+    if st.button("Review chronology", key="ierw_review_open_issue_chronology"):
         st.session_state["m6_chronology_issue_ids"] = [selected_issue_id]
         st.session_state["m6_workspace_view"] = "chronology"
         st.rerun()
@@ -554,44 +569,47 @@ def _citation_search_values(value) -> tuple[object, ...]:
 
 
 def _document_label(value: DocumentGroupKey) -> str:
-    suffix = value.document_id if value.document_id is not None else "no document ID"
-    return f"{value.document_name} · {suffix}"
+    return value.document_name
 
 
 def _render_citation(index: WorkspaceIndex, citation) -> None:
-    st.subheader(f"Citation · {citation.citation_id}")
-    for label, value in (
-        ("Evidence key", citation.evidence_key),
-        ("Citation text", citation.citation),
-        ("Document name", citation.document_name),
-        ("Document ID", citation.document_id),
-        ("Page", citation.page),
-        ("Chunk ID", citation.chunk_id),
-        ("Date", citation.date),
-        ("Author", citation.author),
-        ("Parties", citation.parties),
-        ("Source type", citation.source_type),
-        ("Evidence status", citation.evidence_status),
-        ("Provenance type", citation.provenance_type),
-        ("Provenance basis", citation.provenance_basis),
-        ("Provenance confidence", citation.provenance_confidence),
-        ("Evidence-use coordinates", citation.evidence_use_coordinates),
-    ):
-        _text(label, value)
-    st.text("Referenced by")
+    heading = citation.document_name or "Evidence"
+    if citation.page is not None:
+        heading += f" · page {citation.page}"
+    st.subheader(heading)
+    _text("Citation", citation.citation)
+    _text("Date", citation.date)
+    _text("Author", citation.author)
+    _text("Parties", citation.parties)
+    _text("Source type", citation.source_type)
+    _text("Evidence status", citation.evidence_status)
+
     key = WorkspaceObjectKey("citation", citation.citation_id)
     backlinks = index.backlinks[key]
-    if not backlinks:
-        st.text(_EMPTY_FROZEN_TEXT)
-    for backlink in backlinks:
-        st.text(f"{_format_key(backlink.source)} · {backlink.source_field}")
+    with st.expander("Audit details", expanded=False):
+        for label, value in (
+            ("Citation ID", citation.citation_id),
+            ("Evidence key", citation.evidence_key),
+            ("Document ID", citation.document_id),
+            ("Chunk ID", citation.chunk_id),
+            ("Provenance type", citation.provenance_type),
+            ("Provenance basis", citation.provenance_basis),
+            ("Provenance confidence", citation.provenance_confidence),
+            ("Evidence-use coordinates", citation.evidence_use_coordinates),
+        ):
+            _text(label, value)
+        st.text("Referenced by")
+        if not backlinks:
+            st.text(_EMPTY_FROZEN_TEXT)
+        for backlink in backlinks:
+            st.text(f"{_format_key(backlink.source)} · {backlink.source_field}")
 
 
 def _render_evidence(index: WorkspaceIndex) -> None:
-    st.header("Evidence Explorer")
+    st.header("Evidence")
     citations = tuple(index.citations_by_id[key.primary_id] for key in index.citation_keys)
     with st.form(key="workspace_evidence_filter_form", clear_on_submit=False):
-        st.text_input("Literal search", key="m6_evidence_query")
+        st.text_input("Search", key="m6_evidence_query")
         st.multiselect("Document group", index.document_group_keys, key="m6_evidence_documents", format_func=_document_label)
         st.multiselect("Source type", _first_values(item.source_type for item in citations), key="m6_evidence_source_types")
         st.multiselect("Evidence status", _first_values(item.evidence_status for item in citations), key="m6_evidence_statuses")
@@ -599,7 +617,7 @@ def _render_evidence(index: WorkspaceIndex) -> None:
         st.multiselect("Provenance confidence", _first_values(item.provenance_confidence for item in citations), key="m6_evidence_provenance_confidences")
         st.multiselect("Author", _first_values(item.author for item in citations), key="m6_evidence_authors")
         st.multiselect("Party", _first_values(party for item in citations for party in item.parties), key="m6_evidence_parties")
-        st.multiselect("Issue ID", _first_values(coord[0] for item in citations for coord in item.evidence_use_coordinates), key="m6_evidence_issue_ids")
+        st.multiselect("Related legal issue", _first_values(coord[0] for item in citations for coord in item.evidence_use_coordinates), key="m6_evidence_issue_ids")
         st.form_submit_button("APPLY EVIDENCE FILTERS", use_container_width=True)
 
     selected_documents = _selected("m6_evidence_documents")
@@ -664,17 +682,102 @@ def _event_search_values(event) -> tuple[object, ...]:
     return tuple(values)
 
 
-def _render_chronology(index: WorkspaceIndex) -> None:
-    st.header("Frozen Chronology")
+def _plain_value(value: object) -> str:
+    raw = getattr(value, "value", value)
+    return str(raw or "").strip()
+
+
+def _humanise_token(value: object) -> str:
+    raw = _plain_value(value)
+    if not raw:
+        return ""
+    if "_" in raw or ("-" in raw and " " not in raw):
+        return " ".join(raw.replace("_", " ").replace("-", " ").split()).lower().capitalize()
+    return raw
+
+
+def _chronology_time(event) -> str | None:
+    extent = event.canonical_temporal_extent
+    if extent is None:
+        return None
+    display = getattr(extent, "display_text", None)
+    return str(display or extent).strip() or None
+
+
+def _chronology_task_title(event) -> str:
+    time_value = _chronology_time(event)
+    type_value = _humanise_token(event.event_type)
+    context = " · ".join(value for value in (time_value, type_value) if value)
+    return "Follow up chronology event" + (" · " + context if context else "")
+
+
+def _chronology_event_heading(event) -> str:
+    time_value = _chronology_time(event)
+    type_value = _humanise_token(event.event_type)
+    context = " · ".join(value for value in (time_value, type_value) if value)
+    return context or "Chronology event"
+
+
+def _render_chronology_task_creator(
+    *,
+    active_case_id: str,
+    index: WorkspaceIndex,
+    event,
+) -> None:
+    related_ids = tuple(
+        dict.fromkeys(
+            str(value).strip()
+            for value in event.related_issue_ids
+            if str(value).strip()
+        )
+    )
+    if not related_ids:
+        st.caption(
+            "Create task unavailable because this chronology event has no exact related legal issue."
+        )
+        return
+    if any(issue_id not in index.issues_by_id for issue_id in related_ids):
+        st.caption(
+            "Create task unavailable because the chronology event's related legal issue cannot be resolved exactly."
+        )
+        return
+
+    issue_id = related_ids[0]
+    issue = index.issues_by_id[issue_id]
+    related_issues = (
+        tuple((value, index.issues_by_id[value].issue_name) for value in related_ids)
+        if len(related_ids) > 1
+        else None
+    )
+    show_issue_task_creator(
+        case_id=active_case_id,
+        issue_analysis_id=issue_id,
+        issue_name=issue.issue_name,
+        origin="chronology",
+        originating_question="Operational follow-up arising from the frozen chronology event.",
+        default_title=_chronology_task_title(event),
+        why_it_matters=(
+            "Follow up the legal-work implication of this chronology event. "
+            "Task state does not change event occurrence, timing, evidence or case assessment."
+        ),
+        origin_chronology_event_id=event.event_id,
+        origin_chronology_time=_chronology_time(event),
+        origin_chronology_event_type=_humanise_token(event.event_type) or None,
+        related_issues=related_issues,
+    )
+
+
+def _render_chronology(active_case_id: str, index: WorkspaceIndex) -> None:
+    st.header("Chronology")
     events = tuple(index.events_by_id[key.primary_id] for key in index.event_keys)
     with st.form(key="workspace_chronology_filter_form", clear_on_submit=False):
-        st.text_input("Literal search", key="m6_chronology_query")
+        st.text_input("Search", key="m6_chronology_query")
         st.multiselect("Event type", _first_values(item.event_type for item in events), key="m6_chronology_event_types")
         st.multiselect("Participant", _first_values(value for item in events for value in item.participants), key="m6_chronology_participants")
-        st.multiselect("Occurrence raw status", _first_values(item.occurrence_status.raw_value for item in events), key="m6_chronology_occurrence_statuses")
-        st.multiselect("Timing raw status", _first_values(item.timing_status.raw_value for item in events), key="m6_chronology_timing_statuses")
-        st.multiselect("Confidence raw status", _first_values(item.confidence.raw_value for item in events), key="m6_chronology_confidences")
-        st.multiselect("Related issue ID", _first_values(value for item in events for value in item.related_issue_ids), key="m6_chronology_issue_ids")
+        st.multiselect("Occurrence status", _first_values(item.occurrence_status.raw_value for item in events), key="m6_chronology_occurrence_statuses")
+        st.multiselect("Timing status", _first_values(item.timing_status.raw_value for item in events), key="m6_chronology_timing_statuses")
+        st.multiselect("Confidence", _first_values(item.confidence.raw_value for item in events), key="m6_chronology_confidences")
+        st.multiselect("Related legal issue", _first_values(value for item in events for value in item.related_issue_ids), key="m6_chronology_issue_ids")
         st.form_submit_button("APPLY CHRONOLOGY FILTERS", use_container_width=True)
     query = str(st.session_state.get("m6_chronology_query", ""))
     event_types = _selected("m6_chronology_event_types")
@@ -705,38 +808,53 @@ def _render_chronology(index: WorkspaceIndex) -> None:
         st.info(_NO_FILTER_MATCH_TEXT if active else _EMPTY_FROZEN_TEXT)
         return
     for event in visible:
-        st.subheader(f"Event · {event.event_id}")
-        _text("Description", event.description)
-        _text("Normalised event core", event.normalized_event_core)
-        _text("Event type", event.event_type)
+        st.subheader(_chronology_event_heading(event))
+        _text("What happened", event.description)
         _text("Participants", event.participants)
-        _status("Occurrence", event.occurrence_status)
-        _status("Timing", event.timing_status)
-        _status("Confidence", event.confidence)
-        _text("Temporal extent", event.canonical_temporal_extent)
-        _text("Citation IDs", event.citation_ids)
-        _text("Related issue IDs", event.related_issue_ids)
-        _text("Related element coordinates", event.related_element_coordinates)
-        st.text("Event Assertions")
-        if not event.assertions:
-            st.text(_EMPTY_FROZEN_TEXT)
-        for assertion in event.assertions:
-            st.text(f"Assertion ID: {assertion.assertion_id}")
-            _text("Description", assertion.description)
-            _text("Issue analysis ID", assertion.issue_analysis_id)
-            _text("Element ID", assertion.element_id)
-            _text("Evidence key", assertion.evidence_key)
-            _text("Citation ID", assertion.citation_id)
-            _text("Source proposition index", assertion.source_proposition_index)
-            _status("Occurrence", assertion.occurrence_status)
-            _status("Timing", assertion.timing_status)
-            _status("Confidence", assertion.confidence)
-            _text("Temporal extent", assertion.temporal_extent)
-            _text("Extraction basis", assertion.extraction_basis)
+        st.caption(
+            "Occurrence: "
+            + event.occurrence_status.label
+            + " · Timing: "
+            + event.timing_status.label
+            + " · Confidence: "
+            + event.confidence.label
+        )
+        _render_chronology_task_creator(
+            active_case_id=active_case_id,
+            index=index,
+            event=event,
+        )
+        with st.expander("Audit details", expanded=False):
+            _text("Event ID", event.event_id)
+            _text("Normalised event core", event.normalized_event_core)
+            _text("Event type", event.event_type)
+            _status("Occurrence", event.occurrence_status)
+            _status("Timing", event.timing_status)
+            _status("Confidence", event.confidence)
+            _text("Temporal extent", event.canonical_temporal_extent)
+            _text("Citation IDs", event.citation_ids)
+            _text("Related issue IDs", event.related_issue_ids)
+            _text("Related element coordinates", event.related_element_coordinates)
+            st.text("Event assertions")
+            if not event.assertions:
+                st.text(_EMPTY_FROZEN_TEXT)
+            for assertion in event.assertions:
+                st.text(f"Assertion ID: {assertion.assertion_id}")
+                _text("Description", assertion.description)
+                _text("Issue analysis ID", assertion.issue_analysis_id)
+                _text("Element ID", assertion.element_id)
+                _text("Evidence key", assertion.evidence_key)
+                _text("Citation ID", assertion.citation_id)
+                _text("Source proposition index", assertion.source_proposition_index)
+                _status("Occurrence", assertion.occurrence_status)
+                _status("Timing", assertion.timing_status)
+                _status("Confidence", assertion.confidence)
+                _text("Temporal extent", assertion.temporal_extent)
+                _text("Extraction basis", assertion.extraction_basis)
 
 
 def _render_people(index: WorkspaceIndex) -> None:
-    st.header("People / Participants Explorer")
+    st.header("People")
     st.caption(
         "Names and party strings are grouped exactly as recorded in the frozen projection. "
         "No entity resolution, alias matching or person/organisation classification is performed."
@@ -823,7 +941,7 @@ def _render_comparison_side(index: WorkspaceIndex, label: str, key: DocumentGrou
 
 
 def _render_comparison(index: WorkspaceIndex) -> None:
-    st.header("Projection Evidence-Use Comparison")
+    st.header("Compare evidence use")
     st.caption(
         "This view compares frozen projection evidence-use inventories. "
         "It does not perform a full-text or merits comparison of the underlying documents."
@@ -856,7 +974,7 @@ def show_workspace(
     *,
     evidential_dashboard: LegalIssueDashboard | None = None,
 ) -> None:
-    """Render the deterministic read-only M6 workspace for the active case."""
+    """Render the deterministic M6 workspace while keeping the frozen projection read-only."""
 
     if active_case_id is None:
         st.info(_NO_CASE_TEXT)
@@ -882,10 +1000,14 @@ def show_workspace(
 
     view = st.session_state.get("m6_workspace_view")
     if view not in _VIEW_ORDER:
-        st.session_state["m6_workspace_view"] = "traceability"
-        view = "traceability"
+        st.session_state["m6_workspace_view"] = "review"
+        view = "review"
 
-    st.title("LegalRAG Pro — Interactive Legal Workspace")
+    st.title("Matter workspace")
+    st.caption(
+        "Work from the legal issue first. Evidence, chronology and audit detail "
+        "remain available without changing the underlying case assessment."
+    )
     if st.button("Close Workspace"):
         st.session_state["m6_workspace_view"] = None
         st.rerun()
@@ -897,11 +1019,12 @@ def show_workspace(
     )
     if view == "review":
         _render_issue_review(index, evidential_dashboard)
+    elif view == "chronology":
+        _render_chronology(active_case_id, index)
     else:
         {
             "traceability": _render_traceability,
             "evidence": _render_evidence,
-            "chronology": _render_chronology,
             "people": _render_people,
             "comparison": _render_comparison,
         }[view](index)

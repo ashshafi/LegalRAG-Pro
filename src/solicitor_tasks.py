@@ -6,6 +6,7 @@ or activate a case assessment.
 
 Schema 1.0 remains readable and is never rewritten.
 Schema 1.1 extends the same task event format for Evidence-origin provenance.
+Schema 1.2 extends that same format for Chronology-origin provenance.
 """
 from __future__ import annotations
 
@@ -21,7 +22,8 @@ from typing import Any
 
 _SCHEMA_V1 = "1.0"
 _SCHEMA_V1_1 = "1.1"
-_SUPPORTED = frozenset({_SCHEMA_V1, _SCHEMA_V1_1})
+_SCHEMA_V1_2 = "1.2"
+_SUPPORTED = frozenset({_SCHEMA_V1, _SCHEMA_V1_1, _SCHEMA_V1_2})
 _DEFAULT_ROOT = Path("solicitor_tasks")
 _SAFE_CASE_ID = re.compile(r"^[A-Za-z0-9._-]+$")
 
@@ -48,6 +50,7 @@ class TaskOrigin(str, Enum):
     NEXT_LEGAL_ACTION = "next_legal_action"
     WHAT_REMAINS_UNCLEAR = "what_remains_unclear"
     EVIDENCE = "evidence"
+    CHRONOLOGY = "chronology"
 
 
 @dataclass(frozen=True)
@@ -70,6 +73,10 @@ class SolicitorTask:
     origin_evidence_citation: str | None = None
     origin_document_name: str | None = None
     origin_page: int | None = None
+    origin_chronology_event_id: str | None = None
+    # Display-only chronology snapshots. They never determine task origin identity.
+    origin_chronology_time: str | None = None
+    origin_chronology_event_type: str | None = None
 
 
 def _now() -> str:
@@ -139,22 +146,55 @@ def _validate_origin(
     citation: str | None,
     document_name: str | None,
     page: int | None,
+    chronology_event_id: str | None,
+    chronology_time: str | None,
+    chronology_event_type: str | None,
 ) -> None:
-    values = (evidence_key, citation, document_name, page)
+    evidence_values = (evidence_key, citation, document_name, page)
+    chronology_values = (chronology_event_id, chronology_time, chronology_event_type)
     if origin is TaskOrigin.EVIDENCE:
         if not evidence_key:
             raise SolicitorTaskError(
                 "Evidence-origin tasks require an exact origin_evidence_key."
             )
+        if any(value is not None for value in chronology_values):
+            raise SolicitorTaskError(
+                "Chronology provenance is permitted only for Chronology-origin tasks."
+            )
         return
-    if any(value is not None for value in values):
+    if origin is TaskOrigin.CHRONOLOGY:
+        if not chronology_event_id:
+            raise SolicitorTaskError(
+                "Chronology-origin tasks require an exact origin_chronology_event_id."
+            )
+        if any(value is not None for value in evidence_values):
+            raise SolicitorTaskError(
+                "Evidence provenance is permitted only for Evidence-origin tasks."
+            )
+        return
+    if any(value is not None for value in evidence_values):
         raise SolicitorTaskError(
             "Evidence provenance is permitted only for Evidence-origin tasks."
         )
+    if any(value is not None for value in chronology_values):
+        raise SolicitorTaskError(
+            "Chronology provenance is permitted only for Chronology-origin tasks."
+        )
+
+
+def _validate_schema_origin(schema_version: str, origin: TaskOrigin) -> None:
+    if schema_version == _SCHEMA_V1_2 and origin is not TaskOrigin.CHRONOLOGY:
+        raise SolicitorTaskError("Schema 1.2 is reserved for Chronology-origin tasks.")
+    if schema_version == _SCHEMA_V1_1 and origin is not TaskOrigin.EVIDENCE:
+        raise SolicitorTaskError("Schema 1.1 is reserved for Evidence-origin tasks.")
 
 
 def _schema(task: SolicitorTask) -> str:
-    return _SCHEMA_V1_1 if task.origin is TaskOrigin.EVIDENCE else _SCHEMA_V1
+    if task.origin is TaskOrigin.CHRONOLOGY:
+        return _SCHEMA_V1_2
+    if task.origin is TaskOrigin.EVIDENCE:
+        return _SCHEMA_V1_1
+    return _SCHEMA_V1
 
 
 def _snapshot(task: SolicitorTask, schema_version: str) -> dict[str, Any]:
@@ -162,12 +202,19 @@ def _snapshot(task: SolicitorTask, schema_version: str) -> dict[str, Any]:
     value["status"] = task.status.value
     value["priority"] = task.priority.value
     value["origin"] = task.origin.value
-    if schema_version == _SCHEMA_V1:
+    if schema_version != _SCHEMA_V1_1:
         for name in (
             "origin_evidence_key",
             "origin_evidence_citation",
             "origin_document_name",
             "origin_page",
+        ):
+            value.pop(name, None)
+    if schema_version != _SCHEMA_V1_2:
+        for name in (
+            "origin_chronology_event_id",
+            "origin_chronology_time",
+            "origin_chronology_event_type",
         ):
             value.pop(name, None)
     return value
@@ -179,6 +226,7 @@ def _from_snapshot(value: object, schema_version: str) -> SolicitorTask:
 
     try:
         origin = TaskOrigin(value.get("origin"))
+        _validate_schema_origin(schema_version, origin)
         if schema_version == _SCHEMA_V1_1:
             evidence_key = _optional(value.get("origin_evidence_key"))
             citation = _optional(value.get("origin_evidence_citation"))
@@ -186,8 +234,23 @@ def _from_snapshot(value: object, schema_version: str) -> SolicitorTask:
             page = _page(value.get("origin_page"))
         else:
             evidence_key = citation = document_name = page = None
+        if schema_version == _SCHEMA_V1_2:
+            chronology_event_id = _optional(value.get("origin_chronology_event_id"))
+            chronology_time = _optional(value.get("origin_chronology_time"))
+            chronology_event_type = _optional(value.get("origin_chronology_event_type"))
+        else:
+            chronology_event_id = chronology_time = chronology_event_type = None
 
-        _validate_origin(origin, evidence_key, citation, document_name, page)
+        _validate_origin(
+            origin,
+            evidence_key,
+            citation,
+            document_name,
+            page,
+            chronology_event_id,
+            chronology_time,
+            chronology_event_type,
+        )
 
         return SolicitorTask(
             task_id=_required(value.get("task_id"), "task_id"),
@@ -210,6 +273,9 @@ def _from_snapshot(value: object, schema_version: str) -> SolicitorTask:
             origin_evidence_citation=citation,
             origin_document_name=document_name,
             origin_page=page,
+            origin_chronology_event_id=chronology_event_id,
+            origin_chronology_time=chronology_time,
+            origin_chronology_event_type=chronology_event_type,
         )
     except (TypeError, ValueError) as exc:
         raise SolicitorTaskError("Task event snapshot is invalid.") from exc
@@ -251,6 +317,9 @@ def create_task(
     origin_evidence_citation=None,
     origin_document_name=None,
     origin_page=None,
+    origin_chronology_event_id=None,
+    origin_chronology_time=None,
+    origin_chronology_event_type=None,
     root=None,
 ) -> SolicitorTask:
     try:
@@ -263,7 +332,19 @@ def create_task(
     citation = _optional(origin_evidence_citation)
     document_name = _optional(origin_document_name)
     page = _page(origin_page)
-    _validate_origin(origin_value, evidence_key, citation, document_name, page)
+    chronology_event_id = _optional(origin_chronology_event_id)
+    chronology_time = _optional(origin_chronology_time)
+    chronology_event_type = _optional(origin_chronology_event_type)
+    _validate_origin(
+        origin_value,
+        evidence_key,
+        citation,
+        document_name,
+        page,
+        chronology_event_id,
+        chronology_time,
+        chronology_event_type,
+    )
 
     timestamp = _now()
     task = SolicitorTask(
@@ -285,6 +366,9 @@ def create_task(
         origin_evidence_citation=citation,
         origin_document_name=document_name,
         origin_page=page,
+        origin_chronology_event_id=chronology_event_id,
+        origin_chronology_time=chronology_time,
+        origin_chronology_event_type=chronology_event_type,
     )
     _append(task, "TASK_CREATED", root=root)
     return task

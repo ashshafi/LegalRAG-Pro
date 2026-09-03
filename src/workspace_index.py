@@ -155,6 +155,59 @@ class WorkspaceIndex:
     recorded_name_values: tuple[str, ...]
 
 
+_WORKSPACE_INDEX_CACHE_LIMIT: Final[int] = 4
+_WORKSPACE_INDEX_CACHE: dict[
+    tuple[str, str, str, str],
+    tuple[CaseReportProjection, WorkspaceIndex],
+] = {}
+_WORKSPACE_INDEX_CACHE_ORDER: list[tuple[str, str, str, str]] = []
+
+
+def _workspace_index_cache_key(
+    projection: CaseReportProjection,
+) -> tuple[str, str, str, str] | None:
+    try:
+        return (
+            str(projection.case_header.case_id),
+            str(projection.report_projection_id),
+            str(projection.projection_payload_sha256),
+            str(projection.manifest.manifest_id),
+        )
+    except (AttributeError, TypeError):
+        return None
+
+
+def _workspace_index_cache_get(
+    projection: CaseReportProjection,
+) -> WorkspaceIndex | None:
+    key = _workspace_index_cache_key(projection)
+    if key is None:
+        return None
+    cached = _WORKSPACE_INDEX_CACHE.get(key)
+    if cached is None or cached[0] is not projection:
+        return None
+    if key in _WORKSPACE_INDEX_CACHE_ORDER:
+        _WORKSPACE_INDEX_CACHE_ORDER.remove(key)
+    _WORKSPACE_INDEX_CACHE_ORDER.append(key)
+    return cached[1]
+
+
+def _workspace_index_cache_put(
+    projection: CaseReportProjection,
+    index: WorkspaceIndex,
+) -> None:
+    key = _workspace_index_cache_key(projection)
+    if key is None:
+        return
+    _WORKSPACE_INDEX_CACHE[key] = (projection, index)
+    if key in _WORKSPACE_INDEX_CACHE_ORDER:
+        _WORKSPACE_INDEX_CACHE_ORDER.remove(key)
+    _WORKSPACE_INDEX_CACHE_ORDER.append(key)
+    while len(_WORKSPACE_INDEX_CACHE_ORDER) > _WORKSPACE_INDEX_CACHE_LIMIT:
+        stale = _WORKSPACE_INDEX_CACHE_ORDER.pop(0)
+        _WORKSPACE_INDEX_CACHE.pop(stale, None)
+
+
 def _readonly(mapping: Mapping) -> Mapping:
     return MappingProxyType(dict(mapping))
 
@@ -213,6 +266,10 @@ def _provenance_citations(provenance) -> Iterable[tuple[int, str]]:
 
 def build_workspace_index(projection: CaseReportProjection) -> WorkspaceIndex:
     """Build and validate deterministic M6 navigation indexes from one projection."""
+
+    cached = _workspace_index_cache_get(projection)
+    if cached is not None:
+        return cached
 
     validate_case_report_projection(projection)
 
@@ -526,7 +583,7 @@ def build_workspace_index(projection: CaseReportProjection) -> WorkspaceIndex:
         for party in citation.parties:
             add_name(party, "citation.parties", citation_key)
 
-    return WorkspaceIndex(
+    index = WorkspaceIndex(
         version=WORKSPACE_INDEX_VERSION,
         issues_by_id=_readonly(issues),
         elements_by_coordinate=_readonly(elements),
@@ -560,6 +617,8 @@ def build_workspace_index(projection: CaseReportProjection) -> WorkspaceIndex:
         recorded_names=_readonly({key: tuple(value) for key, value in name_occurrences_mut.items()}),
         recorded_name_values=tuple(name_order),
     )
+    _workspace_index_cache_put(projection, index)
+    return index
 
 
 __all__ = [

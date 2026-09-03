@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 from pathlib import Path
 import subprocess
 
@@ -12,6 +13,8 @@ SIDEBAR = ROOT / "src" / "ui" / "sidebar.py"
 M55_ARCH = ROOT / "tests" / "test_streamlit_report_viewer_architecture.py"
 M6_BASELINE = "528c669"
 REQUIREMENTS_BASELINE = "b5a3f838e158c2ac5eab81e007e2b1ac416d1edc"
+RP1_PROJECTION_SHA256 = "f0aaf1ac2a04a4e2667e4a74647e8b5870c1c0999257de2b8a1b0e0fa8e76fd7"
+PERF1_REPORT_PROVIDER_SHA256 = "9d69fea3fc22f61d23042f543782d249623cfeee9a2d3a2524d537b79efa9b57"
 APPROVED_M6_KEYS = {
     "m6_workspace_case_id",
     "m6_workspace_projection_id",
@@ -105,6 +108,7 @@ def test_workspace_ui_dependency_direction_and_source_access_are_narrow():
         "case_reporting.models",
         "case_reporting.validation",
         "legal_issue_dashboard",
+        "ui.solicitor_tasks",
         "workspace_index",
     }
     assert imports <= allowed
@@ -175,13 +179,13 @@ def test_sidebar_signature_and_two_value_contract_remain_frozen():
     returns = [node for node in ast.walk(function) if isinstance(node, ast.Return)]
     assert any(isinstance(node.value, ast.Tuple) and len(node.value.elts) == 2 for node in returns)
     source = SIDEBAR.read_text(encoding="utf-8")
-    for label in ("🧠 Analysis", "🔎 Evidence", "👥 People"):
+    for label in ("📚 Matter workspace", "🔎 Evidence", "👥 People"):
         assert label in source
-    assert 'st.session_state["m6_workspace_view"] = "traceability"' in source
+    assert 'st.session_state["m6_workspace_view"] = "review"' in source
     assert 'st.session_state["m6_workspace_view"] = "evidence"' in source
     assert 'st.session_state["m6_workspace_view"] = "people"' in source
     workspace = WORKSPACE.read_text(encoding="utf-8")
-    assert "Projection Evidence-Use Comparison" in workspace
+    assert "Compare evidence use" in workspace
     assert "📑 Compare Documents" not in source
 
 
@@ -211,21 +215,66 @@ def test_requirements_and_frozen_semantic_reporting_boundaries_remain_governed()
         text=True,
     )
 
-    semantic_protected = [
-        "src/report_projection_provider.py",
+    # RP1 is an expressly governed report-projection compatibility repair.
+    # Preserve the historical M6 semantic boundary everywhere else, and permit
+    # exactly one case-reporting path at its exact accepted content identity.
+    semantic_protected_except_rp1_and_perf1 = [
         "src/ui/reports.py",
-        "src/case_reporting",
         "src/case_analysis",
         "tests/fixtures/case_reporting/m52_full_audit.md",
         "tests/fixtures/case_reporting/m53_full_audit.html",
         "tests/fixtures/case_reporting/m54_full_audit.pdf",
     ]
     subprocess.run(
-        ["git", "diff", "--exit-code", M6_BASELINE, "--", *semantic_protected],
+        [
+            "git",
+            "diff",
+            "--exit-code",
+            M6_BASELINE,
+            "--",
+            *semantic_protected_except_rp1_and_perf1,
+        ],
         cwd=ROOT,
         check=True,
         capture_output=True,
         text=True,
+    )
+
+    # PERF1 is an expressly governed performance-only exception for the
+    # read-only report-projection provider.  Its exact accepted bytes are sealed
+    # independently; no report-projection semantic or publication path is widened.
+    assert (
+        hashlib.sha256(
+            (ROOT / "src" / "report_projection_provider.py").read_bytes()
+        ).hexdigest()
+        == PERF1_REPORT_PROVIDER_SHA256
+    )
+
+    rp1_result = subprocess.run(
+        [
+            "git",
+            "diff",
+            "--name-only",
+            M6_BASELINE,
+            "--",
+            "src/case_reporting",
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    rp1_observed = {
+        line.strip().replace("\\", "/")
+        for line in rp1_result.stdout.splitlines()
+        if line.strip()
+    }
+    assert rp1_observed == {"src/case_reporting/projection.py"}
+    assert (
+        hashlib.sha256(
+            (ROOT / "src" / "case_reporting" / "projection.py").read_bytes()
+        ).hexdigest()
+        == RP1_PROJECTION_SHA256
     )
 
     # U9C-B15-EQ4 is an expressly governed corrective exception to
@@ -266,7 +315,7 @@ def test_ierw_issue_review_is_an_m6_projection_only_view():
     assert route < show < reports
     assert '"review", "traceability", "evidence", "chronology", "people", "comparison"' in app
 
-    assert '"review": "Issue Review"' in workspace
+    assert '"review": "Legal issue review"' in workspace
     assert 'if view == "review":' in workspace
     assert "_render_issue_review(index, evidential_dashboard)" in workspace
     assert '"ierw_review_issue_id"' in workspace
@@ -308,3 +357,103 @@ def test_ierw_evidential_position_composition_is_read_only_at_app_root():
     ):
         assert token in workspace
     assert "Unresolved evidence" not in workspace
+
+
+def test_mw1_i4_chronology_to_task_uses_frozen_event_identity_and_exact_issue_binding():
+    source = WORKSPACE.read_text(encoding="utf-8")
+    assert "def _render_chronology(active_case_id: str, index: WorkspaceIndex)" in source
+    assert "origin_chronology_event_id=event.event_id" in source
+    assert "event.related_issue_ids" in source
+    assert "index.issues_by_id" in source
+    assert "related_issues=related_issues" in source
+    assert 'origin="chronology"' in source
+    assert "show_issue_task_creator(" in source
+    assert "_render_chronology(active_case_id, index)" in source
+
+
+def test_mw1_i4_chronology_to_task_fails_closed_without_exact_issue_identity():
+    source = WORKSPACE.read_text(encoding="utf-8")
+    assert "if not related_ids:" in source
+    assert "if any(issue_id not in index.issues_by_id for issue_id in related_ids):" in source
+    assert "Create task unavailable because this chronology event has no exact related legal issue." in source
+    assert "cannot be resolved exactly" in source
+
+
+def test_mw1_i4_chronology_task_does_not_copy_event_or_evidence_content():
+    source = WORKSPACE.read_text(encoding="utf-8")
+    creator_start = source.index("def _render_chronology_task_creator(")
+    chronology_start = source.index("def _render_chronology(", creator_start)
+    creator = source[creator_start:chronology_start]
+    for forbidden in (
+        "event.description",
+        "event.assertions",
+        "event.evidence_keys",
+        "event.citations",
+        "citation_ids",
+    ):
+        assert forbidden not in creator
+
+
+def test_mw1_i4_does_not_use_legacy_timeline_or_analytical_mutation_paths():
+    source = WORKSPACE.read_text(encoding="utf-8")
+    imports = _imports(WORKSPACE)
+    assert "features.timeline" not in imports
+    assert "ui.timeline" not in imports
+    for forbidden in (
+        "governed_authority_revision",
+        "matter_analysis_change",
+        "controlled_agentic",
+        "chromadb",
+        "openai",
+    ):
+        assert forbidden not in source.lower()
+
+
+def test_mw1_i4_multi_issue_selection_is_batched_inside_task_form():
+    workspace = WORKSPACE.read_text(encoding="utf-8")
+    task_ui = (ROOT / "src" / "ui" / "solicitor_tasks.py").read_text(encoding="utf-8")
+    assert "related_issues=related_issues" in workspace
+    assert 'resolved_issue_id = st.selectbox(' in task_ui
+    form = task_ui.index("with st.form(")
+    related = task_ui.index('resolved_issue_id = st.selectbox(', form)
+    submit = task_ui.index('st.form_submit_button(', related)
+    assert form < related < submit
+
+
+def test_uxr1_working_workspace_prefers_legal_language_and_keeps_audit_available():
+    workspace = WORKSPACE.read_text(encoding="utf-8")
+    sidebar = SIDEBAR.read_text(encoding="utf-8")
+
+    assert '"review": "Legal issue review"' in workspace
+    assert '"evidence": "Evidence"' in workspace
+    assert '"chronology": "Chronology"' in workspace
+    assert '"people": "People"' in workspace
+    assert '"comparison": "Compare evidence use"' in workspace
+    assert '"traceability": "Audit / traceability"' in workspace
+    assert '_VIEW_ORDER = (\n    "review",' in workspace
+    assert 'st.title("Matter workspace")' in workspace
+    assert 'st.header("Audit / traceability")' in workspace
+    assert 'with st.expander("Audit details", expanded=False):' in workspace
+
+    assert '"📚 Matter workspace"' in sidebar
+    assert 'st.session_state["m6_workspace_view"] = "review"' in sidebar
+
+
+def test_uxr1_chronology_keeps_event_identity_in_audit_not_heading():
+    workspace = WORKSPACE.read_text(encoding="utf-8")
+
+    assert 'st.subheader(_chronology_event_heading(event))' in workspace
+    assert 'st.subheader(f"Event · {event.event_id}")' not in workspace
+    assert '_text("Event ID", event.event_id)' in workspace
+    assert 'with st.expander("Audit details", expanded=False):' in workspace
+    assert 'st.text("Event assertions")' in workspace
+
+
+def test_uxr1_preserves_i4_chronology_task_origin_identity():
+    workspace = WORKSPACE.read_text(encoding="utf-8")
+
+    assert "origin_chronology_event_id=event.event_id" in workspace
+    assert "event.related_issue_ids" in workspace
+    assert "related_issues=related_issues" in workspace
+    assert 'origin="chronology"' in workspace
+    assert "show_issue_task_creator(" in workspace

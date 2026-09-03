@@ -55,7 +55,7 @@ def test_case_selector_uses_matter_language_without_changing_persistence_contrac
     assert 'st.text_input("Respondent"' in source
 
 
-def test_sidebar_exposes_new_workspace_hierarchy_and_preserves_frozen_controls():
+def test_sidebar_exposes_solicitor_facing_workspace_hierarchy_and_preserves_controls():
     source = _source(SIDEBAR)
 
     for section in ("MATTER", "CASE INTELLIGENCE", "LEGAL WORK", "AUDIT"):
@@ -67,7 +67,7 @@ def test_sidebar_exposes_new_workspace_hierarchy_and_preserves_frozen_controls()
         "\U0001f50e Evidence",
         "\U0001f465 People",
         "\u2696\ufe0f Legal Issues",
-        "\U0001f9e0 Analysis",
+        "\U0001f4da Matter workspace",
         
         "\U0001f4ac Assistant",
         "\u270d Drafting",
@@ -83,7 +83,7 @@ def test_sidebar_exposes_new_workspace_hierarchy_and_preserves_frozen_controls()
     assert "Connected" not in source
 
 
-def test_sidebar_signature_return_and_existing_workspace_state_semantics_remain_frozen():
+def test_sidebar_signature_return_and_existing_workspace_state_namespace_remains_frozen():
     source = _source(SIDEBAR)
     tree = ast.parse(source, filename=str(SIDEBAR))
     function = next(
@@ -109,7 +109,7 @@ def test_sidebar_signature_return_and_existing_workspace_state_semantics_remain_
     ] == ["selected_documents", "timeline_clicked"]
 
     for exact in (
-        'st.session_state["m6_workspace_view"] = "traceability"',
+        'st.session_state["m6_workspace_view"] = "review"',
         'st.session_state["m6_workspace_view"] = "evidence"',
         'st.session_state["m6_workspace_view"] = "people"',
         'st.session_state["m55_main_view"] = "reports"',
@@ -189,5 +189,13 @@ def test_compare_documents_is_not_top_level_but_comparison_capability_remains():
     app = _source(APP)
 
     assert "Compare Documents" not in sidebar
-    assert "Projection Evidence-Use Comparison" in workspace
+    assert "Compare evidence use" in workspace
     assert '"comparison"' in app
+
+
+def test_uxr1_sidebar_analysis_entry_is_solicitor_facing():
+    sidebar = _source(SIDEBAR)
+
+    assert "📚 Matter workspace" in sidebar
+    assert "🧠 Analysis" not in sidebar
+    assert 'st.session_state["m6_workspace_view"] = "review"' in sidebar

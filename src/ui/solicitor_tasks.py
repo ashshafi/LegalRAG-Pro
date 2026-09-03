@@ -43,6 +43,8 @@ def _origin_label(origin: TaskOrigin) -> str:
         return "What remains unclear"
     if origin is TaskOrigin.EVIDENCE:
         return "Evidence"
+    if origin is TaskOrigin.CHRONOLOGY:
+        return "Chronology"
     raise ValueError(origin)
 
 
@@ -53,6 +55,29 @@ def _evidence_label(citation, document_name, page) -> str:
     if page is not None:
         value += f" — p.{page}"
     return value
+
+
+def _humanise_token(value: str | None) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    if "_" in raw or ("-" in raw and " " not in raw):
+        return " ".join(raw.replace("_", " ").replace("-", " ").split()).lower().capitalize()
+    return raw
+
+
+def _chronology_label(event_id, chronology_time, event_type) -> str:
+    context = " · ".join(
+        value
+        for value in (
+            str(chronology_time or "").strip(),
+            _humanise_token(event_type),
+        )
+        if value
+    )
+    # The immutable event ID remains task provenance, but it is not solicitor-facing
+    # display text when no useful chronology context is available.
+    return context or "Chronology event"
 
 
 def show_issue_task_creator(
@@ -68,6 +93,10 @@ def show_issue_task_creator(
     origin_evidence_citation: str | None = None,
     origin_document_name: str | None = None,
     origin_page: int | None = None,
+    origin_chronology_event_id: str | None = None,
+    origin_chronology_time: str | None = None,
+    origin_chronology_event_type: str | None = None,
+    related_issues: tuple[tuple[str, str], ...] | None = None,
 ) -> None:
     task_origin = TaskOrigin(origin)
     key = "::".join(
@@ -76,7 +105,7 @@ def show_issue_task_creator(
             case_id,
             issue_analysis_id,
             task_origin.value,
-            origin_evidence_key or "no-evidence",
+            origin_evidence_key or origin_chronology_event_id or "no-origin-reference",
         )
     )
 
@@ -112,8 +141,20 @@ def show_issue_task_creator(
                 key=key + "::assigned",
             )
 
-            st.markdown("**Related issue**")
-            st.write(issue_name)
+            resolved_issue_id = issue_analysis_id
+            resolved_issue_name = issue_name
+            if related_issues:
+                issue_names = dict(related_issues)
+                resolved_issue_id = st.selectbox(
+                    "Related issue",
+                    options=tuple(issue_names),
+                    key=key + "::related_issue",
+                    format_func=lambda value: issue_names[value],
+                )
+                resolved_issue_name = issue_names[resolved_issue_id]
+            else:
+                st.markdown("**Related issue**")
+                st.write(issue_name)
 
             if task_origin is TaskOrigin.EVIDENCE:
                 st.markdown("**Evidence**")
@@ -122,6 +163,15 @@ def show_issue_task_creator(
                         origin_evidence_citation,
                         origin_document_name,
                         origin_page,
+                    )
+                )
+            elif task_origin is TaskOrigin.CHRONOLOGY:
+                st.markdown("**Chronology event**")
+                st.write(
+                    _chronology_label(
+                        origin_chronology_event_id,
+                        origin_chronology_time,
+                        origin_chronology_event_type,
                     )
                 )
 
@@ -148,8 +198,8 @@ def show_issue_task_creator(
                     priority=_from_label(_PRIORITY, priority_label),
                     due_date=due_date,
                     assigned_to=assigned_to,
-                    issue_analysis_id=issue_analysis_id,
-                    issue_name=issue_name,
+                    issue_analysis_id=resolved_issue_id,
+                    issue_name=resolved_issue_name,
                     originating_question=originating_question,
                     origin=task_origin,
                     why_it_matters=why_it_matters,
@@ -157,6 +207,9 @@ def show_issue_task_creator(
                     origin_evidence_citation=origin_evidence_citation,
                     origin_document_name=origin_document_name,
                     origin_page=origin_page,
+                    origin_chronology_event_id=origin_chronology_event_id,
+                    origin_chronology_time=origin_chronology_time,
+                    origin_chronology_event_type=origin_chronology_event_type,
                 )
             except SolicitorTaskError as exc:
                 st.error(str(exc))
@@ -192,6 +245,15 @@ def _render_task(task: SolicitorTask) -> None:
                     task.origin_evidence_citation,
                     task.origin_document_name,
                     task.origin_page,
+                )
+            )
+        elif task.origin is TaskOrigin.CHRONOLOGY:
+            st.markdown("**Chronology event**")
+            st.write(
+                _chronology_label(
+                    task.origin_chronology_event_id,
+                    task.origin_chronology_time,
+                    task.origin_chronology_event_type,
                 )
             )
 

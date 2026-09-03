@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from dataclasses import dataclass
+from hashlib import sha256
 import os
 from pathlib import Path
 import stat
+from threading import RLock
 
 from case_analysis.m2.matrix_serialization import dumps_case_matrices, loads_case_matrices
 from governed_evidence_analysis.serialization import (
@@ -55,6 +58,67 @@ _OBJECT_FILENAMES = frozenset(
 
 class GovernedAnalyticalAuthorityProviderError(RuntimeError):
     """Raised when selected persisted authority state is present but invalid."""
+
+
+@dataclass(frozen=True, slots=True)
+class _RuntimeAuthorityCacheEntry:
+    authority: GovernedRuntimeAnalyticalAuthority
+    directories: tuple[str, ...]
+    exact_listing_directories: tuple[str, ...]
+    files: tuple[str, ...]
+    fingerprint: str
+
+
+_RUNTIME_AUTHORITY_CACHE_LIMIT = 4
+_RUNTIME_AUTHORITY_CACHE: OrderedDict[
+    tuple[str, str],
+    _RuntimeAuthorityCacheEntry,
+] = OrderedDict()
+_RUNTIME_AUTHORITY_CACHE_LOCK = RLock()
+
+
+def _drop_runtime_authority_cache(case_id: str) -> None:
+    with _RUNTIME_AUTHORITY_CACHE_LOCK:
+        stale = tuple(
+            key for key in _RUNTIME_AUTHORITY_CACHE
+            if key[0] == case_id
+        )
+        for key in stale:
+            _RUNTIME_AUTHORITY_CACHE.pop(key, None)
+
+
+def _runtime_authority_cache_get(
+    *,
+    case_id: str,
+    root_identity: str,
+) -> _RuntimeAuthorityCacheEntry | None:
+    key = (case_id, root_identity)
+    with _RUNTIME_AUTHORITY_CACHE_LOCK:
+        value = _RUNTIME_AUTHORITY_CACHE.get(key)
+        if value is None:
+            return None
+        _RUNTIME_AUTHORITY_CACHE.move_to_end(key)
+        return value
+
+
+def _runtime_authority_cache_put(
+    *,
+    case_id: str,
+    root_identity: str,
+    entry: _RuntimeAuthorityCacheEntry,
+) -> None:
+    key = (case_id, root_identity)
+    with _RUNTIME_AUTHORITY_CACHE_LOCK:
+        stale = tuple(
+            candidate for candidate in _RUNTIME_AUTHORITY_CACHE
+            if candidate[0] == case_id and candidate != key
+        )
+        for candidate in stale:
+            _RUNTIME_AUTHORITY_CACHE.pop(candidate, None)
+        _RUNTIME_AUTHORITY_CACHE[key] = entry
+        _RUNTIME_AUTHORITY_CACHE.move_to_end(key)
+        while len(_RUNTIME_AUTHORITY_CACHE) > _RUNTIME_AUTHORITY_CACHE_LIMIT:
+            _RUNTIME_AUTHORITY_CACHE.popitem(last=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,6 +213,101 @@ def _read_utf8(path: Path, *, root: Path) -> str:
         raise GovernedAnalyticalAuthorityProviderError(
             f"Governed authority file could not be read as strict UTF-8: {path.name}"
         ) from exc
+
+
+def _runtime_cache_dependencies(
+    *,
+    chain: tuple[object, ...],
+) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+    authority_ids: list[str] = []
+    seen_authorities: set[str] = set()
+    receipt_files: list[str] = []
+
+    for receipt in chain:
+        authority_id = str(receipt.new_authority_id)
+        if authority_id not in seen_authorities:
+            seen_authorities.add(authority_id)
+            authority_ids.append(authority_id)
+        receipt_files.append(
+            "activations/"
+            + sha256_storage_name(
+                str(receipt.activation_id),
+                field_name="activation_id",
+            )
+            + ".json"
+        )
+
+    object_directories = tuple(
+        "objects/"
+        + sha256_storage_name(authority_id, field_name="authority_id")
+        for authority_id in authority_ids
+    )
+    files: list[str] = ["active.json", *receipt_files]
+    for directory in object_directories:
+        files.extend(
+            f"{directory}/{filename}"
+            for filename in sorted(_OBJECT_FILENAMES)
+        )
+
+    directories = ("objects", "activations", *object_directories)
+    return directories, object_directories, tuple(files)
+
+
+def _runtime_cache_fingerprint(
+    case_root: Path,
+    *,
+    root: Path,
+    root_identity: str,
+    directories: tuple[str, ...],
+    exact_listing_directories: tuple[str, ...],
+    files: tuple[str, ...],
+) -> str:
+    """Hash exactly the filesystem state that the validated provider result depended on."""
+
+    digest = sha256()
+    digest.update(b"legalrag-governed-authority-cache-dependencies/1\0")
+    digest.update(root_identity.encode("utf-8"))
+    digest.update(b"\0")
+
+    for relative in directories:
+        directory = case_root / Path(relative)
+        _require_safe_directory(directory, root=root)
+        digest.update(b"D\0")
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+
+    for relative in exact_listing_directories:
+        directory = case_root / Path(relative)
+        _require_safe_directory(directory, root=root)
+        try:
+            names = tuple(sorted(item.name for item in directory.iterdir()))
+        except OSError as exc:
+            raise GovernedAnalyticalAuthorityProviderError(
+                "Unable to inspect immutable governed authority object for cache identity."
+            ) from exc
+        digest.update(b"L\0")
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        for name in names:
+            digest.update(name.encode("utf-8"))
+            digest.update(b"\0")
+
+    for relative in files:
+        path = case_root / Path(relative)
+        _require_safe_file(path, root=root)
+        try:
+            payload = path.read_bytes()
+        except OSError as exc:
+            raise GovernedAnalyticalAuthorityProviderError(
+                "Unable to read governed authority dependency for cache identity."
+            ) from exc
+        digest.update(b"F\0")
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(len(payload).to_bytes(8, "big"))
+        digest.update(sha256(payload).digest())
+
+    return digest.hexdigest()
 
 
 def _load_published_authority(
@@ -331,15 +490,41 @@ def load_active_governed_analytical_authority(
 
     governed_root = _authority_root()
     if not governed_root.exists():
+        _drop_runtime_authority_cache(canonical_case_id)
         return None
     _require_safe_directory(governed_root, root=governed_root)
     case_root = governed_root / canonical_case_id
     if not case_root.exists():
+        _drop_runtime_authority_cache(canonical_case_id)
         return None
     _require_safe_directory(case_root, root=governed_root)
     active_path = case_root / "active.json"
     if not active_path.exists():
+        _drop_runtime_authority_cache(canonical_case_id)
         return None
+
+    try:
+        root_identity = str(governed_root.resolve(strict=True))
+    except OSError as exc:
+        raise GovernedAnalyticalAuthorityProviderError(
+            "Governed authority root could not be resolved for cache identity."
+        ) from exc
+
+    cached = _runtime_authority_cache_get(
+        case_id=canonical_case_id,
+        root_identity=root_identity,
+    )
+    if cached is not None:
+        current_fingerprint = _runtime_cache_fingerprint(
+            case_root,
+            root=governed_root,
+            root_identity=root_identity,
+            directories=cached.directories,
+            exact_listing_directories=cached.exact_listing_directories,
+            files=cached.files,
+        )
+        if current_fingerprint == cached.fingerprint:
+            return cached.authority
 
     active_payload = _read_utf8(active_path, root=governed_root)
     try:
@@ -384,7 +569,7 @@ def load_active_governed_analytical_authority(
             "Active pointer bytes do not match their activation receipt."
         )
 
-    return GovernedRuntimeAnalyticalAuthority(
+    runtime_authority = GovernedRuntimeAnalyticalAuthority(
         manifest=published.manifest,
         structured_legal_analysis_results=published.structured_legal_analysis_results,
         case_matrices=published.case_matrices,
@@ -393,6 +578,30 @@ def load_active_governed_analytical_authority(
         active_pointer=pointer,
         activation_receipt=receipt,
     )
+
+    directories, exact_listing_directories, files = _runtime_cache_dependencies(
+        chain=chain,
+    )
+    fingerprint = _runtime_cache_fingerprint(
+        case_root,
+        root=governed_root,
+        root_identity=root_identity,
+        directories=directories,
+        exact_listing_directories=exact_listing_directories,
+        files=files,
+    )
+    _runtime_authority_cache_put(
+        case_id=canonical_case_id,
+        root_identity=root_identity,
+        entry=_RuntimeAuthorityCacheEntry(
+            authority=runtime_authority,
+            directories=directories,
+            exact_listing_directories=exact_listing_directories,
+            files=files,
+            fingerprint=fingerprint,
+        ),
+    )
+    return runtime_authority
 
 
 __all__ = [
