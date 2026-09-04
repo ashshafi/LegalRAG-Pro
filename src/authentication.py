@@ -111,11 +111,54 @@ def _stop_with_error(message: str) -> None:
     st.stop()
 
 
+_LOCAL_DEV_AUTH_ENV = "LEGALRAG_LOCAL_DEV_AUTH"
+_LOCAL_DEV_EMAIL_ENV = "LEGALRAG_LOCAL_DEV_EMAIL"
+_LOOPBACK_SERVER_ADDRESSES = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+def _local_dev_auth_requested() -> bool:
+    return os.getenv(_LOCAL_DEV_AUTH_ENV, "").strip() == "1"
+
+
+def _local_dev_identity_email(allowed_emails: frozenset[str]) -> str | None:
+    if not _local_dev_auth_requested():
+        return None
+    try:
+        server_address = str(st.get_option("server.address") or "").strip().lower()
+    except Exception as exc:
+        raise PermissionError(
+            "Local development authentication cannot verify the server binding."
+        ) from exc
+    if server_address not in _LOOPBACK_SERVER_ADDRESSES:
+        raise PermissionError(
+            "Local development authentication requires a loopback-only server binding."
+        )
+    email = normalise_email(os.getenv(_LOCAL_DEV_EMAIL_ENV))
+    if email is None:
+        raise PermissionError(
+            "Local development authentication requires LEGALRAG_LOCAL_DEV_EMAIL."
+        )
+    if not is_email_authorised(email, allowed_emails):
+        raise PermissionError(
+            "The configured local development account is not authorised for LegalRAG Pro."
+        )
+    return email
+
 def require_private_access() -> str:
     """Require authenticated and explicitly authorised private access."""
     allowed_emails = parse_allowed_emails(os.getenv(_ALLOWED_EMAILS_ENV))
     if not allowed_emails:
         _stop_with_error("LegalRAG private access is not configured.")
+
+    try:
+        local_email = _local_dev_identity_email(allowed_emails)
+    except PermissionError as exc:
+        _stop_with_error(str(exc))
+        raise AssertionError("unreachable") from exc
+
+    if local_email is not None:
+        st.sidebar.caption("Local development authentication")
+        return local_email
 
     provider_value = os.getenv(_PROVIDER_ENV, "").strip()
     provider = provider_value or None
@@ -130,8 +173,7 @@ def require_private_access() -> str:
 
     if not logged_in:
         st.title("LegalRAG Pro")
-        st.info("Private access. Sign in to continue.")
-
+        st.info("Sign in to access this private LegalRAG Pro workspace.")
         if st.button("Log in", key="legalrag_login"):
             try:
                 if provider is None:
@@ -141,7 +183,6 @@ def require_private_access() -> str:
             except Exception as exc:
                 LOGGER.error("OIDC login initiation failed: %s", type(exc).__name__)
                 st.error("Sign-in is unavailable. Check the OIDC configuration.")
-
         st.stop()
 
     email = extract_user_email(st.user)
@@ -154,9 +195,18 @@ def require_private_access() -> str:
     return email
 
 
+
 def current_user_identity():
     """Return the current canonical LegalRAG user after the auth boundary."""
     from case_management.access import UserIdentity
+
+    allowed_emails = parse_allowed_emails(os.getenv(_ALLOWED_EMAILS_ENV))
+    if not allowed_emails:
+        raise PermissionError("LegalRAG private access is not configured.")
+
+    local_email = _local_dev_identity_email(allowed_emails)
+    if local_email is not None:
+        return UserIdentity.from_email(local_email)
 
     try:
         logged_in = bool(st.user.is_logged_in)
@@ -165,4 +215,6 @@ def current_user_identity():
     email = extract_user_email(st.user) if logged_in else None
     if email is None:
         raise PermissionError("No authenticated LegalRAG user identity is available.")
+    if not is_email_authorised(email, allowed_emails):
+        raise PermissionError("The authenticated LegalRAG user is not authorised.")
     return UserIdentity.from_email(email)
