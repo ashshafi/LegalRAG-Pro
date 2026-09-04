@@ -130,6 +130,40 @@ class CaseRepository:
         membership = self._membership_from_row(row)
         return MatterAccessContext(user=user, membership=membership)
 
+    def list_memberships(
+        self,
+        *,
+        actor: UserIdentity,
+        case_id: str,
+    ) -> tuple[tuple[UserIdentity, MatterMembership], ...]:
+        """Return active matter members when the actor can access the matter."""
+        self.require_access(actor, case_id)
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT u.user_id, u.email, m.case_id, m.role, m.status
+                FROM matter_memberships AS m
+                INNER JOIN legalrag_users AS u ON u.user_id = m.user_id
+                WHERE m.case_id = ? AND m.status = ?
+                ORDER BY
+                    CASE m.role
+                        WHEN 'owner' THEN 0
+                        WHEN 'solicitor' THEN 1
+                        WHEN 'reviewer' THEN 2
+                        ELSE 3
+                    END,
+                    u.email ASC
+                """,
+                (case_id, MembershipStatus.ACTIVE.value),
+            ).fetchall()
+        return tuple(
+            (
+                UserIdentity(user_id=row["user_id"], email=row["email"]),
+                self._membership_from_row(row),
+            )
+            for row in rows
+        )
+
     def grant_membership(
         self,
         *,

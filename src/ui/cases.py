@@ -7,7 +7,7 @@ import logging
 import streamlit as st
 
 from authentication import current_user_identity
-from case_management import Case, CaseRepository, MatterAccessError
+from case_management import Case, CaseRepository, MatterAccessError, MatterRole, UserIdentity
 
 LOGGER = logging.getLogger(__name__)
 
@@ -69,6 +69,9 @@ def show_case_selector(repository: CaseRepository | None = None) -> Case | None:
             _show_edit_case_form(repo, active_case)
         else:
             st.caption("You have read-only access to this matter.")
+
+    with st.sidebar.expander("👥 Matter access"):
+        _show_matter_access(repo, active_case, user=user, access=access)
 
     with st.sidebar.expander("📥 Assign legacy documents"):
         if access.membership.can_manage_matter:
@@ -188,6 +191,107 @@ def _show_edit_case_form(repository: CaseRepository, case: Case) -> None:
         return
 
     st.success("Matter updated.")
+    st.rerun()
+
+
+
+def _show_matter_access(
+    repository: CaseRepository,
+    case: Case,
+    *,
+    user: UserIdentity,
+    access,
+) -> None:
+    """Show current matter members and owner-only sharing controls."""
+
+    try:
+        members = repository.list_memberships(actor=user, case_id=case.case_id)
+    except MatterAccessError:
+        st.error("You no longer have access to this matter.")
+        st.session_state.pop(ACTIVE_CASE_KEY, None)
+        return
+
+    role_labels = {
+        MatterRole.OWNER: "Owner",
+        MatterRole.SOLICITOR: "Solicitor",
+        MatterRole.REVIEWER: "Reviewer",
+        MatterRole.READ_ONLY: "Read only",
+    }
+
+    st.caption(f"Your role: {role_labels[access.role]}")
+
+    for member_user, membership in members:
+        label = role_labels[membership.role]
+        if member_user.user_id == user.user_id:
+            st.write(f"{member_user.email} — {label} (you)")
+            continue
+
+        left, right = st.columns([3, 1])
+        left.write(f"{member_user.email} — {label}")
+        if access.role is MatterRole.OWNER:
+            if right.button(
+                "Remove",
+                key=f"revoke_member_{case.case_id}_{member_user.user_id}",
+            ):
+                try:
+                    repository.revoke_membership(
+                        actor=user,
+                        case_id=case.case_id,
+                        user=member_user,
+                    )
+                except MatterAccessError as exc:
+                    st.error(str(exc))
+                    return
+                st.success(f"Removed {member_user.email}.")
+                st.rerun()
+
+    if access.role is not MatterRole.OWNER:
+        st.caption("Only the matter owner can add, change or remove access.")
+        return
+
+    with st.form(f"share_matter_{case.case_id}", clear_on_submit=True):
+        email = st.text_input(
+            "User email",
+            key=f"share_email_{case.case_id}",
+            help="The user must also be authorised by the LegalRAG sign-in allowlist.",
+        )
+        role = st.selectbox(
+            "Role",
+            options=(
+                MatterRole.SOLICITOR,
+                MatterRole.REVIEWER,
+                MatterRole.READ_ONLY,
+            ),
+            format_func=lambda value: role_labels[value],
+            key=f"share_role_{case.case_id}",
+        )
+        submitted = st.form_submit_button(
+            "Add or update access",
+            use_container_width=True,
+        )
+
+    if not submitted:
+        return
+
+    try:
+        member_user = UserIdentity.from_email(email)
+        if member_user.user_id == user.user_id:
+            raise ValueError("The owner role cannot be changed here.")
+        repository.grant_membership(
+            actor=user,
+            case_id=case.case_id,
+            user=member_user,
+            role=role,
+        )
+    except (TypeError, ValueError, MatterAccessError) as exc:
+        st.error(str(exc))
+        return
+    except Exception:
+        LOGGER.exception("Unable to update matter access for %s.", case.case_id)
+        st.error("Matter access could not be updated.")
+        return
+
+    st.success(f"Access updated for {member_user.email}.")
     st.rerun()
 
 

@@ -121,3 +121,55 @@ def test_schema_has_users_and_memberships_without_altering_cases_columns(tmp_pat
         "status", "created_at", "updated_at",
     ]
     assert {"legalrag_users", "matter_memberships"} <= tables
+
+
+def test_member_listing_requires_access_and_exposes_only_active_members(tmp_path):
+    repo = CaseRepository(tmp_path / "cases.sqlite3")
+    owner = user("owner@example.com")
+    solicitor = user("solicitor@example.com")
+    reviewer = user("reviewer@example.com")
+    outsider = user("outsider@example.com")
+    case = Case.create("Shared matter")
+    repo.create_for_user(case, owner)
+    repo.grant_membership(
+        actor=owner, case_id=case.case_id, user=solicitor, role=MatterRole.SOLICITOR
+    )
+    repo.grant_membership(
+        actor=owner, case_id=case.case_id, user=reviewer, role=MatterRole.REVIEWER
+    )
+
+    members = repo.list_memberships(actor=solicitor, case_id=case.case_id)
+    assert [(u.email, m.role) for u, m in members] == [
+        ("owner@example.com", MatterRole.OWNER),
+        ("solicitor@example.com", MatterRole.SOLICITOR),
+        ("reviewer@example.com", MatterRole.REVIEWER),
+    ]
+
+    with pytest.raises(MatterAccessError):
+        repo.list_memberships(actor=outsider, case_id=case.case_id)
+
+    repo.revoke_membership(actor=owner, case_id=case.case_id, user=reviewer)
+    assert [u.email for u, _ in repo.list_memberships(actor=owner, case_id=case.case_id)] == [
+        "owner@example.com",
+        "solicitor@example.com",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("role", "can_manage"),
+    [
+        (MatterRole.OWNER, True),
+        (MatterRole.SOLICITOR, True),
+        (MatterRole.REVIEWER, False),
+        (MatterRole.READ_ONLY, False),
+    ],
+)
+def test_role_capability_contract(role, can_manage):
+    from case_management import MatterMembership
+
+    membership = MatterMembership(
+        case_id="case-1",
+        user_id="user-1",
+        role=role,
+    )
+    assert membership.can_manage_matter is can_manage
