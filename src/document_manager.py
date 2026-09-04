@@ -1,6 +1,7 @@
 """Document metadata and migration operations for LegalRAG Pro."""
 
 from __future__ import annotations
+from case_management.access import MatterAccessContext, require_matter_mutation
 
 from pathlib import Path
 
@@ -56,7 +57,10 @@ def preview_legacy_assignment(
     )
 
 
-def commit_legacy_assignment(plan: LegacyAssignmentPlan) -> int:
+def commit_legacy_assignment(plan: LegacyAssignmentPlan, *, access: MatterAccessContext) -> int:
     """Assign reviewed legacy chunks to a case without re-embedding."""
 
+    require_matter_mutation(access)
+    if access.case_id != plan.case_id:
+        raise PermissionError("Matter access does not match legacy assignment case_id.")
     return apply_legacy_assignment(collection, plan)

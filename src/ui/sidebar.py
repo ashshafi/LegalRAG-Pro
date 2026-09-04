@@ -1,6 +1,8 @@
 """Streamlit sidebar for case-scoped documents and matter-workspace navigation."""
 
 from __future__ import annotations
+from authentication import current_user_identity
+from case_management import CaseRepository
 
 import logging
 
@@ -48,10 +50,12 @@ def _show_case_upload(active_case_id: str | None, docs: list[str]) -> None:
     try:
         with st.sidebar:
             with st.spinner("Uploading and indexing PDF..."):
+                access = CaseRepository().require_access(current_user_identity(), active_case_id)
                 result = upload_case_pdf(
                     filename=uploaded_file.name,
                     content=uploaded_file.getvalue(),
                     case_id=active_case_id,
+                    access=access,
                 )
     except DocumentUploadError as exc:
         st.error(str(exc))

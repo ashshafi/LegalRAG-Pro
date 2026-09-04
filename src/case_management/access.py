@@ -94,3 +94,14 @@ __all__ = [
     "MembershipStatus",
     "UserIdentity",
 ]
+class MatterMutationError(PermissionError):
+    """Raised when a validated matter member is not permitted to mutate the matter."""
+
+
+def require_matter_mutation(access: MatterAccessContext) -> MatterAccessContext:
+    """Fail closed unless validated matter access carries mutation authority."""
+    if not isinstance(access, MatterAccessContext):
+        raise MatterMutationError("Validated matter access is required for mutation.")
+    if not access.membership.can_manage_matter:
+        raise MatterMutationError(f"The {access.role.value} role cannot modify this matter.")
+    return access

@@ -66,7 +66,7 @@ def show_case_selector(repository: CaseRepository | None = None) -> Case | None:
 
     with st.sidebar.expander("✏️ Edit active matter"):
         if access.membership.can_manage_matter:
-            _show_edit_case_form(repo, active_case)
+            _show_edit_case_form(repo, active_case, access=access)
         else:
             st.caption("You have read-only access to this matter.")
 
@@ -75,7 +75,7 @@ def show_case_selector(repository: CaseRepository | None = None) -> Case | None:
 
     with st.sidebar.expander("📥 Assign legacy documents"):
         if access.membership.can_manage_matter:
-            _show_legacy_assignment(active_case)
+            _show_legacy_assignment(active_case, access=access)
         else:
             st.caption("Your role does not allow legacy document assignment.")
 
@@ -148,7 +148,7 @@ def _show_create_case_form(
     st.rerun()
 
 
-def _show_edit_case_form(repository: CaseRepository, case: Case) -> None:
+def _show_edit_case_form(repository: CaseRepository, case: Case, *, access) -> None:
     """Render the active-case edit form and persist submitted changes."""
 
     form_key = f"edit_case_{case.case_id}"
@@ -181,7 +181,7 @@ def _show_edit_case_form(repository: CaseRepository, case: Case) -> None:
             respondent=respondent,
             status=status,
         )
-        repository.update(updated)
+        repository.update(updated, access=access)
     except ValueError as exc:
         st.error(str(exc))
         return
@@ -295,7 +295,7 @@ def _show_matter_access(
     st.rerun()
 
 
-def _show_legacy_assignment(case: Case) -> None:
+def _show_legacy_assignment(case: Case, *, access) -> None:
     """Render a reviewed migration workflow for pre-case-management documents."""
 
     try:
@@ -345,7 +345,7 @@ def _show_legacy_assignment(case: Case) -> None:
         key=f"assign_legacy_{case.case_id}_{filename}",
     ):
         try:
-            assigned = commit_legacy_assignment(plan)
+            assigned = commit_legacy_assignment(plan, access=access)
         except Exception:
             LOGGER.exception("Unable to commit legacy assignment.")
             st.error("The legacy document could not be assigned.")

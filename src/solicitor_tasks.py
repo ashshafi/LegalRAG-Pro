@@ -9,6 +9,7 @@ Schema 1.1 extends the same task event format for Evidence-origin provenance.
 Schema 1.2 extends that same format for Chronology-origin provenance.
 """
 from __future__ import annotations
+from case_management.access import MatterAccessContext, require_matter_mutation
 
 import json
 import os
@@ -304,6 +305,7 @@ def _append(task: SolicitorTask, event_type: str, root=None) -> None:
 def create_task(
     *,
     case_id: str,
+    access: MatterAccessContext,
     title: str,
     priority: TaskPriority | str,
     issue_analysis_id: str,
@@ -322,6 +324,9 @@ def create_task(
     origin_chronology_event_type=None,
     root=None,
 ) -> SolicitorTask:
+    require_matter_mutation(access)
+    if access.case_id != case_id:
+        raise SolicitorTaskError("Matter access does not match task case_id.")
     try:
         priority_value = TaskPriority(priority)
         origin_value = TaskOrigin(origin)
@@ -428,6 +433,7 @@ def load_tasks(case_id: str, *, root=None) -> tuple[SolicitorTask, ...]:
 def update_task(
     *,
     case_id: str,
+    access: MatterAccessContext,
     task_id: str,
     title=None,
     status: TaskStatus | str | None = None,
@@ -438,6 +444,9 @@ def update_task(
     assigned_to_supplied: bool = False,
     root=None,
 ) -> SolicitorTask:
+    require_matter_mutation(access)
+    if access.case_id != case_id:
+        raise SolicitorTaskError("Matter access does not match task case_id.")
     current = {task.task_id: task for task in load_tasks(case_id, root=root)}.get(task_id)
     if current is None:
         raise SolicitorTaskError("Task was not found in this matter.")

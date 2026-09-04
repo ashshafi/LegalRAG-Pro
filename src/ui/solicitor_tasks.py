@@ -1,5 +1,8 @@
 """Solicitor-facing Matter Workflow v1 task surfaces."""
 from __future__ import annotations
+from authentication import current_user_identity
+from case_management import CaseRepository
+from case_management.access import MatterMutationError
 
 from datetime import date
 import streamlit as st
@@ -194,6 +197,7 @@ def show_issue_task_creator(
             try:
                 task = create_task(
                     case_id=case_id,
+                    access=CaseRepository().require_access(current_user_identity(), case_id),
                     title=title,
                     priority=_from_label(_PRIORITY, priority_label),
                     due_date=due_date,
@@ -211,7 +215,7 @@ def show_issue_task_creator(
                     origin_chronology_time=origin_chronology_time,
                     origin_chronology_event_type=origin_chronology_event_type,
                 )
-            except SolicitorTaskError as exc:
+            except (SolicitorTaskError, MatterMutationError) as exc:
                 st.error(str(exc))
             else:
                 st.success("Task created: " + task.title)
@@ -306,6 +310,7 @@ def _render_task(task: SolicitorTask) -> None:
                 try:
                     update_task(
                         case_id=task.case_id,
+                        access=CaseRepository().require_access(current_user_identity(), task.case_id),
                         task_id=task.task_id,
                         title=title,
                         status=_from_label(_STATUS, status_label),
@@ -315,7 +320,7 @@ def _render_task(task: SolicitorTask) -> None:
                         assigned_to=assigned_to,
                         assigned_to_supplied=True,
                     )
-                except SolicitorTaskError as exc:
+                except (SolicitorTaskError, MatterMutationError) as exc:
                     st.error(str(exc))
                 else:
                     st.success("Task updated.")
@@ -335,7 +340,7 @@ def show_solicitor_tasks(case_id: str) -> None:
 
     try:
         tasks = load_tasks(case_id)
-    except SolicitorTaskError as exc:
+    except (SolicitorTaskError, MatterMutationError) as exc:
         st.error(str(exc))
         return
 

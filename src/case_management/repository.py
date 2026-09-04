@@ -15,6 +15,7 @@ from case_management.access import (
     MatterRole,
     MembershipStatus,
     UserIdentity,
+    require_matter_mutation,
 )
 from case_management.models import Case
 
@@ -247,7 +248,8 @@ class CaseRepository:
                 )
         return case_ids
 
-    def update(self, case: Case) -> Case:
+    def update(self, case: Case, *, access: MatterAccessContext) -> Case:
+        require_matter_mutation(access)
         with self._connect() as connection:
             cursor = connection.execute(
                 """

@@ -1,6 +1,7 @@
 """Case-aware PDF upload service for LegalRAG Pro."""
 
 from __future__ import annotations
+from case_management.access import MatterAccessContext, require_matter_mutation
 
 import logging
 from dataclasses import dataclass
@@ -70,6 +71,7 @@ def upload_case_pdf(
     filename: str,
     content: bytes,
     case_id: str,
+    access: MatterAccessContext,
     docs_folder: str | Path = "docs",
     indexer: Indexer | None = None,
 ) -> DocumentUploadResult:
@@ -90,7 +92,10 @@ def upload_case_pdf(
         DocumentUploadError: If validation, storage, or indexing fails.
     """
 
+    require_matter_mutation(access)
     cleaned_case_id = normalise_case_id(case_id)
+    if access.case_id != cleaned_case_id:
+        raise DocumentUploadError("Matter access does not match upload case_id.")
     if cleaned_case_id is None:
         raise DocumentUploadError(
             "Select or create an active case before uploading a document."
