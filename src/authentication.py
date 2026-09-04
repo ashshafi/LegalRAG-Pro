@@ -152,3 +152,17 @@ def require_private_access() -> str:
 
     st.sidebar.button("Log out", key="legalrag_logout", on_click=st.logout)
     return email
+
+
+def current_user_identity():
+    """Return the current canonical LegalRAG user after the auth boundary."""
+    from case_management.access import UserIdentity
+
+    try:
+        logged_in = bool(st.user.is_logged_in)
+    except Exception:
+        logged_in = False
+    email = extract_user_email(st.user) if logged_in else None
+    if email is None:
+        raise PermissionError("No authenticated LegalRAG user identity is available.")
+    return UserIdentity.from_email(email)

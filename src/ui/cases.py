@@ -6,7 +6,8 @@ import logging
 
 import streamlit as st
 
-from case_management import Case, CaseRepository
+from authentication import current_user_identity
+from case_management import Case, CaseRepository, MatterAccessError
 
 LOGGER = logging.getLogger(__name__)
 
@@ -28,13 +29,14 @@ def show_case_selector(repository: CaseRepository | None = None) -> Case | None:
     """
 
     repo = repository or CaseRepository()
-    cases = repo.list_all()
+    user = current_user_identity()
+    cases = repo.list_for_user(user)
 
     st.sidebar.title("🗂 Matters")
 
     if not cases:
         st.sidebar.info("No matters yet. Create your first matter below.")
-        _show_create_case_form(repo)
+        _show_create_case_form(repo, user=user)
         st.session_state.pop(ACTIVE_CASE_KEY, None)
         st.sidebar.divider()
         return None
@@ -57,14 +59,22 @@ def show_case_selector(repository: CaseRepository | None = None) -> Case | None:
     if active_case.case_number:
         st.sidebar.caption(f"Reference: {active_case.case_number}")
 
+    access = repo.require_access(user, active_case.case_id)
+
     with st.sidebar.expander("➕ Create matter"):
-        _show_create_case_form(repo, embedded=True)
+        _show_create_case_form(repo, user=user, embedded=True)
 
     with st.sidebar.expander("✏️ Edit active matter"):
-        _show_edit_case_form(repo, active_case)
+        if access.membership.can_manage_matter:
+            _show_edit_case_form(repo, active_case)
+        else:
+            st.caption("You have read-only access to this matter.")
 
     with st.sidebar.expander("📥 Assign legacy documents"):
-        _show_legacy_assignment(active_case)
+        if access.membership.can_manage_matter:
+            _show_legacy_assignment(active_case)
+        else:
+            st.caption("Your role does not allow legacy document assignment.")
 
     st.sidebar.divider()
     return active_case
@@ -95,6 +105,7 @@ def _case_label(case: Case) -> str:
 def _show_create_case_form(
     repository: CaseRepository,
     *,
+    user,
     embedded: bool = False,
 ) -> None:
     """Render the create-case form and persist valid submissions."""
@@ -120,7 +131,7 @@ def _show_create_case_form(
             claimant=claimant,
             respondent=respondent,
         )
-        repository.create(case)
+        repository.create_for_user(case, user)
     except ValueError as exc:
         st.error(str(exc))
         return

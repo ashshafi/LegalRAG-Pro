@@ -1,5 +1,12 @@
 """Case management domain and persistence components."""
 
+from case_management.access import (
+    MatterAccessContext,
+    MatterMembership,
+    MatterRole,
+    MembershipStatus,
+    UserIdentity,
+)
 from case_management.document_context import (
     CASE_ID_METADATA_KEY,
     build_chunk_metadata,
@@ -15,7 +22,7 @@ from case_management.migration import (
     list_legacy_documents,
 )
 from case_management.models import Case
-from case_management.repository import CaseNotFoundError, CaseRepository
+from case_management.repository import CaseNotFoundError, CaseRepository, MatterAccessError
 from case_management.retrieval_scope import build_retrieval_filter
 
 __all__ = [
@@ -23,7 +30,12 @@ __all__ = [
     "Case",
     "CaseNotFoundError",
     "CaseRepository",
+    "MatterAccessError",
     "LegacyAssignmentPlan",
+    "MatterAccessContext",
+    "MatterMembership",
+    "MatterRole",
+    "MembershipStatus",
     "apply_legacy_assignment",
     "assign_legacy_document",
     "build_chunk_metadata",
@@ -33,4 +45,5 @@ __all__ = [
     "build_retrieval_filter",
     "list_legacy_documents",
     "normalise_case_id",
+    "UserIdentity",
 ]
