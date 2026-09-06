@@ -1,3 +1,8 @@
+from ai_provider_policy import (
+    AIDataClassification,
+    AIProcessingPurpose,
+    assert_ai_processing_allowed,
+)
 from config import openai_client
 from models import CHAT_MODEL
 
@@ -25,9 +30,17 @@ Question:
 {question}
 """
 
+    assert_ai_processing_allowed(
+        provider="openai",
+        purpose=AIProcessingPurpose.QUERY_EXPANSION,
+        data_classification=AIDataClassification.PRIVILEGED,
+        model=CHAT_MODEL,
+    )
+
     response = openai_client.responses.create(
         model=CHAT_MODEL,
-        input=prompt
+        input=prompt,
+        store=False,
     )
 
     return response.output_text.strip()

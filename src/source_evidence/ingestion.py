@@ -12,6 +12,12 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from ai_provider_policy import (
+    AIDataClassification,
+    AIProcessingPurpose,
+    AIProviderPolicyError,
+    assert_ai_processing_allowed,
+)
 from case_management.document_context import build_chunk_metadata
 from chunk_provenance import add_chunk_provenance_to_metadata
 from evidence_classification import EvidenceSourceType, classify_evidence_source
@@ -461,8 +467,18 @@ def inspect_source_bound_index(
 
 def _create_embedding(openai_client: Any, *, model: str, text: str) -> list[float]:
     try:
+        assert_ai_processing_allowed(
+            provider="openai",
+            purpose=AIProcessingPurpose.SOURCE_EVIDENCE_EMBEDDING,
+            data_classification=AIDataClassification.PRIVILEGED,
+            model=model,
+        )
         response = openai_client.embeddings.create(model=model, input=text)
         data = response.data
+    except AIProviderPolicyError as exc:
+        raise SourceEvidenceIngestionError(
+            "AI provider policy denied source-evidence embedding before Chroma writer-lock acquisition."
+        ) from exc
     except Exception as exc:
         raise SourceEvidenceIngestionError(
             "Embedding creation failed before Chroma writer-lock acquisition."

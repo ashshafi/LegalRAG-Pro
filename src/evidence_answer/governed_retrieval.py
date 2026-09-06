@@ -26,6 +26,11 @@ from chunk_provenance import (
     PRIMARY_SOURCE_TIER_KEY,
 )
 from document_catalog import DocumentCatalogEntry, DocumentCatalogError, list_case_documents
+from explicit_document_location import (
+    ExplicitDocumentLocationResult,
+    merge_explicit_with_semantic_results,
+    resolve_explicit_document_location,
+)
 from evidence_classification import (
     EVIDENCE_CLASSIFICATION_METHOD_KEY,
     EVIDENCE_SOURCE_LABEL_KEY,
@@ -79,8 +84,9 @@ class GovernedAnswerEvidence:
     search_mode: EvidenceSearchMode
     semantic_results: dict[str, Any] | None
     semantic_receipt: EvidenceSearchReceipt | None
-    search_result: CaseEvidenceSearchResult
+    search_result: CaseEvidenceSearchResult | None
     answer_results: dict[str, Any]
+    explicit_location: ExplicitDocumentLocationResult | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,6 +115,7 @@ def prepare_governed_answer_evidence(
     search_service: SearchService = search_case_evidence,
     discovery_recorder: DiscoveryRecorder = record_semantic_discovery,
     catalog_service: CatalogService = list_case_documents,
+    interactive_semantic_only: bool = False,
 ) -> GovernedAnswerEvidence:
     """Prepare complete governed evidence for one case-scoped legal answer.
 
@@ -160,16 +167,45 @@ def prepare_governed_answer_evidence(
 
         retriever_callable = semantic_retriever
         if retriever_callable is None:
-            from retriever import retrieve as retriever_callable
+            from retriever import retrieve as default_retriever
 
-        semantic_results = retriever_callable(
-            query,
-            selected_documents,
-            n_results=GOVERNED_DISCOVERY_N_RESULTS,
-            case_id=case,
-        )
+            semantic_results = default_retriever(
+                query,
+                selected_documents,
+                n_results=GOVERNED_DISCOVERY_N_RESULTS,
+                case_id=case,
+                expand_search_query=not interactive_semantic_only,
+            )
+        else:
+            semantic_results = retriever_callable(
+                query,
+                selected_documents,
+                n_results=GOVERNED_DISCOVERY_N_RESULTS,
+                case_id=case,
+            )
         semantic_rows = _parse_semantic_results(semantic_results, expected_case_id=case)
+
+        # Explicit source references are resolved independently of semantic similarity.
+        explicit_location = resolve_explicit_document_location(
+            question=query,
+            case_id=case,
+            selected_documents=selected_documents,
+            catalog_service=catalog_service,
+        )
+        if explicit_location is not None:
+            # Resolve identity/location here, but let the existing complete U8
+            # path construct the canonical governed evidence metadata.
+            explicit_document_ids = (
+                explicit_location.source_document_instance_id,
+            )
+        else:
+            explicit_document_ids = ()
+
         candidate_ids = _candidate_document_ids(semantic_rows)
+        if explicit_document_ids:
+            candidate_ids = tuple(
+                dict.fromkeys((*explicit_document_ids, *candidate_ids))
+            )
         if not candidate_ids:
             raise GovernedAnswerEvidenceError(
                 "Semantic discovery returned no governed source-bound document candidates. "
@@ -186,6 +222,18 @@ def prepare_governed_answer_evidence(
             case_id=case,
             candidate_ids=candidate_ids,
         )
+
+        if interactive_semantic_only:
+            if explicit_location is None:
+                return GovernedAnswerEvidence(
+                    case_id=case,
+                    question=query,
+                    search_mode=semantic_receipt.search_mode,
+                    semantic_results=semantic_results,
+                    semantic_receipt=semantic_receipt,
+                    search_result=None,
+                    answer_results=semantic_results,
+                )
 
         search_result = search_service(
             case_id=case,
@@ -211,6 +259,7 @@ def prepare_governed_answer_evidence(
             semantic_receipt=semantic_receipt,
             search_result=search_result,
             answer_results=answer_results,
+            explicit_location=explicit_location,
         )
     except GovernedAnswerEvidenceError:
         raise

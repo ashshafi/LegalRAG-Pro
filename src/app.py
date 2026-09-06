@@ -1,4 +1,14 @@
-import logging
+﻿import logging
+
+from dotenv import load_dotenv
+
+# The interactive application owns its canonical deployment profile.
+# Override inherited operation-specific policy variables (for example a
+# source-evidence-only or controlled-analysis controller profile) with the
+# repository-local .env profile before importing modules that create AI clients.
+# This is deliberately app-entrypoint scoped: governed controllers keep their
+# explicit, narrow process environments and the provider policy remains fail-closed.
+load_dotenv(override=True)
 
 import streamlit as st
 

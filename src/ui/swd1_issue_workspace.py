@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ui.solicitor_tasks import show_issue_task_creator, show_solicitor_tasks
+from ui.case_operator import show_case_operator
 
 from collections.abc import Callable
 from typing import Any
@@ -980,6 +981,10 @@ def show_swd1_issue_workspace(
     *,
     authority_loader: AuthorityLoader = load_active_governed_analytical_authority,
 ) -> None:
+    if st.session_state.get("case_operator_workspace_case_id") == active_case_id:
+        show_case_operator(active_case_id, authority_loader=authority_loader)
+        return
+
     if st.session_state.get("mw1_task_workspace_case_id") == active_case_id:
         show_solicitor_tasks(active_case_id)
         return

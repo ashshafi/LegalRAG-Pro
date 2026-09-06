@@ -9,6 +9,12 @@ evidence identifiers as current evidence or analytical authority.
 from __future__ import annotations
 
 import json
+
+from ai_provider_policy import (
+    AIDataClassification,
+    AIProcessingPurpose,
+    assert_ai_processing_allowed,
+)
 import re
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Final
@@ -188,6 +194,16 @@ def _default_rewrite(prompt: str) -> str:
     from models import CHAT_MODEL
     from openai import OpenAI
 
+    assert_ai_processing_allowed(
+        provider="openai",
+        purpose=AIProcessingPurpose.FOLLOW_UP_REWRITE,
+        data_classification=AIDataClassification.PRIVILEGED,
+        model=CHAT_MODEL,
+    )
     client = OpenAI()
-    response = client.responses.create(model=CHAT_MODEL, input=prompt)
+    response = client.responses.create(
+        model=CHAT_MODEL,
+        input=prompt,
+        store=False,
+    )
     return response.output_text

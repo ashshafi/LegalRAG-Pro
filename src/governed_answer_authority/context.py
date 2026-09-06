@@ -761,6 +761,16 @@ MANDATORY ANALYTICAL RULES
    No substantive analytical prose may appear outside the bound statement array.
 9. If one statement references several propositions, every referenced proposition must
    have at least one cited evidence key in that same statement.
+10. STATUS-PURITY IS A HARD BINDING RULE. Choose exactly one frozen proposition status
+    before selecting source_proposition_refs for a statement; every selected coordinate
+    must resolve to proposition_semantics with that same status.
+11. Never combine proposition references with different frozen statuses in one statement,
+    even when they concern the same event, element, evidence key or legal point.
+12. If material from different statuses is needed, emit separate statement items and
+    preserve the qualification appropriate to each status.
+13. Before returning JSON, self-check every statement by resolving all referenced
+    coordinates. The resolved status set MUST contain exactly one value. If it does not,
+    split or rewrite the statement before returning it.
 
 RETURN FORMAT — STRICT JSON ONLY
 
@@ -772,6 +782,8 @@ Return exactly one JSON object with exactly one key, "statements".
 - "source_proposition_refs": non-empty array of objects containing exactly
   "issue_analysis_id", "element_id", "source_proposition_index"; the
   "source_proposition_index" value must be a non-negative integer (0 or greater)
+  Every source_proposition_refs coordinate must be unique within the statement; do not
+  repeat the same combination of issue_analysis_id, element_id and source_proposition_index.
 - "evidence_keys": non-empty unique array of governed evidence-key strings
 - "source_status": must exactly equal the "status" value of every referenced
   proposition_semantics row; a statement may combine proposition references only

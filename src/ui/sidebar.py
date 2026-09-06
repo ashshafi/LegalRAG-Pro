@@ -171,6 +171,7 @@ def show_sidebar(
     )
     if dashboard_clicked:
         set_matter_overview_view(st.session_state, False)
+        st.session_state.pop("case_operator_workspace_case_id", None)
         st.session_state["ppr3_legal_issue_dashboard_view"] = True
         st.session_state["u8_evidence_inspection_view"] = False
         st.session_state["m7_source_evidence_view"] = False
@@ -193,6 +194,25 @@ def show_sidebar(
     if workspace_clicked:
         st.session_state["m7_source_evidence_view"] = False
         st.session_state["m6_workspace_view"] = "review"
+
+    operator_clicked = st.sidebar.button(
+        "Case Operator",
+        width="stretch",
+        disabled=active_case_id is None,
+        help=(
+            None
+            if active_case_id is not None
+            else "An active matter is required for Case Operator."
+        ),
+    )
+    if operator_clicked:
+        set_matter_overview_view(st.session_state, False)
+        st.session_state["case_operator_workspace_case_id"] = active_case_id
+        st.session_state["ppr3_legal_issue_dashboard_view"] = True
+        st.session_state["u8_evidence_inspection_view"] = False
+        st.session_state["m7_source_evidence_view"] = False
+        st.session_state["m6_workspace_view"] = None
+        st.session_state["m55_main_view"] = "assistant"
 
     assistant_clicked = st.sidebar.button(
         "💬 Assistant",
@@ -263,6 +283,7 @@ def show_sidebar(
     ):
         set_matter_overview_view(st.session_state, False)
         st.session_state["ppr3_legal_issue_dashboard_view"] = False
+        st.session_state.pop("case_operator_workspace_case_id", None)
 
     st.sidebar.divider()
     with st.sidebar.expander("📄 Documents", expanded=False):

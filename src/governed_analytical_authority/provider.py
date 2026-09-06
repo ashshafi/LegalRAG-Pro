@@ -480,8 +480,17 @@ def _load_validated_activation_chain(
 
 def load_active_governed_analytical_authority(
     case_id: str,
+    *,
+    reuse_validated_runtime_authority: bool = False,
 ) -> GovernedRuntimeAnalyticalAuthority | None:
-    """Load the exact explicitly selected authority or return ``None`` only for ABSENT."""
+    """Load the exact explicitly selected authority or return ``None`` only for ABSENT.
+
+    When ``reuse_validated_runtime_authority`` is true, an already fully validated
+    in-process authority may be reused if the exact active-pointer bytes remain
+    cryptographically bound to the cached activation receipt. Immutable authority
+    objects are not re-hashed on that fast path. Any active-pointer change falls
+    back to the existing full filesystem fingerprint and validation path.
+    """
 
     try:
         canonical_case_id = require_canonical_case_id(case_id)
@@ -515,6 +524,19 @@ def load_active_governed_analytical_authority(
         root_identity=root_identity,
     )
     if cached is not None:
+        if reuse_validated_runtime_authority:
+            # Interactive runtime fast path: the cached authority was already fully
+            # validated. The immutable object remains selected only while the exact
+            # active-pointer payload is still bound to that cached activation receipt.
+            current_active_payload = _read_utf8(active_path, root=governed_root)
+            expected_active_sha256 = str(
+                cached.authority.activation_receipt.new_active_pointer_sha256
+            )
+            if canonical_sha256(current_active_payload) == expected_active_sha256:
+                return cached.authority
+
+        # Default/strict path is unchanged: cryptographically fingerprint every
+        # dependency before reusing the validated authority.
         current_fingerprint = _runtime_cache_fingerprint(
             case_root,
             root=governed_root,

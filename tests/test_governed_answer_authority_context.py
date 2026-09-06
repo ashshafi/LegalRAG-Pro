@@ -144,6 +144,7 @@ def test_prompt_allows_only_bound_conservative_answer_prose_and_forbids_reconstr
     assert "Every substantive answer statement" in prompt
     assert '"text": non-empty answer statement written for the user' in prompt
     assert '"source_proposition_index" value must be a non-negative integer (0 or greater)' in prompt
+    assert "Every source_proposition_refs coordinate must be unique within the statement" in prompt
     assert 'each proposition_semantics row\'s "status" value is the exact frozen proposition' in prompt
     assert '"source_status": must exactly equal the "status" value of every referenced' in prompt
     assert 'when all referenced rows have the same "status" value' in prompt

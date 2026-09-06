@@ -21,8 +21,9 @@ class _Responses:
     def __init__(self):
         self.calls = []
 
-    def create(self, *, model, input):
-        self.calls.append({"model": model, "input": input})
+    def create(self, *, model, input, store):
+        assert store is False
+        self.calls.append({"model": model, "input": input, "store": store})
         return SimpleNamespace(output_text="Governed answer")
 
 
@@ -113,6 +114,7 @@ def test_case_scoped_answer_uses_governed_u8_evidence_and_not_legacy_retrieve(
     assert result["retrieval_mode"] == "document_complete"
     assert len(client.responses.calls) == 1
     assert client.responses.calls[0]["input"] == "U8 governed prompt with complete primary evidence"
+    assert client.responses.calls[0]["store"] is False
     assert result["sources"][0]["evidence_role"] == "primary_source"
     assert result["sources"][0]["source_document_instance_id"] == DOC_ID
     assert result["sources"][0]["evidence_key"] == EVIDENCE_KEY

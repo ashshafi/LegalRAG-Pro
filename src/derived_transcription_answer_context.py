@@ -6,6 +6,13 @@ from pathlib import Path
 import hashlib
 import math
 
+from ai_provider_policy import (
+    AIDataClassification,
+    AIProcessingPurpose,
+    AIProviderPolicyError,
+    assert_ai_processing_allowed,
+)
+
 
 _INDEX_ROOT = (
     Path(__file__).resolve().parents[1]
@@ -41,6 +48,18 @@ class OpenAIQueryEmbeddingProvider:
         model,
         text,
     ):
+        try:
+            assert_ai_processing_allowed(
+                provider="openai",
+                purpose=AIProcessingPurpose.DERIVED_TRANSCRIPTION_EMBEDDING,
+                data_classification=AIDataClassification.PRIVILEGED,
+                model=model,
+            )
+        except AIProviderPolicyError as exc:
+            raise DerivedTranscriptionAnswerContextError(
+                "AI provider policy denied derived-transcription query embedding."
+            ) from exc
+
         response = (
             self._client_instance()
             .embeddings.create(

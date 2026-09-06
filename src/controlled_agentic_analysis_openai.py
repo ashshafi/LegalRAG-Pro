@@ -14,6 +14,12 @@ import json
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
+from ai_provider_policy import (
+    AIDataClassification,
+    AIProcessingPurpose,
+    AIProviderPolicyError,
+    assert_ai_processing_allowed,
+)
 from controlled_agentic_analysis import (
     Materiality,
     ObservationConfidence,
@@ -206,6 +212,18 @@ def _call_responses(
     create = getattr(responses, "create", None)
     if not callable(create):
         _fail("client must expose responses.create().")
+
+    try:
+        assert_ai_processing_allowed(
+            provider="openai",
+            purpose=AIProcessingPurpose.CONTROLLED_ANALYSIS,
+            data_classification=AIDataClassification.PRIVILEGED,
+            model=model,
+        )
+    except AIProviderPolicyError as exc:
+        raise OpenAIControlledAnalysisError(
+            "AI provider policy denied controlled analysis before API call."
+        ) from exc
 
     user_payload = json.dumps(
         {

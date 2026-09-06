@@ -12,6 +12,12 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from openai import OpenAI
 from pypdf import PdfReader
 
+from ai_provider_policy import (
+    AIDataClassification,
+    AIProcessingPurpose,
+    AIProviderPolicyError,
+    assert_ai_processing_allowed,
+)
 from chunk_provenance import add_chunk_provenance_to_metadata
 from evidence_classification import EvidenceSourceType, classify_evidence_source
 
@@ -93,6 +99,12 @@ def index_pdf(
 
         for chunk_number, chunk in enumerate(chunks):
             try:
+                assert_ai_processing_allowed(
+                    provider="openai",
+                    purpose=AIProcessingPurpose.DOCUMENT_EMBEDDING,
+                    data_classification=AIDataClassification.PRIVILEGED,
+                    model="text-embedding-3-small",
+                )
                 response = client.embeddings.create(
                     model="text-embedding-3-small",
                     input=chunk,
@@ -132,6 +144,8 @@ def index_pdf(
                     metadatas=[metadata],
                 )
                 total_chunks += 1
+            except AIProviderPolicyError:
+                raise
             except Exception:
                 LOGGER.exception(
                     "Error adding chunk %s from %s page %s.",

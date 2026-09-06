@@ -21,8 +21,8 @@ OLD_DISCLOSURE = (
     "Session-local history for this case only. Previous turns are presentation-only "
     "and are never supplied to retrieval, prompts, or analytical authority."
 )
-EXPECTED_FOLLOW_UP_SHA256 = "5989594e454077e9231dc820c042fdad0ef9a027fb36679c7433c32c59a3a4df"
-EXPECTED_FOCUSED_TEST_SHA256 = "d86a208d38f9d3e75d678e24e21b60cc80d695c0c16850e8e34aa62fcc0995f7"
+EXPECTED_FOLLOW_UP_SHA256 = "99715f545cceb6832d08d6603b96421a8bae746dd6584709d3b11ad771b91e08"
+EXPECTED_FOCUSED_TEST_SHA256 = "d37b249329b38c23f7716c026375099531feeea0f5bb0dc5a1d34fff63de865e"
 
 
 def _caption_text() -> str:
@@ -71,9 +71,11 @@ def test_disclosure_removes_the_false_never_supplied_to_prompts_claim():
     assert "never supplied to retrieval, prompts, or analytical authority" not in source
 
 
-# The follow-up resolver remains on its original sealed B18 generation.
-# The focused UI test seal was explicitly superseded by the authorised
-# post-S1 keyed-input regression generation.
+# The B18 trust-boundary behaviour remains frozen. The resolver file identity
+# is deliberately superseded by SRA-C1 provider-policy gating and the R2
+# Responses API store=False control; neither authorises a change to B18
+# conversational/evidential semantics. The focused UI test seal below is the
+# exact released-HEAD generation captured at the SRA-C1 implementation input.
 def test_post_s1_b18_semantic_file_seals_are_exact():
     assert hashlib.sha256(FOLLOW_UP_PATH.read_bytes()).hexdigest() == EXPECTED_FOLLOW_UP_SHA256
     assert hashlib.sha256(FOCUSED_TEST_PATH.read_bytes()).hexdigest() == EXPECTED_FOCUSED_TEST_SHA256

@@ -313,6 +313,72 @@ def _question_form_submit_button(label):
     return st.button(label)
 
 
+def _receipt_field(receipt, name: str, default=None):
+    if isinstance(receipt, dict):
+        return receipt.get(name, default)
+    return getattr(receipt, name, default)
+
+
+def _enum_value(value):
+    return getattr(value, "value", value)
+
+
+def _show_new_ai_finding_provenance_summary(result: dict) -> None:
+    """Render compact solicitor-facing provenance for a New AI Finding."""
+
+    if not result.get("new_ai_finding"):
+        return
+
+    st.divider()
+    st.subheader("Sources & provenance")
+    st.caption(
+        "Source documents and page references used in this provisional finding "
+        "are identified inline in the answer above."
+    )
+
+    receipt = result.get("evidence_search_receipt")
+    if receipt is not None:
+        mode = _enum_value(_receipt_field(receipt, "search_mode", "unknown"))
+        documents = _receipt_field(receipt, "documents_inspected", None)
+        if documents is None:
+            documents = _receipt_field(receipt, "documents_completely_expanded", 0)
+        pages = _receipt_field(receipt, "pages_inspected", 0)
+        chunks = _receipt_field(receipt, "chunks_inspected", 0)
+        corpus_complete = bool(_receipt_field(receipt, "case_corpus_complete", False))
+        st.caption(
+            "Inspection scope: "
+            f"{documents} document(s) ? {pages} page(s) ? {chunks} chunk(s) "
+            f"? mode: {mode} ? whole case corpus complete: "
+            f"{'yes' if corpus_complete else 'no'}"
+        )
+
+    payload = result.get("evidence_reference_resolution")
+    if isinstance(payload, dict):
+        findings = payload.get("findings")
+        if isinstance(findings, list) and findings:
+            counts: dict[str, int] = {}
+            for finding in findings:
+                if not isinstance(finding, dict):
+                    continue
+                status = str(finding.get("status", "UNRESOLVED_REFERENCE"))
+                counts[status] = counts.get(status, 0) + 1
+            if counts:
+                summary = " ? ".join(
+                    f"{status.replace('_', ' ').title()}: {count}"
+                    for status, count in sorted(counts.items())
+                )
+                st.caption(f"Reference-resolution summary: {summary}")
+
+    warning = result.get("evidence_reference_resolution_warning")
+    if warning:
+        st.warning(str(warning))
+
+    st.info(
+        "Full inspected-evidence, reference-resolution and technical provenance "
+        "detail is available under Sources & Provenance in the Audit section."
+    )
+
+
 def show_chat(
     selected_documents,
     timeline_clicked,
@@ -394,69 +460,72 @@ def show_chat(
         st.subheader("📄 Answer")
         st.write(result["answer"])
 
-        _show_governed_answer_provenance(result)
-
-        _show_reference_findings(result)
-
-        st.divider()
-        if result.get("evidence_search_receipt") is not None:
-            st.subheader("📚 Inspected Evidence")
-            st.caption(
-                "Evidence inspected by the governed U8 answer search; "
-                "this is not the relied-upon subset."
-            )
+        if result.get("new_ai_finding"):
+            _show_new_ai_finding_provenance_summary(result)
         else:
-            st.subheader("📚 Evidence")
+            _show_governed_answer_provenance(result)
 
-        for source in result["sources"]:
-            with st.expander(build_evidence_heading(source)):
-                document_label = source.get(
-                    "source_label",
-                    "Unclassified evidence",
-                )
-                chunk_label = source.get(
-                    "chunk_source_label",
-                    "Unclassified evidence",
-                )
-                semantic_label = source.get(
-                    "semantic_source_label",
-                    chunk_label,
-                )
-                primary_label = source.get(
-                    "primary_source_label",
-                    "Unclassified source",
-                )
-                provenance_method = source.get(
-                    "chunk_provenance_method",
-                    "unknown",
-                )
-                provenance_basis = source.get("provenance_basis", "unknown")
-                provenance_confidence = source.get("provenance_confidence", "low")
-                provenance_warning = source.get("provenance_warning", "")
-                knowledge_signal = source.get(
-                    "knowledge_signal_label",
-                    "No explicit knowledge indicator detected",
-                )
+            _show_reference_findings(result)
+
+            st.divider()
+            if result.get("evidence_search_receipt") is not None:
+                st.subheader("📚 Inspected Evidence")
                 st.caption(
-                    f"Semantic provenance: {semantic_label} "
-                    f"· confidence: {provenance_confidence} "
-                    f"· basis: {provenance_basis}"
+                    "Evidence inspected by the governed U8 answer search; "
+                    "this is not the relied-upon subset."
                 )
-                st.caption(
-                    f"Retrieval provenance: {chunk_label} "
-                    f"· {primary_label} "
-                    f"· method: {provenance_method}"
-                )
-                st.caption(f"Knowledge/awareness signal: {knowledge_signal}")
-                if provenance_warning:
-                    st.caption(f"Provenance caution: {provenance_warning}")
-                if semantic_label != document_label:
-                    st.caption(
-                        f"Container classification: {document_label}"
+            else:
+                st.subheader("📚 Evidence")
+
+            for source in result["sources"]:
+                with st.expander(build_evidence_heading(source)):
+                    document_label = source.get(
+                        "source_label",
+                        "Unclassified evidence",
                     )
-                st.write(source["text"])
+                    chunk_label = source.get(
+                        "chunk_source_label",
+                        "Unclassified evidence",
+                    )
+                    semantic_label = source.get(
+                        "semantic_source_label",
+                        chunk_label,
+                    )
+                    primary_label = source.get(
+                        "primary_source_label",
+                        "Unclassified source",
+                    )
+                    provenance_method = source.get(
+                        "chunk_provenance_method",
+                        "unknown",
+                    )
+                    provenance_basis = source.get("provenance_basis", "unknown")
+                    provenance_confidence = source.get("provenance_confidence", "low")
+                    provenance_warning = source.get("provenance_warning", "")
+                    knowledge_signal = source.get(
+                        "knowledge_signal_label",
+                        "No explicit knowledge indicator detected",
+                    )
+                    st.caption(
+                        f"Semantic provenance: {semantic_label} "
+                        f"· confidence: {provenance_confidence} "
+                        f"· basis: {provenance_basis}"
+                    )
+                    st.caption(
+                        f"Retrieval provenance: {chunk_label} "
+                        f"· {primary_label} "
+                        f"· method: {provenance_method}"
+                    )
+                    st.caption(f"Knowledge/awareness signal: {knowledge_signal}")
+                    if provenance_warning:
+                        st.caption(f"Provenance caution: {provenance_warning}")
+                    if semantic_label != document_label:
+                        st.caption(
+                            f"Container classification: {document_label}"
+                        )
+                    st.write(source["text"])
 
-        _show_evidence_coverage(result)
+            _show_evidence_coverage(result)
 
     if st.session_state.show_timeline:
         if st.session_state.last_result is None:
