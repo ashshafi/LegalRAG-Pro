@@ -44,3 +44,11 @@ derived_transcription_store/
 
 # Matter Analysis Ledger runtime review authority
 matter_analysis_ledger/
+
+# Local governed-analysis and matter workflow runtime state
+/controlled_agentic_analysis_reviews/
+/controlled_agentic_analysis_runs/
+/finance_case_bindings/
+/matter_analysis_change_proposals/
+/report_projections/
+/solicitor_tasks/
