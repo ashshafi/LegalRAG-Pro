@@ -16,7 +16,7 @@ from typing import Any
 import streamlit as st
 
 from authentication import current_user_identity
-from case_management import CaseRepository
+from case_management import CaseRepository, MatterAccessError
 from case_management.access import MatterMutationError
 from document_manager import get_documents
 from evidence_reference_bridge import ask_with_reference_findings
@@ -44,6 +44,13 @@ from task_work_progress import (
 from task_work_retrieval_receipt import (
     TaskWorkRetrievalReceiptError,
     append_task_work_retrieval_receipt,
+    load_task_work_retrieval_receipts,
+)
+from task_work_authority_scope import (
+    TaskWorkAuthorityScopeError,
+    load_task_work_authority_scopes,
+    record_task_work_authority_scope,
+    resolve_task_work_authority_scope,
 )
 
 AuthorityLoader = Callable[[str], GovernedRuntimeAnalyticalAuthority | None]
@@ -1101,6 +1108,667 @@ def _project_approved_task_queue(
     )
 
 
+
+def _task_work_scope_progress_id(
+    value: object,
+    *,
+    label: str,
+) -> str:
+    progress_id = str(
+        getattr(
+            value,
+            "progress_id",
+            "",
+        )
+    ).strip()
+
+    if not progress_id:
+        raise TaskWorkAuthorityScopeError(
+            label + " has no progress_id."
+        )
+
+    return progress_id
+
+
+def _task_work_scope_capture_rows(
+    *,
+    history: tuple[Any, ...],
+    receipts: tuple[Any, ...],
+    scopes: tuple[Any, ...],
+) -> tuple[
+    tuple[
+        Any,
+        Any,
+        Any | None,
+    ],
+    ...,
+]:
+    """Join persisted work, R68 receipt and optional D1-I1 scope exactly."""
+
+    progress_by_id: dict[
+        str,
+        Any,
+    ] = {}
+
+    ordered_progress_ids: list[
+        str
+    ] = []
+
+    for progress in history:
+        progress_id = (
+            _task_work_scope_progress_id(
+                progress,
+                label="task-work record",
+            )
+        )
+
+        if progress_id in progress_by_id:
+            raise TaskWorkAuthorityScopeError(
+                "task-work history contains duplicate progress_id."
+            )
+
+        progress_by_id[
+            progress_id
+        ] = progress
+
+        ordered_progress_ids.append(
+            progress_id
+        )
+
+    receipt_by_id: dict[
+        str,
+        Any,
+    ] = {}
+
+    for receipt in receipts:
+        progress_id = (
+            _task_work_scope_progress_id(
+                receipt,
+                label="retrieval receipt",
+            )
+        )
+
+        if progress_id in receipt_by_id:
+            raise TaskWorkAuthorityScopeError(
+                "more than one retrieval receipt exists for one progress_id."
+            )
+
+        if progress_id not in progress_by_id:
+            raise TaskWorkAuthorityScopeError(
+                "retrieval receipt has no matching persisted task-work record."
+            )
+
+        receipt_by_id[
+            progress_id
+        ] = receipt
+
+    scope_by_id: dict[
+        str,
+        Any,
+    ] = {}
+
+    for scope in scopes:
+        progress_id = (
+            _task_work_scope_progress_id(
+                scope,
+                label="authority-scope record",
+            )
+        )
+
+        if progress_id in scope_by_id:
+            raise TaskWorkAuthorityScopeError(
+                "more than one authority scope exists for one progress_id."
+            )
+
+        if progress_id not in progress_by_id:
+            raise TaskWorkAuthorityScopeError(
+                "authority scope has no matching persisted task-work record."
+            )
+
+        if progress_id not in receipt_by_id:
+            raise TaskWorkAuthorityScopeError(
+                "authority scope has no matching R68 retrieval receipt."
+            )
+
+        scope_by_id[
+            progress_id
+        ] = scope
+
+    return tuple(
+        (
+            progress_by_id[
+                progress_id
+            ],
+            receipt_by_id[
+                progress_id
+            ],
+            scope_by_id.get(
+                progress_id
+            ),
+        )
+        for progress_id
+        in ordered_progress_ids
+        if progress_id
+        in receipt_by_id
+    )
+
+
+def _task_work_scope_issue_elements(
+    *,
+    authority: object,
+    task: object,
+) -> tuple[
+    object,
+    tuple[Any, ...],
+]:
+    """Resolve only the current governed issue explicitly bound to the task."""
+
+    issue_analysis_id = str(
+        getattr(
+            task,
+            "issue_analysis_id",
+            "",
+        )
+    ).strip()
+
+    if not issue_analysis_id:
+        raise TaskWorkAuthorityScopeError(
+            "task has no governed issue binding."
+        )
+
+    try:
+        issue_matrix = tuple(
+            authority
+            .case_matrices
+            .issue_matrix
+        )
+    except (
+        AttributeError,
+        TypeError,
+    ) as exc:
+        raise TaskWorkAuthorityScopeError(
+            "current governed authority does not expose the issue matrix."
+        ) from exc
+
+    matches = tuple(
+        issue
+        for issue in issue_matrix
+        if str(
+            getattr(
+                issue,
+                "issue_analysis_id",
+                "",
+            )
+        ).strip()
+        == issue_analysis_id
+    )
+
+    if len(matches) != 1:
+        raise TaskWorkAuthorityScopeError(
+            "task issue is not uniquely present in the current governed authority."
+        )
+
+    issue = matches[0]
+
+    try:
+        elements = tuple(
+            issue.element_records
+        )
+    except (
+        AttributeError,
+        TypeError,
+    ) as exc:
+        raise TaskWorkAuthorityScopeError(
+            "current governed issue does not expose focus areas."
+        ) from exc
+
+    if not elements:
+        raise TaskWorkAuthorityScopeError(
+            "current governed issue contains no focus areas."
+        )
+
+    element_ids = tuple(
+        str(
+            getattr(
+                element,
+                "element_id",
+                "",
+            )
+        ).strip()
+        for element in elements
+    )
+
+    if any(
+        not element_id
+        for element_id in element_ids
+    ):
+        raise TaskWorkAuthorityScopeError(
+            "current governed issue contains an invalid focus-area identity."
+        )
+
+    if len(
+        element_ids
+    ) != len(
+        set(
+            element_ids
+        )
+    ):
+        raise TaskWorkAuthorityScopeError(
+            "current governed issue contains duplicate focus-area identities."
+        )
+
+    return (
+        issue,
+        elements,
+    )
+
+
+def _task_work_scope_element_label(
+    element: object,
+) -> str:
+    name = str(
+        getattr(
+            element,
+            "element_name",
+            "",
+        )
+    ).strip()
+
+    question = str(
+        getattr(
+            element,
+            "legal_question",
+            "",
+        )
+    ).strip()
+
+    if name and question:
+        return (
+            name
+            + " - "
+            + question
+        )
+
+    if name:
+        return name
+
+    if question:
+        return question
+
+    return "Case assessment focus area"
+
+
+def _current_scope_reviewer_reference() -> str:
+    identity = current_user_identity()
+
+    email = str(
+        getattr(
+            identity,
+            "email",
+            "",
+        )
+    ).strip()
+
+    if not email:
+        raise TaskWorkAuthorityScopeError(
+            "the authenticated user has no canonical reviewer email."
+        )
+
+    return email
+
+
+def _render_task_work_scope_capture(
+    *,
+    case_id: str,
+    task: object,
+    history: tuple[Any, ...],
+) -> None:
+    """Offer explicit professional scope only for exactly receipted work."""
+
+    task_id = str(
+        getattr(
+            task,
+            "task_id",
+            "",
+        )
+    ).strip()
+
+    if not task_id:
+        st.error(
+            "Work scope cannot be reviewed because the task identity is unavailable."
+        )
+
+        return
+
+    try:
+        receipts = (
+            load_task_work_retrieval_receipts(
+                case_id,
+                task_id,
+            )
+        )
+
+    except TaskWorkRetrievalReceiptError as exc:
+        st.error(
+            "Work scope cannot be reviewed because the task-work "
+            "retrieval record could not be validated: "
+            + str(exc)
+        )
+
+        return
+
+    # Historical/unreceipted work is intentionally ineligible.
+    # Do not load authority or create any scope UI for it.
+    if not receipts:
+        return
+
+    try:
+        scopes = (
+            load_task_work_authority_scopes(
+                case_id,
+                task_id,
+            )
+        )
+
+        rows = (
+            _task_work_scope_capture_rows(
+                history=tuple(
+                    history
+                ),
+                receipts=tuple(
+                    receipts
+                ),
+                scopes=tuple(
+                    scopes
+                ),
+            )
+        )
+
+    except TaskWorkAuthorityScopeError as exc:
+        st.error(
+            "Persisted work scope could not be validated: "
+            + str(exc)
+        )
+
+        return
+
+    if not rows:
+        return
+
+    try:
+        authority = (
+            load_active_governed_analytical_authority(
+                case_id
+            )
+        )
+
+    except GovernedAnalyticalAuthorityProviderError as exc:
+        st.error(
+            "Work scope cannot be reviewed because the current "
+            "case assessment could not be loaded: "
+            + str(exc)
+        )
+
+        return
+
+    if authority is None:
+        st.error(
+            "Work scope cannot be reviewed because there is no "
+            "current governed case assessment."
+        )
+
+        return
+
+    try:
+        _, elements = (
+            _task_work_scope_issue_elements(
+                authority=authority,
+                task=task,
+            )
+        )
+
+    except TaskWorkAuthorityScopeError as exc:
+        st.error(
+            "Work scope cannot be reviewed: "
+            + str(exc)
+        )
+
+        return
+
+    element_by_id = {
+        str(
+            element.element_id
+        ): element
+        for element in elements
+    }
+
+    element_ids = tuple(
+        element_by_id
+    )
+
+    st.markdown(
+        "### Work scope"
+    )
+
+    st.caption(
+        "For work that has a verified retrieval record, choose which "
+        "parts of the current case assessment the work relates to. "
+        "Nothing is selected automatically."
+    )
+
+    for (
+        progress,
+        receipt,
+        existing_scope,
+    ) in rows:
+        progress_id = (
+            _task_work_scope_progress_id(
+                progress,
+                label="task-work record",
+            )
+        )
+
+        recorded_at = str(
+            getattr(
+                progress,
+                "recorded_at",
+                "",
+            )
+        ).strip()
+
+        if existing_scope is not None:
+            st.markdown(
+                "**Work scope set"
+                + (
+                    " ? "
+                    + recorded_at
+                    if recorded_at
+                    else ""
+                )
+                + "**"
+            )
+
+            try:
+                resolution = (
+                    resolve_task_work_authority_scope(
+                        existing_scope,
+                        authority=authority,
+                    )
+                )
+
+            except TaskWorkAuthorityScopeError as exc:
+                st.error(
+                    "This existing work scope is no longer current "
+                    "and will not be rewritten automatically: "
+                    + str(exc)
+                )
+
+                continue
+
+            labels = tuple(
+                _task_work_scope_element_label(
+                    element
+                )
+                for element
+                in resolution.elements
+            )
+
+            for label in labels:
+                st.write(
+                    "? " + label
+                )
+
+            st.caption(
+                "Set by "
+                + existing_scope.reviewer_reference
+                + " on "
+                + existing_scope.recorded_at
+                + "."
+            )
+
+            continue
+
+        st.markdown(
+            "**Set scope for work"
+            + (
+                " recorded "
+                + recorded_at
+                if recorded_at
+                else ""
+            )
+            + "**"
+        )
+
+        form_key = (
+            "case_operator_work_scope_"
+            + task_id
+            + "_"
+            + progress_id
+        )
+
+        with st.form(
+            key=form_key
+        ):
+            selected_element_ids = (
+                st.multiselect(
+                    "Relevant focus areas",
+                    options=
+                        element_ids,
+                    default=(),
+                    format_func=lambda element_id: (
+                        _task_work_scope_element_label(
+                            element_by_id[
+                                element_id
+                            ]
+                        )
+                    ),
+                    key=(
+                        form_key
+                        + "_elements"
+                    ),
+                )
+            )
+
+            review_note = (
+                st.text_area(
+                    "Review note (optional)",
+                    value="",
+                    key=(
+                        form_key
+                        + "_note"
+                    ),
+                )
+            )
+
+            submitted = (
+                st.form_submit_button(
+                    "Set work scope"
+                )
+            )
+
+        if not submitted:
+            continue
+
+        if not selected_element_ids:
+            st.error(
+                "Select at least one focus area before setting work scope."
+            )
+
+            continue
+
+        try:
+            # Re-load at the explicit decision point so a changed
+            # authority cannot silently inherit the displayed scope.
+            current_authority = (
+                load_active_governed_analytical_authority(
+                    case_id
+                )
+            )
+
+            if current_authority is None:
+                raise TaskWorkAuthorityScopeError(
+                    "there is no current governed case assessment."
+                )
+
+            identity = (
+                current_user_identity()
+            )
+
+            CaseRepository().require_access(
+                identity,
+                case_id,
+            )
+
+            reviewer_reference = str(
+                getattr(
+                    identity,
+                    "email",
+                    "",
+                )
+            ).strip()
+
+            if not reviewer_reference:
+                raise TaskWorkAuthorityScopeError(
+                    "the authenticated user has no canonical reviewer email."
+                )
+
+            record_task_work_authority_scope(
+                task=task,
+                progress=progress,
+                retrieval_receipt=
+                    receipt,
+                authority=
+                    current_authority,
+                element_ids=
+                    tuple(
+                        selected_element_ids
+                    ),
+                reviewer_reference=
+                    reviewer_reference,
+                review_note=
+                    review_note,
+            )
+
+        except (
+            TaskWorkAuthorityScopeError,
+            GovernedAnalyticalAuthorityProviderError,
+            MatterAccessError,
+            MatterMutationError,
+            PermissionError,
+        ) as exc:
+            st.error(
+                "Work scope could not be recorded: "
+                + str(exc)
+            )
+
+            continue
+
+        st.success(
+            "Work scope recorded."
+        )
+
+        st.rerun()
+
 def _render_approved_task_execution(
     *,
     case_id: str,
@@ -1222,6 +1890,12 @@ def _render_approved_task_execution(
         return
 
     _render_task_work_history(history=history)
+
+    _render_task_work_scope_capture(
+        case_id=case_id,
+        task=selected_task,
+        history=tuple(history),
+    )
 
     substantive_history = _substantive_task_work_history(history)
     latest_substantive_outcome = (
