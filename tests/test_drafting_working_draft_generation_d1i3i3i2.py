@@ -864,3 +864,225 @@ def test_module_has_no_persistence_ui_or_retrieval_dependency():
         token in source
         for token in forbidden
     )
+
+
+
+def test_provider_schema_omits_unsupported_length_and_uniqueness_keywords():
+    from types import SimpleNamespace
+
+    element = SimpleNamespace(
+        element_id="EK-RECIPIENT",
+        analytical_status="partially_supported",
+        analytical_confidence="medium",
+    )
+
+    schema = (
+        generation.build_drafting_candidate_output_schema(
+            element=element,
+            evidence_keys=(
+                "evidence-1",
+                "evidence-2",
+            ),
+        )
+    )
+
+    statements_schema = (
+        schema[
+            "properties"
+        ][
+            "statements"
+        ]
+    )
+
+    statement_schema = (
+        statements_schema[
+            "items"
+        ]
+    )
+
+    text_schema = (
+        statement_schema[
+            "properties"
+        ][
+            "text"
+        ]
+    )
+
+    cited_schema = (
+        statement_schema[
+            "properties"
+        ][
+            "cited_evidence_keys"
+        ]
+    )
+
+    assert text_schema == {
+        "type": "string",
+    }
+
+    assert (
+        "uniqueItems"
+        not in cited_schema
+    )
+
+    # Supported bounded array restrictions remain in the strict
+    # provider schema.
+    assert (
+        statements_schema[
+            "minItems"
+        ]
+        == 1
+    )
+
+    assert (
+        statements_schema[
+            "maxItems"
+        ]
+        == generation._MAX_CANDIDATE_STATEMENTS
+    )
+
+    assert (
+        cited_schema[
+            "minItems"
+        ]
+        == 1
+    )
+
+    assert (
+        cited_schema[
+            "maxItems"
+        ]
+        == 2
+    )
+
+    def walk(value):
+        if isinstance(
+            value,
+            dict,
+        ):
+            for key, child in value.items():
+                yield key
+
+                yield from walk(
+                    child
+                )
+
+        elif isinstance(
+            value,
+            list,
+        ):
+            for child in value:
+                yield from walk(
+                    child
+                )
+
+    keys = set(
+        walk(
+            schema
+        )
+    )
+
+    assert "minLength" not in keys
+    assert "maxLength" not in keys
+    assert "uniqueItems" not in keys
+
+
+def test_overlong_candidate_statement_text_fails_closed():
+    import json
+    from types import SimpleNamespace
+
+    element = SimpleNamespace(
+        element_id="EK-RECIPIENT",
+        analytical_status="partially_supported",
+        analytical_confidence="medium",
+    )
+
+    payload = {
+        "statements": [{
+            "text": (
+                "x"
+                * (
+                    generation
+                    ._MAX_CANDIDATE_STATEMENT_TEXT_LENGTH
+                    + 1
+                )
+            ),
+            "element_id":
+                "EK-RECIPIENT",
+            "claimed_status":
+                "partially_supported",
+            "claimed_confidence":
+                "medium",
+            "cited_evidence_keys": [
+                "evidence-1",
+            ],
+        }],
+    }
+
+    with pytest.raises(
+        generation.DraftingWorkingDraftGenerationError,
+        match="text exceeds the bounded length",
+    ):
+        generation.parse_drafting_candidate_output(
+            json.dumps(
+                payload
+            ),
+            element=element,
+            evidence_keys=(
+                "evidence-1",
+            ),
+        )
+
+
+def test_candidate_statement_at_exact_text_bound_is_accepted():
+    import json
+    from types import SimpleNamespace
+
+    element = SimpleNamespace(
+        element_id="EK-RECIPIENT",
+        analytical_status="partially_supported",
+        analytical_confidence="medium",
+    )
+
+    text = (
+        "x"
+        * generation._MAX_CANDIDATE_STATEMENT_TEXT_LENGTH
+    )
+
+    payload = {
+        "statements": [{
+            "text": text,
+            "element_id":
+                "EK-RECIPIENT",
+            "claimed_status":
+                "partially_supported",
+            "claimed_confidence":
+                "medium",
+            "cited_evidence_keys": [
+                "evidence-1",
+            ],
+        }],
+    }
+
+    statements = (
+        generation.parse_drafting_candidate_output(
+            json.dumps(
+                payload
+            ),
+            element=element,
+            evidence_keys=(
+                "evidence-1",
+            ),
+        )
+    )
+
+    assert len(
+        statements
+    ) == 1
+
+    assert (
+        len(
+            statements[0].text
+        )
+        == generation._MAX_CANDIDATE_STATEMENT_TEXT_LENGTH
+    )

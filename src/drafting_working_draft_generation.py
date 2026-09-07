@@ -51,6 +51,7 @@ from task_work_retrieval_receipt import (
 
 
 _MAX_CANDIDATE_STATEMENTS = 8
+_MAX_CANDIDATE_STATEMENT_TEXT_LENGTH = 12000
 
 _MAP_MARKER = (
     "LEGALRAG GOVERNED LARGE-MATTER MAP PASS"
@@ -692,8 +693,6 @@ def build_drafting_candidate_output_schema(
                     "properties": {
                         "text": {
                             "type": "string",
-                            "minLength": 1,
-                            "maxLength": 12000,
                         },
                         "element_id": {
                             "type": "string",
@@ -717,7 +716,6 @@ def build_drafting_candidate_output_schema(
                                 len(
                                     evidence_keys
                                 ),
-                            "uniqueItems": True,
                             "items": {
                                 "type":
                                     "string",
@@ -1064,6 +1062,14 @@ def parse_drafting_candidate_output(
             raw.get("text"),
             f"statement[{index}].text",
         )
+
+        if len(
+            text
+        ) > _MAX_CANDIDATE_STATEMENT_TEXT_LENGTH:
+            raise DraftingWorkingDraftGenerationError(
+                f"Drafting candidate statement {index} "
+                "text exceeds the bounded length."
+            )
 
         if text in seen_text:
             raise DraftingWorkingDraftGenerationError(
