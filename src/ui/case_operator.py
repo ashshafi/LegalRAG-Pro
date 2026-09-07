@@ -996,6 +996,77 @@ def _render_task_execution_result(
         st.rerun()
 
 
+
+_TASK_PRIORITY_ORDER = {
+    "high": 0,
+    "medium": 1,
+    "low": 2,
+    "not_set": 3,
+}
+
+
+def _task_priority_order(task: Any) -> int:
+    priority = getattr(task, "priority", None)
+    value = getattr(priority, "value", priority)
+    normalized = _clean(value).lower()
+    return _TASK_PRIORITY_ORDER.get(normalized, 99)
+
+
+def _project_approved_task_queue(
+    *,
+    case_id: str,
+    open_tasks: tuple[Any, ...],
+) -> tuple[tuple[Any, ...], tuple[Any, ...], tuple[Any, ...]]:
+    """Project READY/BLOCKED approved tasks without mutating task state."""
+    ready: list[tuple[int, int, Any]] = []
+    blocked: list[tuple[int, int, Any]] = []
+    unavailable: list[tuple[int, Any]] = []
+
+    for canonical_index, task in enumerate(open_tasks):
+        status = getattr(task, "status", None)
+        if status not in {TaskStatus.OPEN, TaskStatus.IN_PROGRESS}:
+            continue
+
+        task_id = _clean(getattr(task, "task_id", ""))
+        if not task_id:
+            unavailable.append((canonical_index, task))
+            continue
+
+        try:
+            history = load_task_work_progress(case_id, task_id)
+        except TaskWorkProgressError:
+            unavailable.append((canonical_index, task))
+            continue
+
+        substantive = _substantive_task_work_history(history)
+        latest_outcome = (
+            extract_task_outcome(getattr(substantive[-1], "answer", ""))
+            if substantive
+            else None
+        )
+
+        ranked = (
+            _task_priority_order(task),
+            canonical_index,
+            task,
+        )
+
+        if latest_outcome == "BLOCKED":
+            blocked.append(ranked)
+        else:
+            ready.append(ranked)
+
+    ready.sort(key=lambda item: (item[0], item[1]))
+    blocked.sort(key=lambda item: (item[0], item[1]))
+    unavailable.sort(key=lambda item: item[0])
+
+    return (
+        tuple(item[2] for item in ready),
+        tuple(item[2] for item in blocked),
+        tuple(item[1] for item in unavailable),
+    )
+
+
 def _render_approved_task_execution(
     *,
     case_id: str,
@@ -1016,12 +1087,50 @@ def _render_approved_task_execution(
         _render_task_execution_result(case_id=case_id, tasks=all_tasks)
         return
 
+    ready_tasks, blocked_tasks, unavailable_tasks = _project_approved_task_queue(
+        case_id=case_id,
+        open_tasks=open_tasks,
+    )
+
+    ordered_tasks = ready_tasks + blocked_tasks + unavailable_tasks
+
     task_by_id = {
         _clean(getattr(task, "task_id", "")): task
-        for task in open_tasks
+        for task in ordered_tasks
         if _clean(getattr(task, "task_id", ""))
     }
     task_ids = tuple(task_by_id)
+
+    if ready_tasks:
+        recommended_task = ready_tasks[0]
+        st.markdown("**Recommended next approved task**")
+        st.write(_clean(getattr(recommended_task, "title", "Task")))
+        st.caption(
+            "Case Operator has prioritised approved work that can proceed now. "
+            "Blocked task work remains preserved and can still be inspected manually."
+        )
+    elif blocked_tasks:
+        st.warning(
+            "All currently validated approved tasks are blocked. "
+            "No substitute task has been selected automatically."
+        )
+
+    if blocked_tasks:
+        st.caption(
+            f"{len(blocked_tasks)} approved task(s) currently have a latest substantive "
+            "BLOCKED outcome and have been moved behind READY work in this queue."
+        )
+
+    if unavailable_tasks:
+        st.warning(
+            "Some approved task histories could not be validated for automatic queue "
+            "ranking. Those tasks remain available for manual inspection."
+        )
+
+    if not task_ids:
+        st.error("No approved task could be projected safely for task execution.")
+        _render_task_execution_result(case_id=case_id, tasks=all_tasks)
+        return
 
     selected_task_id = st.selectbox(
         "Approved task",
