@@ -41,7 +41,10 @@ from task_work_progress import (
     append_task_work_progress,
     load_task_work_progress,
 )
-
+from task_work_retrieval_receipt import (
+    TaskWorkRetrievalReceiptError,
+    append_task_work_retrieval_receipt,
+)
 
 AuthorityLoader = Callable[[str], GovernedRuntimeAnalyticalAuthority | None]
 
@@ -706,7 +709,7 @@ def _persist_task_work_result(
             current_user_identity(),
             case_id,
         )
-        append_task_work_progress(
+        progress = append_task_work_progress(
             case_id=case_id,
             access=access,
             task_id=task_id,
@@ -714,6 +717,21 @@ def _persist_task_work_result(
             answer=answer,
             outcome=_progress_outcome(answer),
         )
+        try:
+            append_task_work_retrieval_receipt(
+                case_id=case_id,
+                task_id=task_id,
+                progress_id=progress.progress_id,
+                task_work_recorded_at=progress.recorded_at,
+                question=question,
+                answer=answer,
+                result=result,
+            )
+        except TaskWorkRetrievalReceiptError as exc:
+            st.warning(
+                "Task work was recorded, but its diagnostic retrieval receipt "
+                "could not be recorded: " + str(exc)
+            )
     except (TaskWorkProgressError, SolicitorTaskError, MatterMutationError) as exc:
         st.error("Task work could not be recorded: " + str(exc))
         return False
