@@ -112,7 +112,7 @@ def test_bounded_answer_maps_then_reduces_without_dropping_policy_gate(monkeypat
     assert "Do not generalise it to the entire case corpus" in client.responses.calls[-1]["input"]
 
 
-def test_analytical_constraint_is_applied_to_every_map_and_reduce(monkeypatch):
+def test_analytical_constraint_is_applied_to_reduce_only(monkeypatch):
     client = _Client()
     monkeypatch.setattr(bounded, "assert_ai_processing_allowed", lambda **kwargs: None)
     results = _results()
@@ -134,5 +134,7 @@ def test_analytical_constraint_is_applied_to_every_map_and_reduce(monkeypatch):
         constrain_prompt=constrain_prompt,
     )
 
-    assert len(constrained) == len(client.responses.calls)
-    assert all(call["input"].startswith("CONSTRAINED\n") for call in client.responses.calls)
+    assert len(client.responses.calls) == 2
+    assert len(constrained) == 1
+    assert not client.responses.calls[0]["input"].startswith("CONSTRAINED\n")
+    assert client.responses.calls[-1]["input"].startswith("CONSTRAINED\n")
