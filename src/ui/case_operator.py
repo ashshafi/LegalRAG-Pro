@@ -20,6 +20,28 @@ from case_management import CaseRepository, MatterAccessError
 from case_management.access import MatterMutationError
 from document_manager import get_documents
 from evidence_reference_bridge import ask_with_reference_findings
+from drafting_working_draft import (
+    DraftingWorkingDraftError,
+    load_working_drafts,
+)
+from drafting_working_draft_generation import (
+    DraftingWorkingDraftGenerationError,
+    generate_working_draft_candidate,
+)
+from drafting_working_draft_orchestration import (
+    DraftingWorkingDraftOrchestrationError,
+    PreparedWorkingDraft,
+    prepare_generated_working_draft,
+    record_prepared_working_draft,
+)
+from legalrag import (
+    INTERACTIVE_CHAT_MODEL,
+    INTERACTIVE_REASONING_EFFORT,
+    _legal_answer_provider_client,
+)
+from task_work_authority_scope import (
+    load_task_work_authority_scope,
+)
 from governed_analytical_authority.models import GovernedRuntimeAnalyticalAuthority
 from governed_analytical_authority.provider import (
     GovernedAnalyticalAuthorityProviderError,
@@ -1769,6 +1791,1194 @@ def _render_task_work_scope_capture(
 
         st.rerun()
 
+
+_DRAFTING_PREPARED_KEY = "case_operator_drafting_prepared"
+_DRAFTING_CONTEXT_KEY = "case_operator_drafting_context"
+_DRAFTING_SAVED_KEY = "case_operator_drafting_saved"
+
+
+class _DraftingUIError(RuntimeError):
+    """A solicitor-facing Drafting action could not be bound safely."""
+
+
+def _clear_drafting_state(
+    *,
+    preserve_saved: bool = False,
+) -> None:
+    st.session_state.pop(
+        _DRAFTING_PREPARED_KEY,
+        None,
+    )
+    st.session_state.pop(
+        _DRAFTING_CONTEXT_KEY,
+        None,
+    )
+
+    if not preserve_saved:
+        st.session_state.pop(
+            _DRAFTING_SAVED_KEY,
+            None,
+        )
+
+
+def _drafting_context_matches(
+    context: object,
+    *,
+    case_id: str,
+    task_id: str,
+    progress_id: str | None = None,
+    scope_binding_id: str | None = None,
+    element_id: str | None = None,
+) -> bool:
+    if not isinstance(
+        context,
+        dict,
+    ):
+        return False
+
+    expected = {
+        "case_id": case_id,
+        "task_id": task_id,
+    }
+
+    if progress_id is not None:
+        expected[
+            "progress_id"
+        ] = progress_id
+
+    if scope_binding_id is not None:
+        expected[
+            "scope_binding_id"
+        ] = scope_binding_id
+
+    if element_id is not None:
+        expected[
+            "element_id"
+        ] = element_id
+
+    return all(
+        str(
+            context.get(
+                key,
+                "",
+            )
+        ).strip()
+        == str(value).strip()
+        for key, value
+        in expected.items()
+    )
+
+
+def _drafting_check_presentation(
+    result: object,
+) -> tuple[str, str]:
+    if hasattr(
+        result,
+        "value",
+    ):
+        result = getattr(
+            result,
+            "value",
+        )
+
+    value = str(
+        result or ""
+    ).strip().upper()
+
+    if value == "ALIGNED":
+        return (
+            "success",
+            "This wording is consistent with the current case assessment.",
+        )
+
+    if value == "CAUTION":
+        return (
+            "warning",
+            "Review this wording carefully before saving. "
+            "The current case assessment contains qualifications, "
+            "unresolved points or evidence limitations relevant to it.",
+        )
+
+    if value == "NOT_AUTHORIZED":
+        return (
+            "error",
+            "This wording goes beyond what the current case assessment "
+            "presently supports. It may remain working material for "
+            "professional review, but it is not approved for reliance.",
+        )
+
+    return (
+        "error",
+        "The wording check could not be interpreted safely. "
+        "Do not rely on this proposed draft without further review.",
+    )
+
+
+def _load_drafting_action_context(
+    *,
+    case_id: str,
+    task: object,
+    progress_id: str,
+    element_id: str,
+) -> tuple[
+    object,
+    object,
+    object,
+    object,
+    str,
+]:
+    task_id = _clean(
+        getattr(
+            task,
+            "task_id",
+            "",
+        )
+    )
+
+    if not task_id:
+        raise _DraftingUIError(
+            "The selected task has no stable identity."
+        )
+
+    identity = (
+        current_user_identity()
+    )
+
+    CaseRepository().require_access(
+        identity,
+        case_id,
+    )
+
+    creator_reference = _clean(
+        getattr(
+            identity,
+            "email",
+            "",
+        )
+    )
+
+    if not creator_reference:
+        raise _DraftingUIError(
+            "The authenticated user has no canonical professional email."
+        )
+
+    progress_rows = tuple(
+        load_task_work_progress(
+            case_id,
+            task_id,
+        )
+    )
+
+    progress_matches = tuple(
+        row
+        for row in progress_rows
+        if _clean(
+            getattr(
+                row,
+                "progress_id",
+                "",
+            )
+        )
+        == progress_id
+    )
+
+    if len(
+        progress_matches
+    ) != 1:
+        raise _DraftingUIError(
+            "The selected recorded work is no longer uniquely available."
+        )
+
+    progress = progress_matches[0]
+
+    receipts = tuple(
+        load_task_work_retrieval_receipts(
+            case_id,
+            task_id,
+        )
+    )
+
+    receipt_matches = tuple(
+        receipt
+        for receipt in receipts
+        if _clean(
+            getattr(
+                receipt,
+                "progress_id",
+                "",
+            )
+        )
+        == progress_id
+    )
+
+    if len(
+        receipt_matches
+    ) != 1:
+        raise _DraftingUIError(
+            "The selected recorded work no longer has one verified "
+            "source record."
+        )
+
+    retrieval_receipt = (
+        receipt_matches[0]
+    )
+
+    scope = (
+        load_task_work_authority_scope(
+            case_id,
+            task_id,
+            progress_id,
+        )
+    )
+
+    if scope is None:
+        raise _DraftingUIError(
+            "The selected recorded work no longer has a professional "
+            "work scope."
+        )
+
+    authority = (
+        load_active_governed_analytical_authority(
+            case_id
+        )
+    )
+
+    if authority is None:
+        raise _DraftingUIError(
+            "No current case assessment is available."
+        )
+
+    resolution = (
+        resolve_task_work_authority_scope(
+            scope,
+            authority=authority,
+        )
+    )
+
+    element_matches = tuple(
+        element
+        for element in resolution.elements
+        if _clean(
+            getattr(
+                element,
+                "element_id",
+                "",
+            )
+        )
+        == element_id
+    )
+
+    if len(
+        element_matches
+    ) != 1:
+        raise _DraftingUIError(
+            "The selected draft focus is no longer available "
+            "within the current work scope."
+        )
+
+    return (
+        progress,
+        retrieval_receipt,
+        scope,
+        authority,
+        creator_reference,
+    )
+
+
+def _render_saved_working_drafts(
+    *,
+    case_id: str,
+    task_id: str,
+) -> None:
+    try:
+        drafts = (
+            load_working_drafts(
+                case_id,
+                task_id,
+            )
+        )
+    except DraftingWorkingDraftError as exc:
+        st.error(
+            "Saved working drafts could not be validated: "
+            + str(exc)
+        )
+        return
+
+    if not drafts:
+        return
+
+    with st.expander(
+        "Saved working drafts "
+        + f"({len(drafts)})",
+        expanded=False,
+    ):
+        for draft in reversed(
+            drafts[-5:]
+        ):
+            st.markdown(
+                "**"
+                + _clean(
+                    getattr(
+                        draft,
+                        "title",
+                        "Working draft",
+                    )
+                )
+                + "**"
+            )
+
+            recorded_at = _clean(
+                getattr(
+                    draft,
+                    "recorded_at",
+                    "",
+                )
+            )
+
+            if recorded_at:
+                st.caption(
+                    "Saved "
+                    + recorded_at
+                )
+
+            st.caption(
+                "Working material only ? not approval for reliance."
+            )
+
+
+def _render_drafting_workflow(
+    *,
+    case_id: str,
+    task: object,
+    history: tuple[Any, ...],
+) -> None:
+    task_id = _clean(
+        getattr(
+            task,
+            "task_id",
+            "",
+        )
+    )
+
+    if not task_id:
+        return
+
+    stored_context = (
+        st.session_state.get(
+            _DRAFTING_CONTEXT_KEY
+        )
+    )
+
+    if (
+        stored_context is not None
+        and not _drafting_context_matches(
+            stored_context,
+            case_id=case_id,
+            task_id=task_id,
+        )
+    ):
+        _clear_drafting_state()
+
+    saved_marker = (
+        st.session_state.pop(
+            _DRAFTING_SAVED_KEY,
+            None,
+        )
+    )
+
+    if saved_marker:
+        st.success(
+            "Working draft saved. It remains working material and "
+            "has not been approved for reliance."
+        )
+
+    try:
+        receipts = tuple(
+            load_task_work_retrieval_receipts(
+                case_id,
+                task_id,
+            )
+        )
+
+        scopes = tuple(
+            load_task_work_authority_scopes(
+                case_id,
+                task_id,
+            )
+        )
+
+        rows = (
+            _task_work_scope_capture_rows(
+                history=tuple(
+                    history
+                ),
+                receipts=receipts,
+                scopes=scopes,
+            )
+        )
+    except (
+        TaskWorkRetrievalReceiptError,
+        TaskWorkAuthorityScopeError,
+    ) as exc:
+        st.error(
+            "Draft preparation is unavailable because the recorded "
+            "task work could not be validated: "
+            + str(exc)
+        )
+        return
+
+    if not rows:
+        return
+
+    st.markdown(
+        "### Prepare draft"
+    )
+
+    st.caption(
+        "Create proposed wording from recorded work for this task. "
+        "Nothing is saved until you choose Save as working draft."
+    )
+
+    try:
+        authority = (
+            load_active_governed_analytical_authority(
+                case_id
+            )
+        )
+    except GovernedAnalyticalAuthorityProviderError as exc:
+        st.error(
+            "Draft preparation is unavailable because the current "
+            "case assessment could not be validated: "
+            + str(exc)
+        )
+        return
+
+    if authority is None:
+        st.error(
+            "Draft preparation is unavailable because there is no "
+            "current case assessment."
+        )
+        return
+
+    current_rows = []
+    stale_scope_count = 0
+
+    for (
+        progress,
+        receipt,
+        existing_scope,
+    ) in rows:
+        if existing_scope is None:
+            continue
+
+        try:
+            resolution = (
+                resolve_task_work_authority_scope(
+                    existing_scope,
+                    authority=authority,
+                )
+            )
+        except TaskWorkAuthorityScopeError:
+            stale_scope_count += 1
+            continue
+
+        current_rows.append(
+            (
+                progress,
+                receipt,
+                existing_scope,
+                resolution,
+            )
+        )
+
+    if stale_scope_count:
+        st.warning(
+            "Some earlier work can no longer be used for drafting because "
+            "its professional work scope does not match the current case assessment."
+        )
+
+    if not current_rows:
+        st.info(
+            "Set a current work scope for recorded task work above before "
+            "preparing a draft."
+        )
+
+        _render_saved_working_drafts(
+            case_id=case_id,
+            task_id=task_id,
+        )
+        return
+
+    row_by_progress_id = {}
+
+    for row in current_rows:
+        progress = row[0]
+
+        progress_id = _clean(
+            getattr(
+                progress,
+                "progress_id",
+                "",
+            )
+        )
+
+        if not progress_id:
+            continue
+
+        if progress_id in row_by_progress_id:
+            st.error(
+                "Draft preparation stopped because recorded work contains "
+                "a duplicate identity."
+            )
+            return
+
+        row_by_progress_id[
+            progress_id
+        ] = row
+
+    prepared = (
+        st.session_state.get(
+            _DRAFTING_PREPARED_KEY
+        )
+    )
+
+    prepared_context = (
+        st.session_state.get(
+            _DRAFTING_CONTEXT_KEY
+        )
+    )
+
+    if prepared is not None:
+        if not isinstance(
+            prepared,
+            PreparedWorkingDraft,
+        ):
+            _clear_drafting_state()
+            prepared = None
+
+        elif not isinstance(
+            prepared_context,
+            dict,
+        ):
+            _clear_drafting_state()
+            prepared = None
+
+        else:
+            context_progress_id = (
+                _clean(
+                    prepared_context.get(
+                        "progress_id",
+                        ""
+                    )
+                )
+            )
+
+            context_scope_id = (
+                _clean(
+                    prepared_context.get(
+                        "scope_binding_id",
+                        ""
+                    )
+                )
+            )
+
+            context_element_id = (
+                _clean(
+                    prepared_context.get(
+                        "element_id",
+                        ""
+                    )
+                )
+            )
+
+            row = row_by_progress_id.get(
+                context_progress_id
+            )
+
+            if row is None:
+                _clear_drafting_state()
+                prepared = None
+                st.warning(
+                    "The proposed draft is no longer current. "
+                    "Generate it again from the recorded work."
+                )
+
+            else:
+                scope = row[2]
+                resolution = row[3]
+
+                current_element_ids = {
+                    _clean(
+                        getattr(
+                            element,
+                            "element_id",
+                            "",
+                        )
+                    )
+                    for element
+                    in resolution.elements
+                }
+
+                if (
+                    _clean(
+                        getattr(
+                            scope,
+                            "binding_id",
+                            "",
+                        )
+                    )
+                    != context_scope_id
+                    or context_element_id
+                    not in current_element_ids
+                ):
+                    _clear_drafting_state()
+                    prepared = None
+                    st.warning(
+                        "The proposed draft is no longer current. "
+                        "Generate it again from the current work scope."
+                    )
+
+    if prepared is not None:
+        st.markdown(
+            "#### Proposed draft"
+        )
+
+        st.write(
+            "**"
+            + _clean(
+                getattr(
+                    prepared.draft,
+                    "title",
+                    "Working draft",
+                )
+            )
+            + "**"
+        )
+
+        purpose = _clean(
+            getattr(
+                prepared.draft,
+                "purpose",
+                "",
+            )
+        )
+
+        if purpose:
+            st.caption(
+                purpose
+            )
+
+        st.caption(
+            "Review each proposed statement and its check against the "
+            "current case assessment before saving. Saving creates working "
+            "material only; it does not approve the wording for reliance."
+        )
+
+        statements = tuple(
+            getattr(
+                prepared.draft,
+                "statements",
+                (),
+            )
+        )
+
+        evaluations = tuple(
+            getattr(
+                prepared.authority_evaluation,
+                "statement_evaluations",
+                (),
+            )
+        )
+
+        if len(
+            statements
+        ) != len(
+            evaluations
+        ):
+            st.error(
+                "The proposed draft cannot be reviewed because its checks "
+                "do not cover every statement."
+            )
+            return
+
+        for index, (
+            statement,
+            evaluation,
+        ) in enumerate(
+            zip(
+                statements,
+                evaluations,
+                strict=True,
+            ),
+            start=1,
+        ):
+            with st.container(
+                border=True
+            ):
+                st.markdown(
+                    f"**Proposed wording {index}**"
+                )
+
+                st.write(
+                    _clean(
+                        getattr(
+                            statement,
+                            "text",
+                            "",
+                        )
+                    )
+                )
+
+                check = getattr(
+                    evaluation,
+                    "check",
+                    None,
+                )
+
+                result = getattr(
+                    check,
+                    "result",
+                    None,
+                )
+
+                kind, message = (
+                    _drafting_check_presentation(
+                        result
+                    )
+                )
+
+                if kind == "success":
+                    st.success(
+                        message
+                    )
+                elif kind == "warning":
+                    st.warning(
+                        message
+                    )
+                else:
+                    st.error(
+                        message
+                    )
+
+        save_col, discard_col = (
+            st.columns(2)
+        )
+
+        save_clicked = (
+            save_col.button(
+                "Save as working draft",
+                key=(
+                    "case_operator_drafting_save_"
+                    + task_id
+                ),
+                type="primary",
+            )
+        )
+
+        discard_clicked = (
+            discard_col.button(
+                "Discard proposed draft",
+                key=(
+                    "case_operator_drafting_discard_"
+                    + task_id
+                ),
+            )
+        )
+
+        if discard_clicked:
+            _clear_drafting_state()
+            st.rerun()
+
+        if save_clicked:
+            try:
+                (
+                    progress,
+                    retrieval_receipt,
+                    scope,
+                    current_authority,
+                    _creator_reference,
+                ) = (
+                    _load_drafting_action_context(
+                        case_id=case_id,
+                        task=task,
+                        progress_id=_clean(
+                            prepared_context.get(
+                                "progress_id",
+                                "",
+                            )
+                        ),
+                        element_id=_clean(
+                            prepared_context.get(
+                                "element_id",
+                                "",
+                            )
+                        ),
+                    )
+                )
+
+                recorded = (
+                    record_prepared_working_draft(
+                        prepared=prepared,
+                        task=task,
+                        progress=progress,
+                        retrieval_receipt=
+                            retrieval_receipt,
+                        scope=scope,
+                        authority=
+                            current_authority,
+                    )
+                )
+
+            except (
+                _DraftingUIError,
+                DraftingWorkingDraftOrchestrationError,
+                DraftingWorkingDraftError,
+                TaskWorkProgressError,
+                TaskWorkRetrievalReceiptError,
+                TaskWorkAuthorityScopeError,
+                GovernedAnalyticalAuthorityProviderError,
+                MatterAccessError,
+                MatterMutationError,
+                PermissionError,
+            ) as exc:
+                st.error(
+                    "The working draft was not saved: "
+                    + str(exc)
+                )
+                return
+
+            st.session_state[
+                _DRAFTING_SAVED_KEY
+            ] = _clean(
+                getattr(
+                    recorded.draft,
+                    "draft_id",
+                    "",
+                )
+            ) or "saved"
+
+            _clear_drafting_state(
+                preserve_saved=True
+            )
+
+            st.rerun()
+
+        _render_saved_working_drafts(
+            case_id=case_id,
+            task_id=task_id,
+        )
+
+        return
+
+    progress_options = tuple(
+        row_by_progress_id
+    )
+
+    selected_progress_id = (
+        st.selectbox(
+            "Work to draft from",
+            options=
+                progress_options,
+            index=None,
+            placeholder=
+                "Select recorded work",
+            format_func=lambda value: (
+                "Recorded work"
+                + (
+                    " ? "
+                    + _clean(
+                        getattr(
+                            row_by_progress_id[
+                                value
+                            ][0],
+                            "recorded_at",
+                            "",
+                        )
+                    )
+                    if _clean(
+                        getattr(
+                            row_by_progress_id[
+                                value
+                            ][0],
+                            "recorded_at",
+                            "",
+                        )
+                    )
+                    else ""
+                )
+            ),
+            key=(
+                "case_operator_drafting_progress_"
+                + task_id
+            ),
+        )
+    )
+
+    if selected_progress_id is None:
+        _render_saved_working_drafts(
+            case_id=case_id,
+            task_id=task_id,
+        )
+        return
+
+    selected_row = (
+        row_by_progress_id[
+            selected_progress_id
+        ]
+    )
+
+    selected_scope = (
+        selected_row[2]
+    )
+
+    selected_resolution = (
+        selected_row[3]
+    )
+
+    element_by_id = {
+        _clean(
+            getattr(
+                element,
+                "element_id",
+                "",
+            )
+        ): element
+        for element
+        in selected_resolution.elements
+        if _clean(
+            getattr(
+                element,
+                "element_id",
+                "",
+            )
+        )
+    }
+
+    selected_element_id = (
+        st.selectbox(
+            "Draft focus",
+            options=
+                tuple(
+                    element_by_id
+                ),
+            index=None,
+            placeholder=
+                "Select the part of the case assessment to draft",
+            format_func=lambda value: (
+                _task_work_scope_element_label(
+                    element_by_id[
+                        value
+                    ]
+                )
+            ),
+            key=(
+                "case_operator_drafting_element_"
+                + task_id
+                + "_"
+                + selected_progress_id
+            ),
+        )
+    )
+
+    if selected_element_id is None:
+        _render_saved_working_drafts(
+            case_id=case_id,
+            task_id=task_id,
+        )
+        return
+
+    default_title = (
+        _clean(
+            getattr(
+                task,
+                "title",
+                "",
+            )
+        )
+        or "Working draft"
+    )
+
+    default_purpose = (
+        _clean(
+            getattr(
+                task,
+                "why_it_matters",
+                "",
+            )
+        )
+        or _clean(
+            getattr(
+                task,
+                "originating_question",
+                "",
+            )
+        )
+        or "Prepare working wording from the selected recorded work."
+    )
+
+    form_key = (
+        "case_operator_drafting_generate_"
+        + task_id
+        + "_"
+        + selected_progress_id
+        + "_"
+        + selected_element_id
+    )
+
+    with st.form(
+        form_key,
+        clear_on_submit=False,
+    ):
+        title = (
+            st.text_input(
+                "Draft title",
+                value=
+                    default_title,
+            )
+        )
+
+        purpose = (
+            st.text_area(
+                "Purpose",
+                value=
+                    default_purpose,
+            )
+        )
+
+        generate_clicked = (
+            st.form_submit_button(
+                "Generate draft",
+                type="primary",
+            )
+        )
+
+    if generate_clicked:
+        if not _clean(title):
+            st.error(
+                "Enter a draft title before generating."
+            )
+            return
+
+        if not _clean(purpose):
+            st.error(
+                "Enter the purpose of the draft before generating."
+            )
+            return
+
+        try:
+            (
+                progress,
+                retrieval_receipt,
+                fresh_scope,
+                current_authority,
+                creator_reference,
+            ) = (
+                _load_drafting_action_context(
+                    case_id=case_id,
+                    task=task,
+                    progress_id=
+                        selected_progress_id,
+                    element_id=
+                        selected_element_id,
+                )
+            )
+
+            with st.spinner(
+                "Preparing proposed wording..."
+            ):
+                candidate = (
+                    generate_working_draft_candidate(
+                        client=
+                            _legal_answer_provider_client(),
+                        model=
+                            INTERACTIVE_CHAT_MODEL,
+                        task=task,
+                        progress=progress,
+                        retrieval_receipt=
+                            retrieval_receipt,
+                        scope=fresh_scope,
+                        authority=
+                            current_authority,
+                        element_id=
+                            selected_element_id,
+                        reasoning_effort=
+                            INTERACTIVE_REASONING_EFFORT,
+                    )
+                )
+
+                prepared = (
+                    prepare_generated_working_draft(
+                        candidate=
+                            candidate,
+                        task=task,
+                        progress=progress,
+                        retrieval_receipt=
+                            retrieval_receipt,
+                        scope=fresh_scope,
+                        authority=
+                            current_authority,
+                        title=
+                            _clean(title),
+                        purpose=
+                            _clean(purpose),
+                        creator_reference=
+                            creator_reference,
+                    )
+                )
+
+        except (
+            _DraftingUIError,
+            DraftingWorkingDraftGenerationError,
+            DraftingWorkingDraftOrchestrationError,
+            DraftingWorkingDraftError,
+            TaskWorkProgressError,
+            TaskWorkRetrievalReceiptError,
+            TaskWorkAuthorityScopeError,
+            GovernedAnalyticalAuthorityProviderError,
+            MatterAccessError,
+            MatterMutationError,
+            PermissionError,
+        ) as exc:
+            st.error(
+                "The draft could not be prepared. Nothing has been saved: "
+                + str(exc)
+            )
+            return
+
+        st.session_state[
+            _DRAFTING_PREPARED_KEY
+        ] = prepared
+
+        st.session_state[
+            _DRAFTING_CONTEXT_KEY
+        ] = {
+            "case_id":
+                case_id,
+            "task_id":
+                task_id,
+            "progress_id":
+                selected_progress_id,
+            "scope_binding_id":
+                _clean(
+                    getattr(
+                        fresh_scope,
+                        "binding_id",
+                        "",
+                    )
+                ),
+            "element_id":
+                selected_element_id,
+        }
+
+        st.rerun()
+
+    _render_saved_working_drafts(
+        case_id=case_id,
+        task_id=task_id,
+    )
+
+
+
 def _render_approved_task_execution(
     *,
     case_id: str,
@@ -1892,6 +3102,12 @@ def _render_approved_task_execution(
     _render_task_work_history(history=history)
 
     _render_task_work_scope_capture(
+        case_id=case_id,
+        task=selected_task,
+        history=tuple(history),
+    )
+
+    _render_drafting_workflow(
         case_id=case_id,
         task=selected_task,
         history=tuple(history),
