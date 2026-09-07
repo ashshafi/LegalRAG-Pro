@@ -54,6 +54,7 @@ _RESULT_QUESTION_KEY = "case_operator_last_question"
 _TRACE_KEY = "case_operator_last_trace"
 _PROPOSAL_DISMISSED_KEY = "case_operator_dismissed_task_proposal"
 _PROPOSAL_CREATED_KEY = "case_operator_created_task_proposal"
+_TASK_POST_BLOCK_HANDOFF_KEY = "case_operator_post_block_handoff_task_id"
 _TASK_EXECUTION_CASE_KEY = "case_operator_task_execution_case_id"
 _TASK_EXECUTION_TASK_KEY = "case_operator_task_execution_task_id"
 _TASK_EXECUTION_RESULT_KEY = "case_operator_task_execution_result"
@@ -1012,6 +1013,39 @@ def _task_priority_order(task: Any) -> int:
     return _TASK_PRIORITY_ORDER.get(normalized, 99)
 
 
+
+def _post_block_handoff_target(
+    *,
+    handoff_from_task_id: str,
+    current_selected_task_id: str,
+    ready_tasks: tuple[Any, ...],
+) -> str | None:
+    """Return one READY handoff target only for a just-blocked selected task."""
+    handoff_from = _clean(handoff_from_task_id)
+    current_selected = _clean(current_selected_task_id)
+
+    if not handoff_from:
+        return None
+
+    if current_selected != handoff_from:
+        return None
+
+    if not ready_tasks:
+        return None
+
+    target_task_id = _clean(
+        getattr(ready_tasks[0], "task_id", "")
+    )
+
+    if not target_task_id:
+        return None
+
+    if target_task_id == handoff_from:
+        return None
+
+    return target_task_id
+
+
 def _project_approved_task_queue(
     *,
     case_id: str,
@@ -1131,6 +1165,30 @@ def _render_approved_task_execution(
         st.error("No approved task could be projected safely for task execution.")
         _render_task_execution_result(case_id=case_id, tasks=all_tasks)
         return
+
+    handoff_from_task_id = _clean(
+        st.session_state.pop(_TASK_POST_BLOCK_HANDOFF_KEY, "")
+    )
+
+    if handoff_from_task_id:
+        handoff_target = _post_block_handoff_target(
+            handoff_from_task_id=handoff_from_task_id,
+            current_selected_task_id=_clean(
+                st.session_state.get("case_operator_approved_task", "")
+            ),
+            ready_tasks=ready_tasks,
+        )
+
+        if handoff_target is not None:
+            st.session_state["case_operator_approved_task"] = handoff_target
+
+            target_task = task_by_id.get(handoff_target)
+
+            st.info(
+                "The task just worked is now blocked. "
+                "Case Operator has moved to the next approved task that can proceed: "
+                + _clean(getattr(target_task, "title", "Task"))
+            )
 
     selected_task_id = st.selectbox(
         "Approved task",
@@ -1271,6 +1329,16 @@ def _render_approved_task_execution(
             question=question,
             result=result,
         ):
+            persisted_answer = result.get("answer")
+
+            if (
+                isinstance(persisted_answer, str)
+                and extract_task_outcome(persisted_answer) == "BLOCKED"
+            ):
+                st.session_state[
+                    _TASK_POST_BLOCK_HANDOFF_KEY
+                ] = selected_task_id
+
             st.rerun()
 
     _render_task_execution_result(case_id=case_id, tasks=all_tasks)
