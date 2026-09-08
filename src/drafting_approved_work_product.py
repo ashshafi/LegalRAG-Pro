@@ -1,4 +1,4 @@
-﻿"""Read-only projection of professionally approved WorkingDraft work products."""
+"""Read-only projection of professionally approved WorkingDraft work products."""
 
 from __future__ import annotations
 
@@ -37,6 +37,7 @@ class ApprovedWorkingDraftProduct:
     draft_id: str
     approved_at: str
     reviewer_reference: str
+    review_note: str
     court_or_tribunal_reliance: bool
     target_id: str
 
@@ -287,12 +288,88 @@ def load_approved_working_draft_products(
             "reviewer_reference",
         )
 
+        current_decision_events = tuple(
+            candidate
+            for candidate in events
+            if getattr(
+                candidate,
+                "event_id",
+                "",
+            ) == projection.latest_event_id
+            and getattr(
+                candidate,
+                "target_id",
+                "",
+            ) == target_id
+        )
+
+        if len(current_decision_events) != 1:
+            raise DraftingApprovedWorkProductError(
+                "the current approved WorkingDraft decision event is not unique."
+            )
+
+        current_decision_event = (
+            current_decision_events[0]
+        )
+
+        decision_recorded_at = _required(
+            getattr(
+                current_decision_event,
+                "recorded_at",
+                "",
+            ),
+            "decision_recorded_at",
+        )
+
+        decision_reviewer_reference = _required(
+            getattr(
+                current_decision_event,
+                "reviewer_reference",
+                "",
+            ),
+            "decision_reviewer_reference",
+        )
+
+        review_note = _required(
+            getattr(
+                current_decision_event,
+                "review_note",
+                "",
+            ),
+            "review_note",
+        )
+
+        if decision_recorded_at != approved_at:
+            raise DraftingApprovedWorkProductError(
+                "the current professional decision timestamp does not match the approved projection."
+            )
+
+        if decision_reviewer_reference != reviewer_reference:
+            raise DraftingApprovedWorkProductError(
+                "the current professional decision reviewer does not match the approved projection."
+            )
+
+        if bool(
+            getattr(
+                current_decision_event,
+                "court_or_tribunal_reliance",
+                False,
+            )
+        ) != bool(
+            projection.court_or_tribunal_reliance
+        ):
+            raise DraftingApprovedWorkProductError(
+                "the current professional decision reliance scope does not match the approved projection."
+            )
+
         products.append(
             ApprovedWorkingDraftProduct(
                 draft_id=draft_id,
                 approved_at=approved_at,
                 reviewer_reference=
                     reviewer_reference,
+                review_note=
+                    review_note,
                 court_or_tribunal_reliance=
                     bool(
                         projection.court_or_tribunal_reliance

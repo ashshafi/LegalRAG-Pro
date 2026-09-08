@@ -3253,6 +3253,26 @@ def _render_saved_working_drafts(
                         + approved_at
                     )
 
+                review_note = _clean(
+                    getattr(
+                        selected_approved_product,
+                        "review_note",
+                        "",
+                    )
+                )
+
+                if not review_note:
+                    st.error(
+                        "The stored professional review note could not be displayed."
+                    )
+                else:
+                    st.markdown(
+                        "**Professional review note**"
+                    )
+                    st.write(
+                        review_note
+                    )
+
                 if bool(
                     getattr(
                         selected_approved_product,
