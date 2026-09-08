@@ -7,6 +7,7 @@ from uuid import NAMESPACE_URL, uuid5
 import pytest
 
 import drafting_working_draft_release_orchestration as orchestration
+import work_product_artifact_store as wpa
 import work_product_release as wpr
 
 
@@ -129,11 +130,18 @@ def target(
 
 def prepared(
     *results: str,
+    suffix: str = "1",
 ):
     if not results:
         results = (
             "CAUTION",
         )
+
+    markdown = (
+        "# Exact WorkingDraft professional review "
+        + suffix
+        + "\n"
+    )
 
     return SimpleNamespace(
         projection=
@@ -147,9 +155,17 @@ def prepared(
                         in results
                     ),
             ),
+        artifact=
+            SimpleNamespace(
+                markdown=
+                    markdown,
+            ),
         target=
-            target(),
+            target(
+                suffix=suffix,
+            ),
     )
+
 
 
 def install_prepared(
@@ -623,15 +639,9 @@ def test_release_uses_fresh_prepared_target_each_time(
         "CAUTION",
     )
 
-    second_target = target(
+    second = prepared(
+        "CAUTION",
         suffix="2",
-    )
-
-    second = SimpleNamespace(
-        projection=
-            first.projection,
-        target=
-            second_target,
     )
 
     calls = iter(
@@ -1001,3 +1011,479 @@ def test_orchestration_has_no_ui_provider_or_artifact_file_persistence_dependenc
         ".write_text(",
     ):
         assert forbidden not in source
+
+def test_artifact_publication_precedes_existing_release_event_d1i4i4i4i3(
+    monkeypatch,
+    tmp_path,
+):
+    value = prepared(
+        "CAUTION",
+    )
+
+    install_prepared(
+        monkeypatch,
+        value,
+    )
+
+    original = (
+        orchestration.record_work_product_release
+    )
+
+    observed = {}
+
+    def guarded_release(
+        **kwargs,
+    ):
+        store = wpa.WorkProductArtifactStore(
+            kwargs["root"]
+        )
+
+        observed["binding"] = (
+            store.load_binding(
+                value.target.case_id,
+                value.target.target_id,
+            )
+        )
+
+        observed["bytes"] = (
+            store.read_artifact(
+                value.target.case_id,
+                value.target.target_id,
+            )
+        )
+
+        return original(
+            **kwargs,
+        )
+
+    monkeypatch.setattr(
+        orchestration,
+        "record_work_product_release",
+        guarded_release,
+    )
+
+    result = (
+        orchestration
+        .record_working_draft_professional_release(
+            draft=
+                object(),
+            authority=
+                object(),
+            **approval_values(
+                root=tmp_path,
+            ),
+        )
+    )
+
+    expected_bytes = (
+        value.artifact.markdown.encode(
+            "utf-8"
+        )
+    )
+
+    assert observed[
+        "bytes"
+    ] == expected_bytes
+
+    assert (
+        observed[
+            "binding"
+        ].target_id
+        == value.target.target_id
+    )
+
+    assert (
+        result.event.target_id
+        == value.target.target_id
+    )
+
+
+def test_reviewed_target_mismatch_publishes_fresh_neutral_artifact_but_no_release_event_d1i4i4i4i3(
+    monkeypatch,
+    tmp_path,
+):
+    value = prepared(
+        "CAUTION",
+    )
+
+    install_prepared(
+        monkeypatch,
+        value,
+    )
+
+    with pytest.raises(
+        orchestration.WorkingDraftProfessionalReleaseError,
+        match="target changed after professional review",
+    ):
+        (
+            orchestration
+            .record_working_draft_professional_release(
+                draft=
+                    object(),
+                authority=
+                    object(),
+                decision=
+                    wpr.WorkProductReleaseDecision.APPROVED_FOR_RELIANCE,
+                factual_basis_reviewed=
+                    True,
+                legal_authorities_reviewed=
+                    True,
+                unverified_authorities_remaining=
+                    0,
+                professional_judgment_completed=
+                    True,
+                court_or_tribunal_reliance=
+                    False,
+                reviewer_reference=
+                    "solicitor:functional-reviewer",
+                review_note=
+                    "Reviewed stale target.",
+                expected_target_id=
+                    "sha256:"
+                    + "f" * 64,
+                root=
+                    tmp_path,
+            )
+        )
+
+    store = wpa.WorkProductArtifactStore(
+        tmp_path
+    )
+
+    assert (
+        store.read_artifact(
+            value.target.case_id,
+            value.target.target_id,
+        )
+        == value.artifact.markdown.encode(
+            "utf-8"
+        )
+    )
+
+    assert (
+        wpr.load_work_product_release_events(
+            CASE_ID,
+            root=tmp_path,
+        )
+        == ()
+    )
+
+
+def test_artifact_publication_failure_prevents_release_event_d1i4i4i4i3(
+    monkeypatch,
+    tmp_path,
+):
+    value = prepared(
+        "CAUTION",
+    )
+
+    install_prepared(
+        monkeypatch,
+        value,
+    )
+
+    release_called = {
+        "value": False,
+    }
+
+    def forbidden_release(
+        **_kwargs,
+    ):
+        release_called[
+            "value"
+        ] = True
+        raise AssertionError(
+            "release recorder must not run"
+        )
+
+    class FailingStore:
+        def __init__(
+            self,
+            _root,
+        ):
+            pass
+
+        def publish_artifact(
+            self,
+            **_kwargs,
+        ):
+            raise wpa.WorkProductArtifactStoreError(
+                "synthetic publication failure"
+            )
+
+    monkeypatch.setattr(
+        orchestration,
+        "WorkProductArtifactStore",
+        FailingStore,
+    )
+
+    monkeypatch.setattr(
+        orchestration,
+        "record_work_product_release",
+        forbidden_release,
+    )
+
+    with pytest.raises(
+        orchestration.WorkingDraftProfessionalReleaseError,
+        match="Immutable work-product artifact publication failed",
+    ):
+        (
+            orchestration
+            .record_working_draft_professional_release(
+                draft=
+                    object(),
+                authority=
+                    object(),
+                **approval_values(
+                    root=tmp_path,
+                ),
+            )
+        )
+
+    assert release_called[
+        "value"
+    ] is False
+
+    assert (
+        wpr.load_work_product_release_events(
+            CASE_ID,
+            root=tmp_path,
+        )
+        == ()
+    )
+
+
+def test_release_failure_retains_published_neutral_artifact_d1i4i4i4i3(
+    monkeypatch,
+    tmp_path,
+):
+    value = prepared(
+        "CAUTION",
+    )
+
+    install_prepared(
+        monkeypatch,
+        value,
+    )
+
+    def fail_release(
+        **_kwargs,
+    ):
+        raise RuntimeError(
+            "synthetic release failure"
+        )
+
+    monkeypatch.setattr(
+        orchestration,
+        "record_work_product_release",
+        fail_release,
+    )
+
+    with pytest.raises(
+        orchestration.WorkingDraftProfessionalReleaseError,
+        match="Existing work-product release processing failed",
+    ):
+        (
+            orchestration
+            .record_working_draft_professional_release(
+                draft=
+                    object(),
+                authority=
+                    object(),
+                **approval_values(
+                    root=tmp_path,
+                ),
+            )
+        )
+
+    store = wpa.WorkProductArtifactStore(
+        tmp_path
+    )
+
+    assert (
+        store.read_artifact(
+            value.target.case_id,
+            value.target.target_id,
+        )
+        == value.artifact.markdown.encode(
+            "utf-8"
+        )
+    )
+
+    assert (
+        wpr.load_work_product_release_events(
+            CASE_ID,
+            root=tmp_path,
+        )
+        == ()
+    )
+
+
+def test_blank_reviewed_target_still_has_exact_published_snapshot_but_no_release_event_d1i4i4i4i3(
+    monkeypatch,
+    tmp_path,
+):
+    value = prepared(
+        "ALIGNED",
+    )
+
+    install_prepared(
+        monkeypatch,
+        value,
+    )
+
+    with pytest.raises(
+        orchestration.WorkingDraftProfessionalReleaseError,
+        match="expected_target_id",
+    ):
+        (
+            orchestration
+            .record_working_draft_professional_release(
+                draft=
+                    object(),
+                authority=
+                    object(),
+                decision=
+                    wpr.WorkProductReleaseDecision.APPROVED_FOR_RELIANCE,
+                factual_basis_reviewed=
+                    True,
+                legal_authorities_reviewed=
+                    True,
+                unverified_authorities_remaining=
+                    0,
+                professional_judgment_completed=
+                    True,
+                court_or_tribunal_reliance=
+                    False,
+                reviewer_reference=
+                    "solicitor:functional-reviewer",
+                review_note=
+                    "No exact target supplied.",
+                expected_target_id=
+                    " ",
+                root=
+                    tmp_path,
+            )
+        )
+
+    store = wpa.WorkProductArtifactStore(
+        tmp_path
+    )
+
+    assert (
+        store.read_artifact(
+            value.target.case_id,
+            value.target.target_id,
+        )
+        == value.artifact.markdown.encode(
+            "utf-8"
+        )
+    )
+
+    assert (
+        wpr.load_work_product_release_events(
+            CASE_ID,
+            root=tmp_path,
+        )
+        == ()
+    )
+
+
+def test_not_authorized_approval_publishes_review_snapshot_but_no_release_event_d1i4i4i4i3(
+    monkeypatch,
+    tmp_path,
+):
+    value = prepared(
+        "NOT_AUTHORIZED",
+    )
+
+    install_prepared(
+        monkeypatch,
+        value,
+    )
+
+    with pytest.raises(
+        orchestration.WorkingDraftProfessionalReleaseError,
+        match="NOT_AUTHORIZED",
+    ):
+        (
+            orchestration
+            .record_working_draft_professional_release(
+                draft=
+                    object(),
+                authority=
+                    object(),
+                **approval_values(
+                    root=tmp_path,
+                ),
+            )
+        )
+
+    store = wpa.WorkProductArtifactStore(
+        tmp_path
+    )
+
+    assert (
+        store.read_artifact(
+            value.target.case_id,
+            value.target.target_id,
+        )
+        == value.artifact.markdown.encode(
+            "utf-8"
+        )
+    )
+
+    assert (
+        wpr.load_work_product_release_events(
+            CASE_ID,
+            root=tmp_path,
+        )
+        == ()
+    )
+
+
+def test_artifact_and_release_event_share_exact_injected_root_d1i4i4i4i3(
+    monkeypatch,
+    tmp_path,
+):
+    value = prepared(
+        "CAUTION",
+    )
+
+    install_prepared(
+        monkeypatch,
+        value,
+    )
+
+    (
+        orchestration
+        .record_working_draft_professional_release(
+            draft=
+                object(),
+            authority=
+                object(),
+            **approval_values(
+                root=tmp_path,
+            ),
+        )
+    )
+
+    assert (
+        tmp_path
+        / CASE_ID
+        / "events.jsonl"
+    ).is_file()
+
+    assert (
+        tmp_path
+        / CASE_ID
+        / "artifacts"
+        / "targets"
+        / (
+            value.target.target_id.split(
+                ":",
+                1,
+            )[1]
+            + ".json"
+        )
+    ).is_file()

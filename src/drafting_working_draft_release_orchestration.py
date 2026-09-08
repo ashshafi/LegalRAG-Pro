@@ -20,6 +20,10 @@ from drafting_working_draft_release_adapter import (
     WorkingDraftReleaseAdapterError,
     prepare_working_draft_professional_review,
 )
+from work_product_artifact_store import (
+    WorkProductArtifactStore,
+)
+
 from work_product_release import (
     WorkProductReleaseDecision,
     WorkProductReleaseEvent,
@@ -162,6 +166,37 @@ def prepare_working_draft_professional_release(
         ) from exc
 
 
+def _exact_working_draft_review_artifact_bytes(
+    *,
+    prepared_review: PreparedWorkingDraftProfessionalReview,
+) -> bytes:
+    # Return the exact UTF-8 Markdown bytes bound into the release target.
+
+    if (
+        prepared_review.target.artifact_format
+        != "markdown"
+    ):
+        raise WorkingDraftProfessionalReleaseError(
+            "WorkingDraft professional review artifact format is not markdown."
+        )
+
+    try:
+        markdown = prepared_review.artifact.markdown
+    except AttributeError as exc:
+        raise WorkingDraftProfessionalReleaseError(
+            "WorkingDraft professional review artifact does not expose markdown."
+        ) from exc
+
+    if not isinstance(markdown, str) or not markdown:
+        raise WorkingDraftProfessionalReleaseError(
+            "WorkingDraft professional review markdown is invalid."
+        )
+
+    return markdown.encode(
+        "utf-8"
+    )
+
+
 def record_working_draft_professional_release(
     *,
     draft: object,
@@ -177,17 +212,19 @@ def record_working_draft_professional_release(
     expected_target_id: str,
     root=None,
 ) -> WorkingDraftProfessionalReleaseResult:
-    """Record one explicit professional decision for a freshly prepared target.
-
-    Sequence:
-      1. fresh WorkingDraft/current-authority projection;
-      2. exact equality with the target the professional reviewed;
-      3. Drafting-specific approval policy;
-      4. existing work-product release recorder;
-      5. reload and project the existing append-only release history.
-
-    No WorkingDraft, analytical authority, task or artifact file is mutated.
-    """
+    # Record one explicit professional decision for one exact published artifact.
+    #
+    # Sequence:
+    #   1. fresh WorkingDraft/current-authority projection and release target;
+    #   2. immutable publication of the exact neutral Markdown artifact;
+    #   3. exact stored binding and artifact read-back verification;
+    #   4. exact equality with the target the professional reviewed;
+    #   5. Drafting-specific approval policy;
+    #   6. existing work-product release recorder;
+    #   7. reload and project the existing append-only release history.
+    #
+    # The WorkingDraft, analytical authority and task are not mutated.
+    # Release state remains solely in the existing work-product release history.
 
     prepared = (
         prepare_working_draft_professional_release(
@@ -195,6 +232,70 @@ def record_working_draft_professional_release(
             authority=authority,
         )
     )
+
+    artifact_bytes = (
+        _exact_working_draft_review_artifact_bytes(
+            prepared_review=
+                prepared,
+        )
+    )
+
+    try:
+        store = WorkProductArtifactStore(
+            root
+        )
+
+        published_binding = (
+            store.publish_artifact(
+                target=
+                    prepared.target,
+                content=
+                    artifact_bytes,
+            )
+        )
+
+        loaded_binding = (
+            store.load_binding(
+                prepared.target.case_id,
+                prepared.target.target_id,
+            )
+        )
+
+        stored_artifact_bytes = (
+            store.read_artifact(
+                prepared.target.case_id,
+                prepared.target.target_id,
+            )
+        )
+    except Exception as exc:
+        raise WorkingDraftProfessionalReleaseError(
+            "Immutable work-product artifact publication failed."
+        ) from exc
+
+    if loaded_binding != published_binding:
+        raise WorkingDraftProfessionalReleaseError(
+            "Published work-product artifact binding failed exact verification."
+        )
+
+    if stored_artifact_bytes != artifact_bytes:
+        raise WorkingDraftProfessionalReleaseError(
+            "Published work-product artifact bytes failed exact verification."
+        )
+
+    if (
+        published_binding.case_id
+        != prepared.target.case_id
+        or published_binding.target_id
+        != prepared.target.target_id
+        or published_binding.artifact_id
+        != prepared.target.artifact_id
+        or published_binding.artifact_sha256
+        != prepared.target.artifact_sha256
+    ):
+        raise WorkingDraftProfessionalReleaseError(
+            "Published work-product artifact binding does not match "
+            "the freshly prepared release target."
+        )
 
     reviewed_target_id = str(
         expected_target_id
@@ -307,6 +408,8 @@ def record_working_draft_professional_release(
         release_projection=
             projected,
     )
+
+
 
 
 __all__ = [
