@@ -25,6 +25,11 @@ from drafting_working_draft import (
     load_working_draft,
     load_working_drafts,
 )
+
+from drafting_approved_work_product import (
+    DraftingApprovedWorkProductError,
+    load_approved_working_draft_products,
+)
 from drafting_working_draft_generation import (
     DraftingWorkingDraftGenerationError,
     generate_working_draft_candidate,
@@ -2984,6 +2989,46 @@ def _render_saved_working_drafts(
             draft_id
         ] = draft
 
+    try:
+        approved_products = (
+            load_approved_working_draft_products(
+                case_id
+            )
+        )
+    except DraftingApprovedWorkProductError as exc:
+        st.error(
+            "Approved work products could not be validated: "
+            + str(exc)
+        )
+        return
+
+    approved_by_draft_id = {}
+
+    for product in approved_products:
+        approved_draft_id = _clean(
+            getattr(
+                product,
+                "draft_id",
+                "",
+            )
+        )
+
+        if not approved_draft_id:
+            st.error(
+                "Approved work products contain an item without a stable draft identity."
+            )
+            return
+
+        if approved_draft_id in approved_by_draft_id:
+            st.error(
+                "Approved work products contain a duplicate draft identity."
+            )
+            return
+
+        approved_by_draft_id[
+            approved_draft_id
+        ] = product
+
     result_marker = (
         st.session_state.pop(
             _DRAFTING_PROFESSIONAL_REVIEW_RESULT_KEY,
@@ -3091,9 +3136,67 @@ def _render_saved_working_drafts(
                     + recorded_at
                 )
 
-            st.caption(
-                "Working material only - not approval for reliance."
+            listed_draft_id = _clean(
+                getattr(
+                    draft,
+                    "draft_id",
+                    "",
+                )
             )
+
+            approved_product = (
+                approved_by_draft_id.get(
+                    listed_draft_id
+                )
+            )
+
+            if approved_product is None:
+                st.caption(
+                    "Working material only - not approval for reliance."
+                )
+            else:
+                st.success(
+                    "Approved for internal professional reliance"
+                )
+
+                approved_by = _clean(
+                    getattr(
+                        approved_product,
+                        "reviewer_reference",
+                        "",
+                    )
+                )
+
+                approved_at = _clean(
+                    getattr(
+                        approved_product,
+                        "approved_at",
+                        "",
+                    )
+                )
+
+                if approved_by and approved_at:
+                    st.caption(
+                        "Approved by "
+                        + approved_by
+                        + " on "
+                        + approved_at
+                    )
+
+                if bool(
+                    getattr(
+                        approved_product,
+                        "court_or_tribunal_reliance",
+                        False,
+                    )
+                ):
+                    st.warning(
+                        "Approved for court or tribunal reliance"
+                    )
+                else:
+                    st.info(
+                        "Not approved for court or tribunal reliance"
+                    )
 
         if not selected_draft_id:
             return
@@ -3116,8 +3219,6 @@ def _render_saved_working_drafts(
             task_id=task_id,
             draft=selected_draft,
         )
-
-
 def _render_drafting_workflow(
     *,
     case_id: str,

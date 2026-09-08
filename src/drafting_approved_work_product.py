@@ -1,0 +1,304 @@
+﻿"""Read-only projection of professionally approved WorkingDraft work products."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import re
+from pathlib import Path
+from typing import Final
+
+from drafting_working_draft_release_adapter import (
+    WORKING_DRAFT_MARKDOWN_OUTPUT_PROFILE,
+    WORKING_DRAFT_MARKDOWN_RENDERER_VERSION,
+)
+from work_product_artifact_store import WorkProductArtifactStore
+from work_product_release import (
+    WORK_PRODUCT_RELEASE_TARGET_SCHEMA_VERSION,
+    WorkProductReleaseState,
+    WorkProductReleaseTarget,
+    load_work_product_release_events,
+    project_work_product_release,
+)
+
+
+_SHA256_ID_RE: Final[re.Pattern[str]] = re.compile(
+    r"^sha256:[0-9a-f]{64}$"
+)
+
+
+class DraftingApprovedWorkProductError(RuntimeError):
+    """Raised when approved WorkingDraft state cannot be validated read-only."""
+
+
+@dataclass(frozen=True, slots=True)
+class ApprovedWorkingDraftProduct:
+    """Solicitor-facing read model for one currently approved WorkingDraft."""
+
+    draft_id: str
+    approved_at: str
+    reviewer_reference: str
+    court_or_tribunal_reliance: bool
+    target_id: str
+
+
+def _required(value: object, field_name: str) -> str:
+    text = str(value or "").strip()
+
+    if not text:
+        raise DraftingApprovedWorkProductError(
+            field_name + " is required."
+        )
+
+    return text
+
+
+def _working_draft_id_from_artifact(
+    *,
+    artifact_bytes: bytes,
+    renderer_version: str,
+    output_profile: str,
+) -> str:
+    if renderer_version != WORKING_DRAFT_MARKDOWN_RENDERER_VERSION:
+        raise DraftingApprovedWorkProductError(
+            "approved artifact renderer is not the supported WorkingDraft renderer."
+        )
+
+    if output_profile != WORKING_DRAFT_MARKDOWN_OUTPUT_PROFILE:
+        raise DraftingApprovedWorkProductError(
+            "approved artifact is not a WorkingDraft professional-review product."
+        )
+
+    try:
+        text = artifact_bytes.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise DraftingApprovedWorkProductError(
+            "approved WorkingDraft artifact is not valid UTF-8."
+        ) from exc
+
+    lines = text.splitlines()
+
+    draft_markers = [
+        line[len("Draft ID: "):].strip()
+        for line in lines
+        if line.startswith("Draft ID: ")
+    ]
+
+    if len(draft_markers) != 1:
+        raise DraftingApprovedWorkProductError(
+            "approved WorkingDraft artifact does not contain exactly one Draft ID marker."
+        )
+
+    draft_id = draft_markers[0]
+
+    if _SHA256_ID_RE.fullmatch(draft_id) is None:
+        raise DraftingApprovedWorkProductError(
+            "approved WorkingDraft artifact contains an invalid Draft ID."
+        )
+
+    statement_count = sum(
+        1
+        for line in lines
+        if line.startswith("### Statement ")
+    )
+
+    authority_check_count = sum(
+        1
+        for line in lines
+        if line.startswith("Authority check: ")
+    )
+
+    if statement_count < 1:
+        raise DraftingApprovedWorkProductError(
+            "approved WorkingDraft artifact contains no statement sections."
+        )
+
+    if statement_count != authority_check_count:
+        raise DraftingApprovedWorkProductError(
+            "approved WorkingDraft artifact statement/check structure is inconsistent."
+        )
+
+    return draft_id
+
+
+def _release_target_from_binding(
+    binding: object,
+) -> WorkProductReleaseTarget:
+    try:
+        target = WorkProductReleaseTarget(
+            schema_version=
+                WORK_PRODUCT_RELEASE_TARGET_SCHEMA_VERSION,
+            case_id=
+                getattr(binding, "case_id"),
+            report_projection_id=
+                getattr(binding, "report_projection_id"),
+            projection_payload_sha256=
+                getattr(binding, "projection_payload_sha256"),
+            manifest_id=
+                getattr(binding, "manifest_id"),
+            artifact_format=
+                getattr(binding, "artifact_format"),
+            artifact_id=
+                getattr(binding, "artifact_id"),
+            artifact_sha256=
+                getattr(binding, "artifact_sha256"),
+            renderer_version=
+                getattr(binding, "renderer_version"),
+            output_profile=
+                getattr(binding, "output_profile"),
+            target_id=
+                getattr(binding, "target_id"),
+        )
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise DraftingApprovedWorkProductError(
+            "immutable approved-work binding is incomplete or invalid."
+        ) from exc
+
+    return target
+
+
+def load_approved_working_draft_products(
+    case_id: str,
+    *,
+    root: str | Path | None = None,
+) -> tuple[ApprovedWorkingDraftProduct, ...]:
+    """Load currently approved WorkingDraft products without creating state."""
+
+    clean_case_id = _required(
+        case_id,
+        "case_id",
+    )
+
+    try:
+        events = load_work_product_release_events(
+            clean_case_id,
+            root=root,
+        )
+        store = WorkProductArtifactStore(
+            root=root,
+        )
+    except Exception as exc:
+        raise DraftingApprovedWorkProductError(
+            "professional release history could not be loaded."
+        ) from exc
+
+    products: list[ApprovedWorkingDraftProduct] = []
+    seen_targets: set[str] = set()
+    seen_drafts: set[str] = set()
+
+    for event in events:
+        target_id = _required(
+            getattr(event, "target_id", ""),
+            "target_id",
+        )
+
+        if target_id in seen_targets:
+            continue
+
+        seen_targets.add(target_id)
+
+        try:
+            binding = store.load_binding(
+                clean_case_id,
+                target_id,
+            )
+        except Exception as exc:
+            raise DraftingApprovedWorkProductError(
+                "an immutable professional-review binding could not be validated."
+            ) from exc
+
+        if getattr(binding, "output_profile", "") != (
+            WORKING_DRAFT_MARKDOWN_OUTPUT_PROFILE
+        ):
+            continue
+
+        if getattr(binding, "renderer_version", "") != (
+            WORKING_DRAFT_MARKDOWN_RENDERER_VERSION
+        ):
+            raise DraftingApprovedWorkProductError(
+                "a WorkingDraft professional-review binding uses an unsupported renderer."
+            )
+
+        if getattr(binding, "artifact_format", "") != "markdown":
+            raise DraftingApprovedWorkProductError(
+                "a WorkingDraft professional-review binding is not Markdown."
+            )
+
+        if getattr(binding, "case_id", "") != clean_case_id:
+            raise DraftingApprovedWorkProductError(
+                "approved work-product binding belongs to a different case."
+            )
+
+        if getattr(binding, "target_id", "") != target_id:
+            raise DraftingApprovedWorkProductError(
+                "approved work-product binding does not match its release target."
+            )
+
+        target = _release_target_from_binding(
+            binding
+        )
+
+        try:
+            projection = project_work_product_release(
+                target=target,
+                events=events,
+            )
+        except Exception as exc:
+            raise DraftingApprovedWorkProductError(
+                "professional release state could not be projected."
+            ) from exc
+
+        if projection.state is not (
+            WorkProductReleaseState.APPROVED_FOR_RELIANCE
+        ):
+            continue
+
+        try:
+            artifact_bytes = store.read_artifact(
+                clean_case_id,
+                target_id,
+            )
+        except Exception as exc:
+            raise DraftingApprovedWorkProductError(
+                "approved WorkingDraft artifact could not be validated."
+            ) from exc
+
+        draft_id = _working_draft_id_from_artifact(
+            artifact_bytes=artifact_bytes,
+            renderer_version=
+                getattr(binding, "renderer_version", ""),
+            output_profile=
+                getattr(binding, "output_profile", ""),
+        )
+
+        if draft_id in seen_drafts:
+            raise DraftingApprovedWorkProductError(
+                "more than one current approved product resolves to the same WorkingDraft."
+            )
+
+        seen_drafts.add(draft_id)
+
+        approved_at = _required(
+            projection.recorded_at,
+            "approved_at",
+        )
+
+        reviewer_reference = _required(
+            projection.reviewer_reference,
+            "reviewer_reference",
+        )
+
+        products.append(
+            ApprovedWorkingDraftProduct(
+                draft_id=draft_id,
+                approved_at=approved_at,
+                reviewer_reference=
+                    reviewer_reference,
+                court_or_tribunal_reliance=
+                    bool(
+                        projection.court_or_tribunal_reliance
+                    ),
+                target_id=target_id,
+            )
+        )
+
+    return tuple(products)
