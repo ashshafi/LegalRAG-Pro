@@ -268,11 +268,9 @@ def test_every_review_evaluation_is_rendered_in_solicitor_language():
         in source
     )
     assert (
-        "_drafting_check_presentation("
+        "_professional_review_check_presentation("
         in source
     )
-
-
 def test_not_authorized_blocks_approval_but_rejection_remains_available():
     source = _function_source(
         "_render_working_draft_professional_review"
@@ -497,4 +495,53 @@ def test_standalone_drafting_sidebar_remains_disabled():
     assert (
         matches[0][1]
         is True
+    )
+
+def test_professional_review_caution_copy_is_reliance_specific():
+    helper = _function_source(
+        "_professional_review_check_presentation"
+    )
+    renderer = _function_source(
+        "_render_working_draft_professional_review"
+    )
+    drafting_mapper = _function_source(
+        "_drafting_check_presentation"
+    )
+
+    assert (
+        "before approving it for reliance"
+        in helper
+    )
+    assert (
+        "before saving"
+        in drafting_mapper
+    )
+    assert (
+        "_professional_review_check_presentation("
+        in renderer
+    )
+    assert (
+        "_drafting_check_presentation("
+        not in renderer
+    )
+
+
+def test_professional_review_visible_copy_is_reliance_specific():
+    source = _function_source(
+        "_professional_review_check_presentation"
+    )
+
+    assert (
+        "before approving it for reliance"
+        in source
+    )
+
+    assert (
+        "Review this wording carefully before saving."
+        in source
+    )
+
+    assert (
+        "message = message.replace("
+        in source
     )

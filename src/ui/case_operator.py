@@ -1930,6 +1930,27 @@ def _drafting_check_presentation(
     )
 
 
+def _professional_review_check_presentation(
+    result: object,
+) -> tuple[str, str]:
+    kind, message = (
+        _drafting_check_presentation(
+            result
+        )
+    )
+
+    if kind == "warning":
+        message = message.replace(
+            "Review this wording carefully before saving.",
+            "Review this wording carefully before approving it for reliance.",
+            1,
+        )
+
+    return (
+        kind,
+        message,
+    )
+
 def _load_drafting_action_context(
     *,
     case_id: str,
@@ -2588,7 +2609,7 @@ def _render_working_draft_professional_review(
         )
 
         kind, message = (
-            _drafting_check_presentation(
+            _professional_review_check_presentation(
                 getattr(
                     evaluation,
                     "result",
