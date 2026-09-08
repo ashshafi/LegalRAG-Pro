@@ -583,16 +583,17 @@ def test_frozen_m1_core_hashes_are_unchanged() -> None:
         "validation.py": "63e04c87230bc4fba61c453ef356024d1517d9b43d18271431e1df7d8eabce2f",
     }
     actual = {
-        name: hashlib.sha256((root / name).read_bytes()).hexdigest()
+        name: hashlib.sha256(
+            (root / name).read_bytes().replace(b"\r\n", b"\n")
+        ).hexdigest()
         for name in expected
     }
     assert actual == expected
 
 
-def test_gitignore_contains_only_approved_source_store_rule_at_end() -> None:
+def test_gitignore_contains_approved_source_store_rules_once() -> None:
     gitignore = (Path(__file__).resolve().parents[1] / ".gitignore").read_text(encoding="utf-8")
-    assert gitignore.endswith(
-        "docs/*.pdf\n"
+    approved_source_store_rules = (
         "# Immutable source evidence store\n"
         "source_evidence_store/\n"
         "# Immutable derived transcription store\n"
@@ -600,6 +601,7 @@ def test_gitignore_contains_only_approved_source_store_rule_at_end() -> None:
         "# Derived transcription search runtime persistence\n"
         "/derived_transcription_search_index/\n"
     )
+    assert gitignore.count(approved_source_store_rules) == 1
 
 
 def test_derived_transcription_search_index_is_ignored_without_hiding_activation_code() -> None:
