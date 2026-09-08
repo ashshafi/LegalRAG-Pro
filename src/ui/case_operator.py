@@ -22,6 +22,7 @@ from document_manager import get_documents
 from evidence_reference_bridge import ask_with_reference_findings
 from drafting_working_draft import (
     DraftingWorkingDraftError,
+    load_working_draft,
     load_working_drafts,
 )
 from drafting_working_draft_generation import (
@@ -34,6 +35,12 @@ from drafting_working_draft_orchestration import (
     prepare_generated_working_draft,
     record_prepared_working_draft,
 )
+from drafting_working_draft_release_orchestration import (
+    WorkingDraftProfessionalReleaseError,
+    prepare_working_draft_professional_release,
+    record_working_draft_professional_release,
+)
+from work_product_release import WorkProductReleaseDecision
 from legalrag import (
     INTERACTIVE_CHAT_MODEL,
     INTERACTIVE_REASONING_EFFORT,
@@ -1795,6 +1802,15 @@ def _render_task_work_scope_capture(
 _DRAFTING_PREPARED_KEY = "case_operator_drafting_prepared"
 _DRAFTING_CONTEXT_KEY = "case_operator_drafting_context"
 _DRAFTING_SAVED_KEY = "case_operator_drafting_saved"
+_DRAFTING_PROFESSIONAL_REVIEW_PREPARED_KEY = (
+    "case_operator_drafting_professional_review_prepared"
+)
+_DRAFTING_PROFESSIONAL_REVIEW_CONTEXT_KEY = (
+    "case_operator_drafting_professional_review_context"
+)
+_DRAFTING_PROFESSIONAL_REVIEW_RESULT_KEY = (
+    "case_operator_drafting_professional_review_result"
+)
 
 
 class _DraftingUIError(RuntimeError):
@@ -2085,6 +2101,815 @@ def _load_drafting_action_context(
     )
 
 
+def _clear_drafting_professional_review_state(
+    *,
+    preserve_result: bool = False,
+) -> None:
+    st.session_state.pop(
+        _DRAFTING_PROFESSIONAL_REVIEW_PREPARED_KEY,
+        None,
+    )
+    st.session_state.pop(
+        _DRAFTING_PROFESSIONAL_REVIEW_CONTEXT_KEY,
+        None,
+    )
+
+    if not preserve_result:
+        st.session_state.pop(
+            _DRAFTING_PROFESSIONAL_REVIEW_RESULT_KEY,
+            None,
+        )
+
+
+def _professional_review_context_matches(
+    context: object,
+    *,
+    case_id: str,
+    task_id: str,
+    draft_id: str,
+) -> bool:
+    if not isinstance(
+        context,
+        dict,
+    ):
+        return False
+
+    return (
+        _clean(
+            context.get(
+                "case_id",
+                "",
+            )
+        )
+        == _clean(
+            case_id
+        )
+        and _clean(
+            context.get(
+                "task_id",
+                "",
+            )
+        )
+        == _clean(
+            task_id
+        )
+        and _clean(
+            context.get(
+                "draft_id",
+                "",
+            )
+        )
+        == _clean(
+            draft_id
+        )
+    )
+
+
+def _professional_review_result_value(
+    evaluation: object,
+) -> str:
+    result = getattr(
+        evaluation,
+        "result",
+        "",
+    )
+
+    if hasattr(
+        result,
+        "value",
+    ):
+        result = getattr(
+            result,
+            "value",
+        )
+
+    return _clean(
+        result
+    ).upper()
+
+
+def _current_professional_reviewer_reference(
+    *,
+    case_id: str,
+) -> str:
+    identity = (
+        current_user_identity()
+    )
+
+    CaseRepository().require_access(
+        identity,
+        case_id,
+    )
+
+    reviewer_reference = _clean(
+        getattr(
+            identity,
+            "email",
+            "",
+        )
+    )
+
+    if not reviewer_reference:
+        raise _DraftingUIError(
+            "The authenticated user has no canonical professional email."
+        )
+
+    return reviewer_reference
+
+
+def _load_exact_saved_working_draft(
+    *,
+    case_id: str,
+    task_id: str,
+    draft_id: str,
+) -> object:
+    draft = (
+        load_working_draft(
+            case_id,
+            task_id,
+            draft_id,
+        )
+    )
+
+    if draft is None:
+        raise _DraftingUIError(
+            "The selected saved working draft is no longer available."
+        )
+
+    if _clean(
+        getattr(
+            draft,
+            "draft_id",
+            "",
+        )
+    ) != _clean(
+        draft_id
+    ):
+        raise _DraftingUIError(
+            "The selected saved working draft could not be resolved exactly."
+        )
+
+    return draft
+
+
+def _working_draft_review_label(
+    draft: object,
+) -> str:
+    title = (
+        _clean(
+            getattr(
+                draft,
+                "title",
+                "",
+            )
+        )
+        or "Working draft"
+    )
+
+    recorded_at = _clean(
+        getattr(
+            draft,
+            "recorded_at",
+            "",
+        )
+    )
+
+    if recorded_at:
+        return (
+            title
+            + " - saved "
+            + recorded_at
+        )
+
+    return title
+
+
+def _render_working_draft_professional_review(
+    *,
+    case_id: str,
+    task_id: str,
+    draft: object,
+) -> None:
+    draft_id = _clean(
+        getattr(
+            draft,
+            "draft_id",
+            "",
+        )
+    )
+
+    if not draft_id:
+        st.error(
+            "This saved working draft has no stable identity and cannot be reviewed."
+        )
+        return
+
+    stored_context = (
+        st.session_state.get(
+            _DRAFTING_PROFESSIONAL_REVIEW_CONTEXT_KEY
+        )
+    )
+
+    if (
+        stored_context is not None
+        and not _professional_review_context_matches(
+            stored_context,
+            case_id=case_id,
+            task_id=task_id,
+            draft_id=draft_id,
+        )
+    ):
+        _clear_drafting_professional_review_state()
+
+    prepared_review = (
+        st.session_state.get(
+            _DRAFTING_PROFESSIONAL_REVIEW_PREPARED_KEY
+        )
+    )
+
+    if prepared_review is not None:
+        context = (
+            st.session_state.get(
+                _DRAFTING_PROFESSIONAL_REVIEW_CONTEXT_KEY
+            )
+        )
+
+        target = getattr(
+            prepared_review,
+            "target",
+            None,
+        )
+
+        target_id = _clean(
+            getattr(
+                target,
+                "target_id",
+                "",
+            )
+        )
+
+        if (
+            not _professional_review_context_matches(
+                context,
+                case_id=case_id,
+                task_id=task_id,
+                draft_id=draft_id,
+            )
+            or not target_id
+            or target_id
+            != _clean(
+                context.get(
+                    "target_id",
+                    "",
+                )
+            )
+        ):
+            _clear_drafting_professional_review_state()
+            prepared_review = None
+
+    if prepared_review is None:
+        st.caption(
+            "Professional reliance is a separate decision from saving a working draft."
+        )
+
+        preview_clicked = (
+            st.button(
+                "Prepare professional review",
+                key=(
+                    "case_operator_prepare_professional_review_"
+                    + case_id
+                    + "_"
+                    + task_id
+                    + "_"
+                    + draft_id
+                ),
+            )
+        )
+
+        if not preview_clicked:
+            return
+
+        try:
+            _current_professional_reviewer_reference(
+                case_id=case_id
+            )
+
+            fresh_draft = (
+                _load_exact_saved_working_draft(
+                    case_id=case_id,
+                    task_id=task_id,
+                    draft_id=draft_id,
+                )
+            )
+
+            current_authority = (
+                load_active_governed_analytical_authority(
+                    case_id
+                )
+            )
+
+            if current_authority is None:
+                raise _DraftingUIError(
+                    "No current case assessment is available."
+                )
+
+            prepared_review = (
+                prepare_working_draft_professional_release(
+                    draft=fresh_draft,
+                    authority=current_authority,
+                )
+            )
+
+            previewed_target_id = _clean(
+                getattr(
+                    getattr(
+                        prepared_review,
+                        "target",
+                        None,
+                    ),
+                    "target_id",
+                    "",
+                )
+            )
+
+            if not previewed_target_id:
+                raise _DraftingUIError(
+                    "The professional review has no stable reviewed identity."
+                )
+
+        except (
+            DraftingWorkingDraftError,
+            GovernedAnalyticalAuthorityProviderError,
+            MatterAccessError,
+            MatterMutationError,
+            WorkingDraftProfessionalReleaseError,
+            _DraftingUIError,
+            PermissionError,
+        ) as exc:
+            _clear_drafting_professional_review_state()
+            st.error(
+                "The professional review could not be prepared: "
+                + str(exc)
+            )
+            return
+        except Exception:
+            _clear_drafting_professional_review_state()
+            st.error(
+                "The professional review could not be prepared safely. "
+                "No professional decision has been made."
+            )
+            return
+
+        st.session_state[
+            _DRAFTING_PROFESSIONAL_REVIEW_PREPARED_KEY
+        ] = prepared_review
+
+        st.session_state[
+            _DRAFTING_PROFESSIONAL_REVIEW_CONTEXT_KEY
+        ] = {
+            "case_id":
+                case_id,
+            "task_id":
+                task_id,
+            "draft_id":
+                draft_id,
+            "target_id":
+                previewed_target_id,
+        }
+
+        st.rerun()
+        return
+
+    projection = getattr(
+        prepared_review,
+        "projection",
+        None,
+    )
+    artifact = getattr(
+        prepared_review,
+        "artifact",
+        None,
+    )
+    target = getattr(
+        prepared_review,
+        "target",
+        None,
+    )
+
+    previewed_target_id = _clean(
+        getattr(
+            target,
+            "target_id",
+            "",
+        )
+    )
+
+    statements = tuple(
+        getattr(
+            projection,
+            "statements",
+            (),
+        )
+    )
+    evaluations = tuple(
+        getattr(
+            projection,
+            "authority_evaluations",
+            (),
+        )
+    )
+    markdown = getattr(
+        artifact,
+        "markdown",
+        None,
+    )
+
+    if (
+        not previewed_target_id
+        or not isinstance(
+            markdown,
+            str,
+        )
+        or not markdown
+        or not statements
+        or len(
+            statements
+        )
+        != len(
+            evaluations
+        )
+    ):
+        _clear_drafting_professional_review_state()
+        st.error(
+            "The professional review snapshot is incomplete. Prepare it again."
+        )
+        return
+
+    st.markdown(
+        "#### Professional review"
+    )
+    st.caption(
+        "Review the exact saved wording against the current case assessment "
+        "before making a professional reliance decision."
+    )
+
+    for index, (
+        statement,
+        evaluation,
+    ) in enumerate(
+        zip(
+            statements,
+            evaluations,
+            strict=True,
+        ),
+        start=1,
+    ):
+        sequence = getattr(
+            statement,
+            "sequence",
+            index,
+        )
+
+        st.markdown(
+            "**Statement "
+            + str(
+                sequence
+            )
+            + "**"
+        )
+        st.write(
+            _clean(
+                getattr(
+                    statement,
+                    "text",
+                    "",
+                )
+            )
+        )
+
+        kind, message = (
+            _drafting_check_presentation(
+                getattr(
+                    evaluation,
+                    "result",
+                    "",
+                )
+            )
+        )
+
+        getattr(
+            st,
+            kind,
+        )(
+            message
+        )
+
+        reason = _clean(
+            getattr(
+                evaluation,
+                "reason",
+                "",
+            )
+        )
+
+        if reason:
+            st.caption(
+                "Review note from the current case assessment: "
+                + reason
+            )
+
+    with st.expander(
+        "Exact review snapshot",
+        expanded=False,
+    ):
+        st.code(
+            markdown,
+            language="markdown",
+        )
+
+    has_not_authorized = any(
+        _professional_review_result_value(
+            evaluation
+        )
+        == "NOT_AUTHORIZED"
+        for evaluation
+        in evaluations
+    )
+
+    if has_not_authorized:
+        st.error(
+            "Approval for reliance is unavailable because at least one statement "
+            "goes beyond what the current case assessment presently supports. "
+            "You may reject the wording."
+        )
+
+    try:
+        reviewer_reference = (
+            _current_professional_reviewer_reference(
+                case_id=case_id
+            )
+        )
+    except (
+        MatterAccessError,
+        MatterMutationError,
+        _DraftingUIError,
+        PermissionError,
+    ) as exc:
+        st.error(
+            "Professional review is unavailable: "
+            + str(exc)
+        )
+        return
+
+    st.caption(
+        "Professional reviewer: "
+        + reviewer_reference
+    )
+
+    form_key = (
+        "case_operator_professional_review_form_"
+        + case_id
+        + "_"
+        + task_id
+        + "_"
+        + draft_id
+        + "_"
+        + previewed_target_id
+    )
+
+    with st.form(
+        form_key
+    ):
+        factual_basis_reviewed = (
+            st.checkbox(
+                "I have reviewed the factual basis for this wording."
+            )
+        )
+        legal_authorities_reviewed = (
+            st.checkbox(
+                "I have reviewed the legal authorities relevant to this wording."
+            )
+        )
+        unverified_authorities_remaining = (
+            st.number_input(
+                "Unverified legal authorities remaining",
+                min_value=0,
+                step=1,
+                value=0,
+            )
+        )
+        professional_judgment_completed = (
+            st.checkbox(
+                "I have applied my professional judgment to this wording."
+            )
+        )
+        court_or_tribunal_reliance = (
+            st.checkbox(
+                "This wording is intended for reliance in court or tribunal."
+            )
+        )
+        review_note = (
+            st.text_area(
+                "Professional review note",
+                value="",
+            )
+        )
+
+        approve_clicked = (
+            st.form_submit_button(
+                "Approve for reliance",
+                type="primary",
+                disabled=has_not_authorized,
+            )
+        )
+        reject_clicked = (
+            st.form_submit_button(
+                "Reject wording"
+            )
+        )
+
+    if not (
+        approve_clicked
+        or reject_clicked
+    ):
+        return
+
+    if not _clean(
+        review_note
+    ):
+        st.error(
+            "Enter a professional review note before recording a decision."
+        )
+        return
+
+    if approve_clicked:
+        if not factual_basis_reviewed:
+            st.error(
+                "Confirm that you have reviewed the factual basis before approval."
+            )
+            return
+
+        if not legal_authorities_reviewed:
+            st.error(
+                "Confirm that you have reviewed the legal authorities before approval."
+            )
+            return
+
+        if int(
+            unverified_authorities_remaining
+        ) != 0:
+            st.error(
+                "Approval requires no unverified legal authorities to remain."
+            )
+            return
+
+        if not professional_judgment_completed:
+            st.error(
+                "Confirm that you have applied professional judgment before approval."
+            )
+            return
+
+        decision = (
+            WorkProductReleaseDecision.APPROVED_FOR_RELIANCE
+        )
+
+    else:
+        if court_or_tribunal_reliance:
+            st.error(
+                "Rejected wording cannot be marked for court or tribunal reliance."
+            )
+            return
+
+        decision = (
+            WorkProductReleaseDecision.REJECTED
+        )
+
+    try:
+        fresh_draft = (
+            _load_exact_saved_working_draft(
+                case_id=case_id,
+                task_id=task_id,
+                draft_id=draft_id,
+            )
+        )
+
+        current_authority = (
+            load_active_governed_analytical_authority(
+                case_id
+            )
+        )
+
+        if current_authority is None:
+            raise _DraftingUIError(
+                "No current case assessment is available."
+            )
+
+        reviewer_reference = (
+            _current_professional_reviewer_reference(
+                case_id=case_id
+            )
+        )
+
+        result = (
+            record_working_draft_professional_release(
+                draft=fresh_draft,
+                authority=current_authority,
+                decision=decision,
+                factual_basis_reviewed=
+                    factual_basis_reviewed,
+                legal_authorities_reviewed=
+                    legal_authorities_reviewed,
+                unverified_authorities_remaining=
+                    int(
+                        unverified_authorities_remaining
+                    ),
+                professional_judgment_completed=
+                    professional_judgment_completed,
+                court_or_tribunal_reliance=
+                    court_or_tribunal_reliance,
+                reviewer_reference=
+                    reviewer_reference,
+                review_note=
+                    _clean(
+                        review_note
+                    ),
+                expected_target_id=
+                    previewed_target_id,
+            )
+        )
+
+    except (
+        DraftingWorkingDraftError,
+        GovernedAnalyticalAuthorityProviderError,
+        MatterAccessError,
+        MatterMutationError,
+        WorkingDraftProfessionalReleaseError,
+        _DraftingUIError,
+        PermissionError,
+    ):
+        _clear_drafting_professional_review_state()
+        st.error(
+            "The professional decision could not be confirmed against the "
+            "reviewed snapshot. Prepare a fresh professional review before "
+            "taking any further action."
+        )
+        return
+    except Exception:
+        _clear_drafting_professional_review_state()
+        st.error(
+            "The professional decision could not be confirmed safely. "
+            "Prepare a fresh professional review before taking any further action."
+        )
+        return
+
+    state = getattr(
+        getattr(
+            result,
+            "release_projection",
+            None,
+        ),
+        "state",
+        "",
+    )
+
+    if hasattr(
+        state,
+        "value",
+    ):
+        state = getattr(
+            state,
+            "value",
+        )
+
+    st.session_state[
+        _DRAFTING_PROFESSIONAL_REVIEW_RESULT_KEY
+    ] = {
+        "case_id":
+            case_id,
+        "task_id":
+            task_id,
+        "draft_id":
+            draft_id,
+        "decision":
+            _clean(
+                getattr(
+                    decision,
+                    "value",
+                    decision,
+                )
+            ),
+        "state":
+            _clean(
+                state
+            ),
+    }
+
+    _clear_drafting_professional_review_state(
+        preserve_result=True
+    )
+    st.rerun()
+
+
 def _render_saved_working_drafts(
     *,
     case_id: str,
@@ -2098,6 +2923,7 @@ def _render_saved_working_drafts(
             )
         )
     except DraftingWorkingDraftError as exc:
+        _clear_drafting_professional_review_state()
         st.error(
             "Saved working drafts could not be validated: "
             + str(exc)
@@ -2105,13 +2931,116 @@ def _render_saved_working_drafts(
         return
 
     if not drafts:
+        _clear_drafting_professional_review_state()
         return
+
+    draft_by_id = {}
+
+    for draft in drafts:
+        draft_id = _clean(
+            getattr(
+                draft,
+                "draft_id",
+                "",
+            )
+        )
+
+        if not draft_id:
+            _clear_drafting_professional_review_state()
+            st.error(
+                "Saved working drafts contain an item without a stable identity."
+            )
+            return
+
+        if draft_id in draft_by_id:
+            _clear_drafting_professional_review_state()
+            st.error(
+                "Saved working drafts contain a duplicate identity."
+            )
+            return
+
+        draft_by_id[
+            draft_id
+        ] = draft
+
+    result_marker = (
+        st.session_state.pop(
+            _DRAFTING_PROFESSIONAL_REVIEW_RESULT_KEY,
+            None,
+        )
+    )
+
+    if isinstance(
+        result_marker,
+        dict,
+    ):
+        if (
+            _clean(
+                result_marker.get(
+                    "case_id",
+                    "",
+                )
+            )
+            == _clean(
+                case_id
+            )
+            and _clean(
+                result_marker.get(
+                    "task_id",
+                    "",
+                )
+            )
+            == _clean(
+                task_id
+            )
+        ):
+            decision_value = _clean(
+                result_marker.get(
+                    "decision",
+                    "",
+                )
+            ).upper()
+
+            if (
+                decision_value
+                == "APPROVED_FOR_RELIANCE"
+            ):
+                st.success(
+                    "Professional decision recorded: approved for reliance."
+                )
+            elif decision_value == "REJECTED":
+                st.info(
+                    "Professional decision recorded: wording rejected."
+                )
 
     with st.expander(
         "Saved working drafts "
         + f"({len(drafts)})",
         expanded=False,
     ):
+        selected_draft_id = (
+            st.selectbox(
+                "Working draft to review",
+                options=tuple(
+                    draft_by_id
+                ),
+                index=None,
+                format_func=lambda value:
+                    _working_draft_review_label(
+                        draft_by_id[
+                            value
+                        ]
+                    ),
+                key=(
+                    "case_operator_professional_review_draft_"
+                    + case_id
+                    + "_"
+                    + task_id
+                ),
+                placeholder="Select a saved working draft",
+            )
+        )
+
         for draft in reversed(
             drafts[-5:]
         ):
@@ -2142,8 +3071,30 @@ def _render_saved_working_drafts(
                 )
 
             st.caption(
-                "Working material only ? not approval for reliance."
+                "Working material only - not approval for reliance."
             )
+
+        if not selected_draft_id:
+            return
+
+        selected_draft = (
+            draft_by_id.get(
+                selected_draft_id
+            )
+        )
+
+        if selected_draft is None:
+            _clear_drafting_professional_review_state()
+            st.error(
+                "The selected saved working draft is no longer available."
+            )
+            return
+
+        _render_working_draft_professional_review(
+            case_id=case_id,
+            task_id=task_id,
+            draft=selected_draft,
+        )
 
 
 def _render_drafting_workflow(
