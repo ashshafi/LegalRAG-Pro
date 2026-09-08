@@ -3214,6 +3214,68 @@ def _render_saved_working_drafts(
             )
             return
 
+        selected_approved_product = (
+            approved_by_draft_id.get(
+                selected_draft_id
+            )
+        )
+
+        if selected_approved_product is not None:
+            with st.expander(
+                "View professional decision",
+                expanded=False,
+            ):
+                st.success(
+                    "Approved for internal professional reliance"
+                )
+
+                approved_by = _clean(
+                    getattr(
+                        selected_approved_product,
+                        "reviewer_reference",
+                        "",
+                    )
+                )
+
+                approved_at = _clean(
+                    getattr(
+                        selected_approved_product,
+                        "approved_at",
+                        "",
+                    )
+                )
+
+                if approved_by and approved_at:
+                    st.caption(
+                        "Approved by "
+                        + approved_by
+                        + " on "
+                        + approved_at
+                    )
+
+                if bool(
+                    getattr(
+                        selected_approved_product,
+                        "court_or_tribunal_reliance",
+                        False,
+                    )
+                ):
+                    st.warning(
+                        "Approved for court or tribunal reliance"
+                    )
+                else:
+                    st.info(
+                        "Not approved for court or tribunal reliance"
+                    )
+
+                st.caption(
+                    "This exact saved draft already has a professional decision. "
+                    "The normal solicitor workflow does not create a second decision."
+                )
+
+            _clear_drafting_professional_review_state()
+            return
+
         _render_working_draft_professional_review(
             case_id=case_id,
             task_id=task_id,
