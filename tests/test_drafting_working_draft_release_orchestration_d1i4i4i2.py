@@ -184,6 +184,8 @@ def approval_values(
             "solicitor:functional-reviewer",
         review_note=
             "Exact WorkingDraft professionally reviewed.",
+        expected_target_id=
+            target().target_id,
         root=
             root,
     )
@@ -340,6 +342,8 @@ def test_not_authorized_may_be_explicitly_rejected(
                 "solicitor:functional-reviewer",
             review_note=
                 "Rejected because a statement is not authorised.",
+            expected_target_id=
+                value.target.target_id,
             root=
                 tmp_path,
         )
@@ -541,6 +545,8 @@ def test_rejected_decision_cannot_claim_court_or_tribunal_reliance(
                     "solicitor:functional-reviewer",
                 review_note=
                     "Rejected.",
+                expected_target_id=
+                    target().target_id,
                 root=
                     tmp_path,
             )
@@ -593,6 +599,8 @@ def test_invalid_decision_fails_before_release_write(
                     "solicitor:functional-reviewer",
                 review_note=
                     "Review.",
+                expected_target_id=
+                    target().target_id,
                 root=
                     tmp_path,
             )
@@ -648,9 +656,13 @@ def test_release_uses_fresh_prepared_target_each_time(
                 object(),
             authority=
                 object(),
-            **approval_values(
-                root=tmp_path,
-            ),
+            **{
+                **approval_values(
+                    root=tmp_path,
+                ),
+                "expected_target_id":
+                    first.target.target_id,
+            },
         )
     )
 
@@ -661,9 +673,13 @@ def test_release_uses_fresh_prepared_target_each_time(
                 object(),
             authority=
                 object(),
-            **approval_values(
-                root=tmp_path,
-            ),
+            **{
+                **approval_values(
+                    root=tmp_path,
+                ),
+                "expected_target_id":
+                    second.target.target_id,
+            },
         )
     )
 
@@ -743,6 +759,8 @@ def test_append_only_rejection_then_reapproval_for_same_exact_target(
                 "solicitor:functional-reviewer",
             review_note=
                 "Rejected pending authority verification.",
+            expected_target_id=
+                value.target.target_id,
             root=
                 tmp_path,
         )
@@ -781,6 +799,174 @@ def test_append_only_rejection_then_reapproval_for_same_exact_target(
         approved.release_projection.state
         is wpr.WorkProductReleaseState.APPROVED_FOR_RELIANCE
     )
+
+
+def test_reviewed_target_mismatch_fails_closed_before_release_write(
+    monkeypatch,
+    tmp_path,
+):
+    value = prepared(
+        "CAUTION",
+    )
+
+    install_prepared(
+        monkeypatch,
+        value,
+    )
+
+    with pytest.raises(
+        orchestration.WorkingDraftProfessionalReleaseError,
+        match="target changed after professional review",
+    ):
+        (
+            orchestration
+            .record_working_draft_professional_release(
+                draft=
+                    object(),
+                authority=
+                    object(),
+                decision=
+                    wpr.WorkProductReleaseDecision.APPROVED_FOR_RELIANCE,
+                factual_basis_reviewed=
+                    True,
+                legal_authorities_reviewed=
+                    True,
+                unverified_authorities_remaining=
+                    0,
+                professional_judgment_completed=
+                    True,
+                court_or_tribunal_reliance=
+                    False,
+                reviewer_reference=
+                    "solicitor:functional-reviewer",
+                review_note=
+                    "Reviewed exact target.",
+                expected_target_id=
+                    "sha256:"
+                    + "f" * 64,
+                root=
+                    tmp_path,
+            )
+        )
+
+    assert (
+        wpr.load_work_product_release_events(
+            CASE_ID,
+            root=tmp_path,
+        )
+        == ()
+    )
+
+
+def test_blank_reviewed_target_fails_closed_before_release_write(
+    monkeypatch,
+    tmp_path,
+):
+    value = prepared(
+        "ALIGNED",
+    )
+
+    install_prepared(
+        monkeypatch,
+        value,
+    )
+
+    with pytest.raises(
+        orchestration.WorkingDraftProfessionalReleaseError,
+        match="expected_target_id",
+    ):
+        (
+            orchestration
+            .record_working_draft_professional_release(
+                draft=
+                    object(),
+                authority=
+                    object(),
+                decision=
+                    wpr.WorkProductReleaseDecision.APPROVED_FOR_RELIANCE,
+                factual_basis_reviewed=
+                    True,
+                legal_authorities_reviewed=
+                    True,
+                unverified_authorities_remaining=
+                    0,
+                professional_judgment_completed=
+                    True,
+                court_or_tribunal_reliance=
+                    False,
+                reviewer_reference=
+                    "solicitor:functional-reviewer",
+                review_note=
+                    "Reviewed exact target.",
+                expected_target_id=
+                    " ",
+                root=
+                    tmp_path,
+            )
+        )
+
+    assert (
+        wpr.load_work_product_release_events(
+            CASE_ID,
+            root=tmp_path,
+        )
+        == ()
+    )
+
+
+def test_matching_reviewed_target_allows_existing_release_path(
+    monkeypatch,
+    tmp_path,
+):
+    value = prepared(
+        "CAUTION",
+    )
+
+    install_prepared(
+        monkeypatch,
+        value,
+    )
+
+    result = (
+        orchestration
+        .record_working_draft_professional_release(
+            draft=
+                object(),
+            authority=
+                object(),
+            decision=
+                wpr.WorkProductReleaseDecision.APPROVED_FOR_RELIANCE,
+            factual_basis_reviewed=
+                True,
+            legal_authorities_reviewed=
+                True,
+            unverified_authorities_remaining=
+                0,
+            professional_judgment_completed=
+                True,
+            court_or_tribunal_reliance=
+                False,
+            reviewer_reference=
+                "solicitor:functional-reviewer",
+            review_note=
+                "Reviewed exact target.",
+            expected_target_id=
+                value.target.target_id,
+            root=
+                tmp_path,
+        )
+    )
+
+    assert (
+        result.event.target_id
+        == value.target.target_id
+    )
+
+    assert (
+        result.release_projection.state
+        is wpr.WorkProductReleaseState.APPROVED_FOR_RELIANCE
+    )
+
 
 
 def test_orchestration_creates_no_second_release_state_machine():

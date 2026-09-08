@@ -174,15 +174,17 @@ def record_working_draft_professional_release(
     court_or_tribunal_reliance: bool,
     reviewer_reference: str,
     review_note: str,
+    expected_target_id: str,
     root=None,
 ) -> WorkingDraftProfessionalReleaseResult:
     """Record one explicit professional decision for a freshly prepared target.
 
     Sequence:
       1. fresh WorkingDraft/current-authority projection;
-      2. Drafting-specific approval policy;
-      3. existing work-product release recorder;
-      4. reload and project the existing append-only release history.
+      2. exact equality with the target the professional reviewed;
+      3. Drafting-specific approval policy;
+      4. existing work-product release recorder;
+      5. reload and project the existing append-only release history.
 
     No WorkingDraft, analytical authority, task or artifact file is mutated.
     """
@@ -193,6 +195,25 @@ def record_working_draft_professional_release(
             authority=authority,
         )
     )
+
+    reviewed_target_id = str(
+        expected_target_id
+    ).strip()
+
+    if not reviewed_target_id:
+        raise WorkingDraftProfessionalReleaseError(
+            "expected_target_id must identify the exact reviewed artifact."
+        )
+
+    if (
+        prepared.target.target_id
+        != reviewed_target_id
+    ):
+        raise WorkingDraftProfessionalReleaseError(
+            "The exact WorkingDraft review target changed after professional "
+            "review. Review the freshly prepared artifact before recording "
+            "a decision."
+        )
 
     decision_value = (
         assert_working_draft_release_decision_allowed(
