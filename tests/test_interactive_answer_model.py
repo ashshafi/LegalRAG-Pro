@@ -13,7 +13,7 @@ def test_interactive_reasoning_defaults_to_none():
 
 def test_direct_provider_call_uses_interactive_model():
     assert 'model=INTERACTIVE_CHAT_MODEL' in SOURCE
-    assert 'openai_client.responses.create(' in SOURCE
+    assert 'legal_answer_client.responses.create(' in SOURCE
 
 def test_actual_interactive_model_is_policy_gated():
     assert 'model=INTERACTIVE_CHAT_MODEL,' in SOURCE

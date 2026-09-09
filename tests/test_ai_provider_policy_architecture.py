@@ -49,7 +49,7 @@ def test_policy_guard_is_before_each_direct_sdk_call_where_order_is_material():
         "derived_transcription_answer_context.py": ".embeddings.create(",
         "follow_up_context.py": "client.responses.create(",
         "index_documents.py": "client.embeddings.create(",
-        "legalrag.py": "openai_client.responses.create(",
+        "legalrag.py": "legal_answer_client.responses.create(",
         "query_expander.py": "openai_client.responses.create(",
         "retriever.py": "openai_client.embeddings.create(",
         "source_evidence/ingestion.py": "openai_client.embeddings.create(",
@@ -81,7 +81,7 @@ def test_every_responses_api_call_explicitly_disables_response_storage():
     expected = {
         "controlled_agentic_analysis_openai.py": "create",
         "follow_up_context.py": "client.responses.create",
-        "legalrag.py": "openai_client.responses.create",
+        "legalrag.py": "legal_answer_client.responses.create",
         "query_expander.py": "openai_client.responses.create",
     }
 
@@ -107,5 +107,6 @@ def test_every_responses_api_call_explicitly_disables_response_storage():
                     ]
             calls = owner_calls
 
-        assert len(calls) == 1, relative
-        assert _store_keyword_is_literal_false(calls[0]), relative
+        expected_count = 2 if relative == "legalrag.py" else 1
+        assert len(calls) == expected_count, relative
+        assert all(_store_keyword_is_literal_false(call) for call in calls), relative

@@ -31,6 +31,6 @@ def test_model_and_scope_contracts_unchanged():
     l = Path("src/legalrag.py").read_text(encoding="utf-8-sig")
     assert "model=EMBEDDING_MODEL" in r
     assert "AIProcessingPurpose.RETRIEVAL_EMBEDDING" in r
-    assert "model=CHAT_MODEL" in l
+    assert "model=INTERACTIVE_CHAT_MODEL" in l
     assert "AIProcessingPurpose.LEGAL_ANSWER" in l
     assert "interactive_semantic_only=True" in l
