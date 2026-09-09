@@ -34,6 +34,7 @@ class AIDataClassification(str, Enum):
 
 class AIProcessingPurpose(str, Enum):
     CONTROLLED_ANALYSIS = "controlled_analysis"
+    CANDIDATE_TRANSCRIPTION = "candidate_transcription"
     DERIVED_TRANSCRIPTION_EMBEDDING = "derived_transcription_embedding"
     FOLLOW_UP_REWRITE = "follow_up_rewrite"
     DOCUMENT_EMBEDDING = "document_embedding"

@@ -9,6 +9,7 @@ SRC = ROOT / "src"
 
 EXPECTED_GUARDS = {
     "controlled_agentic_analysis_openai.py": "CONTROLLED_ANALYSIS",
+    "candidate_transcription/openai_multimodal.py": "CANDIDATE_TRANSCRIPTION",
     "derived_transcription_answer_context.py": "DERIVED_TRANSCRIPTION_EMBEDDING",
     "follow_up_context.py": "FOLLOW_UP_REWRITE",
     "index_documents.py": "DOCUMENT_EMBEDDING",
@@ -46,6 +47,7 @@ def test_provider_policy_does_not_import_openai_chroma_or_case_data_modules():
 def test_policy_guard_is_before_each_direct_sdk_call_where_order_is_material():
     checks = {
         "controlled_agentic_analysis_openai.py": "response = create(",
+        "candidate_transcription/openai_multimodal.py": "client.responses.create(",
         "derived_transcription_answer_context.py": ".embeddings.create(",
         "follow_up_context.py": "client.responses.create(",
         "index_documents.py": "client.embeddings.create(",
@@ -80,6 +82,7 @@ def _store_keyword_is_literal_false(node: ast.Call) -> bool:
 def test_every_responses_api_call_explicitly_disables_response_storage():
     expected = {
         "controlled_agentic_analysis_openai.py": "create",
+        "candidate_transcription/openai_multimodal.py": "client.responses.create",
         "follow_up_context.py": "client.responses.create",
         "legalrag.py": "legal_answer_client.responses.create",
         "query_expander.py": "openai_client.responses.create",
