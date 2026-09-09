@@ -3293,6 +3293,45 @@ def _render_saved_working_drafts(
                     "The normal solicitor workflow does not create a second decision."
                 )
 
+
+            with st.expander(
+                "View approved wording",
+                expanded=False,
+            ):
+                approved_wording = getattr(
+                    selected_approved_product,
+                    "approved_wording",
+                    (),
+                )
+
+                if (
+                    not isinstance(
+                        approved_wording,
+                        tuple,
+                    )
+                    or not approved_wording
+                ):
+                    st.error(
+                        "The approved wording could not be displayed."
+                    )
+                else:
+                    st.caption(
+                        "Exact wording from the professionally approved saved draft."
+                    )
+
+                    for sequence, wording in enumerate(
+                        approved_wording,
+                        start=1,
+                    ):
+                        st.markdown(
+                            "**Statement "
+                            + str(sequence)
+                            + "**"
+                        )
+                        st.write(
+                            wording
+                        )
+
             _clear_drafting_professional_review_state()
             return
 

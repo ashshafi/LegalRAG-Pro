@@ -38,6 +38,7 @@ class ApprovedWorkingDraftProduct:
     approved_at: str
     reviewer_reference: str
     review_note: str
+    approved_wording: tuple[str, ...]
     court_or_tribunal_reliance: bool
     target_id: str
 
@@ -157,6 +158,146 @@ def _release_target_from_binding(
     return target
 
 
+def _approved_wording_from_artifact(
+    *,
+    artifact_bytes: bytes,
+    renderer_version: str,
+    output_profile: str,
+) -> tuple[str, ...]:
+    _working_draft_id_from_artifact(
+        artifact_bytes=artifact_bytes,
+        renderer_version=renderer_version,
+        output_profile=output_profile,
+    )
+
+    try:
+        markdown = artifact_bytes.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise DraftingApprovedWorkProductError(
+            "approved WorkingDraft artifact is not valid UTF-8."
+        ) from exc
+
+    lines = markdown.splitlines()
+    section_heading = "## Proposed wording and current authority checks"
+
+    section_indexes = tuple(
+        index
+        for index, line in enumerate(lines)
+        if line.strip() == section_heading
+    )
+
+    if len(section_indexes) != 1:
+        raise DraftingApprovedWorkProductError(
+            "approved WorkingDraft artifact does not contain one exact wording section."
+        )
+
+    section_start = section_indexes[0] + 1
+    statement_headings: list[tuple[int, int]] = []
+
+    for index in range(section_start, len(lines)):
+        stripped = lines[index].strip()
+        prefix = "### Statement "
+
+        if not stripped.startswith(prefix):
+            continue
+
+        suffix = stripped[len(prefix):]
+
+        if not suffix or not suffix.isdigit() or int(suffix) < 1:
+            raise DraftingApprovedWorkProductError(
+                "approved WorkingDraft artifact contains an invalid statement heading."
+            )
+
+        statement_headings.append((index, int(suffix)))
+
+    if not statement_headings:
+        raise DraftingApprovedWorkProductError(
+            "approved WorkingDraft artifact contains no approved statement wording."
+        )
+
+    expected_sequences = tuple(range(1, len(statement_headings) + 1))
+    actual_sequences = tuple(
+        sequence
+        for _index, sequence in statement_headings
+    )
+
+    if actual_sequences != expected_sequences:
+        raise DraftingApprovedWorkProductError(
+            "approved WorkingDraft statement sequence is not exact."
+        )
+
+    preamble = lines[
+        section_start:
+        statement_headings[0][0]
+    ]
+
+    if any(value.strip() for value in preamble):
+        raise DraftingApprovedWorkProductError(
+            "approved WorkingDraft wording section contains unexpected preamble content."
+        )
+
+    wording: list[str] = []
+
+    for position, (heading_index, sequence) in enumerate(statement_headings):
+        next_heading_index = (
+            statement_headings[position + 1][0]
+            if position + 1 < len(statement_headings)
+            else len(lines)
+        )
+
+        block = lines[
+            heading_index + 1:
+            next_heading_index
+        ]
+
+        authority_indexes = tuple(
+            index
+            for index, line in enumerate(block)
+            if line.startswith("Authority check: ")
+        )
+
+        if len(authority_indexes) != 1:
+            raise DraftingApprovedWorkProductError(
+                "approved WorkingDraft statement "
+                + str(sequence)
+                + " does not contain one exact authority-check boundary."
+            )
+
+        content = list(block[:authority_indexes[0]])
+
+        while content and not content[0].strip():
+            content.pop(0)
+
+        while content and not content[-1].strip():
+            content.pop()
+
+        if not content:
+            raise DraftingApprovedWorkProductError(
+                "approved WorkingDraft statement "
+                + str(sequence)
+                + " contains no wording."
+            )
+
+        if any(
+            value.lstrip().startswith("#")
+            for value in content
+        ):
+            raise DraftingApprovedWorkProductError(
+                "approved WorkingDraft statement wording contains an unexpected heading."
+            )
+
+        statement_text = "\n".join(content)
+
+        if not statement_text.strip():
+            raise DraftingApprovedWorkProductError(
+                "approved WorkingDraft statement wording is empty."
+            )
+
+        wording.append(statement_text)
+
+    return tuple(wording)
+
+
 def load_approved_working_draft_products(
     case_id: str,
     *,
@@ -271,6 +412,14 @@ def load_approved_working_draft_products(
                 getattr(binding, "output_profile", ""),
         )
 
+        approved_wording = _approved_wording_from_artifact(
+            artifact_bytes=artifact_bytes,
+            renderer_version=
+                getattr(binding, "renderer_version", ""),
+            output_profile=
+                getattr(binding, "output_profile", ""),
+        )
+
         if draft_id in seen_drafts:
             raise DraftingApprovedWorkProductError(
                 "more than one current approved product resolves to the same WorkingDraft."
@@ -370,6 +519,8 @@ def load_approved_working_draft_products(
                     reviewer_reference,
                 review_note=
                     review_note,
+                approved_wording=
+                    approved_wording,
                 court_or_tribunal_reliance=
                     bool(
                         projection.court_or_tribunal_reliance
