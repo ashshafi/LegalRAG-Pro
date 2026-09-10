@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
+import unicodedata
 from typing import Any, Mapping, Protocol
 
 from marriage_document_intelligence import (
@@ -60,6 +62,141 @@ _PROHIBITED_CONCLUSIONS = (
     "fraud was committed",
     "committed fraud",
 )
+
+
+_NUMBERED_NIKAH_CONDITION_NUMBERS = ("18", "19", "20", "21", "22")
+
+# Numbered form items are normally transcribed at the start of a line. Match
+# every numbered item so item 22 is correctly bounded by item 23 when present.
+_NUMBERED_NIKAH_ITEM = re.compile(
+    r"(?m)^[ \t]*(\d{1,2})(?:[ \t]*[\u06d4.):\-][ \t]*|[ \t]+)"
+)
+
+
+def _ascii_decimal_digits(value: str) -> str | None:
+    digits = []
+    for character in value:
+        try:
+            digits.append(str(unicodedata.decimal(character)))
+        except (TypeError, ValueError):
+            return None
+    return "".join(digits)
+
+
+def _nikah_condition_number(value: str) -> str | None:
+    match = re.match(r"\s*(\d{1,2})(?:\D|$)", value)
+    if match is None:
+        return None
+    number = _ascii_decimal_digits(match.group(1))
+    if number not in _NUMBERED_NIKAH_CONDITION_NUMBERS:
+        return None
+    return number
+
+
+def _approved_numbered_nikah_condition_payloads(
+    transcription_text: str,
+) -> tuple[dict[str, str], ...]:
+    # Recover items 18-22 directly from one approved transcription.
+    matches = list(_NUMBERED_NIKAH_ITEM.finditer(transcription_text))
+    recovered: dict[str, dict[str, str]] = {}
+
+    for index, match in enumerate(matches):
+        raw_number = match.group(1)
+        number = _ascii_decimal_digits(raw_number)
+        if (
+            number not in _NUMBERED_NIKAH_CONDITION_NUMBERS
+            or number in recovered
+        ):
+            continue
+
+        end = (
+            matches[index + 1].start()
+            if index + 1 < len(matches)
+            else len(transcription_text)
+        )
+        segment = transcription_text[match.start():end].strip()
+        segment = " ".join(segment.split())
+        if not segment:
+            continue
+
+        # Preserve the approved source wording while normalising only the
+        # leading item number to ASCII so downstream solicitor projection is
+        # independent of whether the approved transcription uses 18 or \u06f1\u06f8.
+        if segment.startswith(raw_number):
+            segment = number + segment[len(raw_number):]
+
+        folded = segment.casefold()
+        answer_is_no = (
+            "\u0646\u06c1\u06cc\u06ba" in segment
+            or re.search(r"(?:^|\W)no(?:\W|$)", folded) is not None
+        )
+        is_unclear = (
+            "[unclear]" in folded
+            or "unclear" in folded
+        )
+
+        notes = [
+            "Recovered deterministically from the approved transcription.",
+            "Item number normalised from the approved transcription to ASCII digits.",
+        ]
+        if answer_is_no:
+            notes.append("Recorded answer is 'No'.")
+        else:
+            notes.append(
+                "The recorded answer should be checked against the original image."
+            )
+        if is_unclear:
+            notes.append(
+                "Part of this item is unclear and should be checked against the original image."
+            )
+
+        recovered[number] = {
+            "field": "special_condition",
+            "value": segment,
+            "derivation_kind": "ocr_derived",
+            "quality_note": " ".join(notes),
+        }
+
+    return tuple(
+        recovered[number]
+        for number in _NUMBERED_NIKAH_CONDITION_NUMBERS
+        if number in recovered
+    )
+
+
+def _reconcile_numbered_nikah_conditions(
+    payload: dict[str, Any],
+    transcription_text: str,
+) -> dict[str, Any]:
+    # General facts remain model-extracted. Numbered standard form items are
+    # replaced with direct recovery from the approved transcription.
+    deterministic = _approved_numbered_nikah_condition_payloads(
+        transcription_text
+    )
+    if not deterministic:
+        return payload
+
+    deterministic_numbers = {
+        _nikah_condition_number(item["value"])
+        for item in deterministic
+    }
+
+    retained = []
+    for item in payload["facts"]:
+        if item["field"] != "special_condition":
+            retained.append(item)
+            continue
+
+        number = _nikah_condition_number(item["value"])
+        if number not in deterministic_numbers:
+            retained.append(item)
+
+    reconciled = dict(payload)
+    reconciled["facts"] = retained + [
+        dict(item)
+        for item in deterministic
+    ]
+    return reconciled
 
 
 class MarriageFactExtractionError(ValueError):
@@ -168,6 +305,10 @@ Rules:
 11. Plain-English explanation must remain descriptive, not a legal conclusion.
 12. If the document family is uncertain, choose the closest supported family
     and record that uncertainty under potential_issues.
+13. For Nikah Nama form items 18, 19, 20, 21 and 22, emit one
+    special_condition fact for every numbered item explicitly present in the
+    transcription. Preserve the item number and source text. Do not silently
+    omit a supported numbered item.
 
 APPROVED TRANSCRIPTION
 ----------------------
@@ -391,6 +532,10 @@ def extract_marriage_document_intelligence(
         transcription_text=transcription_text,
     )
     payload = validate_extraction_payload(raw)
+    payload = _reconcile_numbered_nikah_conditions(
+        payload,
+        transcription_text,
+    )
 
     facts = tuple(
         MarriageFact(

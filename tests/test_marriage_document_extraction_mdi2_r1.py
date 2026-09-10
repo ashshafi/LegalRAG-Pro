@@ -334,3 +334,101 @@ def _allow_openai_provider_policy_for_unit_tests(monkeypatch):
         "assert_ai_processing_allowed",
         lambda **kwargs: object(),
     )
+
+
+def test_prompt_requires_complete_numbered_nikah_condition_recovery():
+    prompt = build_marriage_fact_extraction_prompt("18. No")
+    assert "items 18, 19, 20, 21 and 22" in prompt
+    assert "special_condition" in prompt
+    assert "Do not silently" in prompt
+
+
+def test_provider_omission_cannot_drop_numbered_nikah_conditions():
+    candidate, binding, receipt, projection = source_values()
+    value = payload()
+    value["facts"] = []
+
+    transcription = (
+        "\u06f1\u06f8\u06d4 \u0633\u0648\u0627\u0644 \u0627\u0679\u06be\u0627\u0631\u06c1\u06d4 \u0646\u06c1\u06cc\u06ba\n"
+        "\u06f1\u06f9\u06d4 \u0633\u0648\u0627\u0644 \u0627\u0646\u06cc\u0633\u06d4 \u0646\u06c1\u06cc\u06ba\n"
+        "\u06f2\u06f0\u06d4 \u0633\u0648\u0627\u0644 \u0628\u06cc\u0633\u06d4 \u0646\u06c1\u06cc\u06ba\n"
+        "\u06f2\u06f1\u06d4 \u0633\u0648\u0627\u0644 \u0627\u06a9\u06cc\u0633 [unclear] \u0646\u06c1\u06cc\u06ba\n"
+        "\u06f2\u06f2\u06d4 \u0633\u0648\u0627\u0644 \u0628\u0627\u0626\u06cc\u0633\u06d4 \u0646\u06c1\u06cc\u06ba\n"
+        "\u06f2\u06f3\u06d4 \u0627\u06af\u0644\u0627 \u0633\u0648\u0627\u0644\n"
+    )
+
+    record = extract_marriage_document_intelligence(
+        candidate=candidate,
+        transcription_text=transcription,
+        binding=binding,
+        receipt=receipt,
+        review_projection=projection,
+        provider=FakeProvider(value),
+        model="test-model",
+    )
+
+    conditions = [
+        fact
+        for fact in record.facts
+        if fact.field is MarriageFactField.SPECIAL_CONDITION
+    ]
+
+    assert len(conditions) == 5
+    assert [fact.value.lstrip()[:2] for fact in conditions] == [
+        "18", "19", "20", "21", "22"
+    ]
+    assert all(
+        fact.provenance.derivation_kind
+        is MarriageFactDerivationKind.OCR_DERIVED
+        for fact in conditions
+    )
+    assert all(
+        "Recorded answer is 'No'."
+        in fact.provenance.quality_note
+        for fact in conditions
+    )
+    assert "unclear" in conditions[3].provenance.quality_note.casefold()
+    assert all(not fact.value.startswith("23") for fact in conditions)
+
+
+def test_model_numbered_condition_is_replaced_not_duplicated():
+    candidate, binding, receipt, projection = source_values()
+    value = payload()
+    value["facts"] = [
+        {
+            "field": "special_condition",
+            "value": "18 model paraphrase",
+            "derivation_kind": "inferred",
+            "quality_note": "Model supplied condition.",
+        }
+    ]
+
+    transcription = (
+        "\u06f1\u06f8\u06d4 \u0627\u0635\u0644 \u0645\u0646\u0638\u0648\u0631 \u0634\u062f\u06c1 \u0645\u062a\u0646\u06d4 \u0646\u06c1\u06cc\u06ba\n"
+        "\u06f1\u06f9\u06d4 \u062f\u0648\u0633\u0631\u0627 \u0645\u0646\u0638\u0648\u0631 \u0634\u062f\u06c1 \u0645\u062a\u0646\u06d4 \u0646\u06c1\u06cc\u06ba\n"
+    )
+
+    record = extract_marriage_document_intelligence(
+        candidate=candidate,
+        transcription_text=transcription,
+        binding=binding,
+        receipt=receipt,
+        review_projection=projection,
+        provider=FakeProvider(value),
+        model="test-model",
+    )
+
+    conditions = [
+        fact
+        for fact in record.facts
+        if fact.field is MarriageFactField.SPECIAL_CONDITION
+    ]
+
+    assert len(conditions) == 2
+    assert [fact.value[:2] for fact in conditions] == ["18", "19"]
+    assert all(
+        "Recovered deterministically"
+        in fact.provenance.quality_note
+        for fact in conditions
+    )
+
