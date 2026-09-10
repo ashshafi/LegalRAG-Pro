@@ -101,10 +101,5 @@ def show_marriage_document_workspace(
             "No further action has been generated from the reviewed sections."
         )
 
-    st.caption(
-        "If a certified English translation is required for formal use, "
-        "obtain one from a suitably qualified translator."
-    )
-
     # Deliberately no technical audit block here. Technical provenance belongs
     # in the application's Audit workspace, not in the solicitor working page.

@@ -107,11 +107,34 @@ def _all_facts(records):
     )
 
 
+_SOURCE_EXPLICIT_NOTE_MARKERS = (
+    "recovered directly from",
+    "identified deterministically from",
+)
+
+
+def _is_source_explicit_fact(fact: MarriageFact) -> bool:
+    note = fact.provenance.quality_note.casefold()
+    return any(
+        marker in note
+        for marker in _SOURCE_EXPLICIT_NOTE_MARKERS
+    )
+
+
 def _first_fact(facts, field):
-    for fact in facts:
-        if fact.field is field:
+    candidates = tuple(
+        fact
+        for fact in facts
+        if fact.field is field
+    )
+    if not candidates:
+        return None
+
+    for fact in candidates:
+        if _is_source_explicit_fact(fact):
             return fact
-    return None
+
+    return candidates[0]
 
 
 def _condition_number(value: str) -> str | None:

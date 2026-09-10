@@ -188,3 +188,123 @@ def test_workspace_generates_date_action_from_current_fact_value():
         'against the original page."'
         in text
     )
+
+
+def test_workspace_prefers_source_explicit_fact_across_fragments():
+    from marriage_document_intelligence import (
+        MarriageDocumentIntelligenceRecord,
+        MarriageDocumentType,
+        MarriageFact,
+        MarriageFactDerivationKind,
+        MarriageFactField,
+        MarriageFactProvenance,
+        SourceRegion,
+    )
+    from marriage_document_workspace import (
+        build_marriage_document_workspace,
+    )
+
+    def record(candidate: str, value: str, note: str):
+        provenance = MarriageFactProvenance(
+            source_document_instance_id="doc-a",
+            source_snapshot_id="snap-a",
+            original_filename="marriage.pdf",
+            original_blob_sha256="a" * 64,
+            page_number=5,
+            candidate_record_id="sha256:" + candidate * 64,
+            transcription_sha256=candidate * 64,
+            review_event_id="sha256:" + "f" * 64,
+            derivation_kind=MarriageFactDerivationKind.OCR_DERIVED,
+            quality_note=note,
+            binding_id="sha256:" + "d" * 64,
+            publication_receipt_id="sha256:" + "e" * 64,
+            crop_name="crop-" + candidate,
+            bbox=SourceRegion(left=1, top=1, right=10, bottom=10),
+        )
+        return MarriageDocumentIntelligenceRecord.create(
+            document_type=MarriageDocumentType.NIKAH_NAMA,
+            document_label="fragment-" + candidate,
+            facts=(
+                MarriageFact(
+                    field=(
+                        MarriageFactField
+                        .MARRIAGE_LOCALITY_OR_DISTRICT
+                    ),
+                    value=value,
+                    provenance=provenance,
+                ),
+            ),
+        )
+
+    ai_first = record(
+        "1",
+        "Buksh Town",
+        "AI semantic extraction from the approved transcription.",
+    )
+    direct_second = record(
+        "2",
+        "Ward 203",
+        (
+            "Ward number recovered directly from Nikah Nama item 1 "
+            "in the approved transcription."
+        ),
+    )
+
+    workspace = build_marriage_document_workspace(
+        (ai_first, direct_second)
+    )
+
+    locality = next(
+        item
+        for item in workspace.particulars
+        if item.label == "Locality / district"
+    )
+    assert locality.value == "Ward 203"
+
+
+def test_workspace_keeps_first_candidate_when_none_is_source_explicit():
+    from types import SimpleNamespace
+
+    import marriage_document_workspace as workspace_module
+    from marriage_document_intelligence import MarriageFactField
+
+    field = MarriageFactField.MARRIAGE_LOCALITY_OR_DISTRICT
+
+    first = SimpleNamespace(
+        field=field,
+        value="First",
+        provenance=SimpleNamespace(
+            quality_note="AI extraction."
+        ),
+    )
+    second = SimpleNamespace(
+        field=field,
+        value="Second",
+        provenance=SimpleNamespace(
+            quality_note="Another AI extraction."
+        ),
+    )
+
+    assert workspace_module._first_fact(
+        (first, second),
+        field,
+    ) is first
+
+
+def test_solicitor_ui_does_not_duplicate_translator_recommendation():
+    ui = Path(
+        "src/ui/marriage_document_workspace.py"
+    ).read_text(encoding="utf-8")
+    workspace = Path(
+        "src/marriage_document_workspace.py"
+    ).read_text(encoding="utf-8")
+
+    assert "obtain one from a suitably qualified translator" not in ui
+    assert (
+        workspace.count(
+            "Use a qualified translator if a certified English "
+            "translation is required."
+        )
+        == 1
+    )
+
