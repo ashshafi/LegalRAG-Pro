@@ -33,6 +33,7 @@ from governed_analytical_authority.provider import (
     load_active_governed_analytical_authority,
 )
 from legal_issue_dashboard import LegalIssueDashboardError, build_legal_issue_dashboard
+from solicitor_tasks import SolicitorTaskError, load_tasks
 from ui.legal_issue_dashboard import show_legal_issue_dashboard
 from ui.swd1_issue_workspace import show_swd1_issue_workspace
 from ui.matter_analysis_ledger import show_matter_analysis_ledger
@@ -194,11 +195,51 @@ elif st.session_state.get("m55_main_view", "assistant") == "reports":
         provider_error=report_provider_error,
     )
 elif is_matter_overview_active(st.session_state):
+    overview_issue_dashboard = None
+    overview_tasks = ()
+    overview_issue_error = None
+    overview_task_error = None
+
+    if active_case_id is not None:
+        try:
+            governed_authority = load_active_governed_analytical_authority(
+                active_case_id
+            )
+            if governed_authority is not None:
+                overview_issue_dashboard = build_legal_issue_dashboard(
+                    active_case_id=active_case_id,
+                    authority=governed_authority,
+                )
+        except (
+            GovernedAnalyticalAuthorityProviderError,
+            LegalIssueDashboardError,
+        ) as exc:
+            overview_issue_error = exc
+            LOGGER.error(
+                "Unable to bind read-only issue orientation for matter %s error %s.",
+                active_case_id,
+                type(exc).__name__,
+            )
+
+        try:
+            overview_tasks = load_tasks(active_case_id)
+        except SolicitorTaskError as exc:
+            overview_task_error = exc
+            LOGGER.error(
+                "Unable to load read-only solicitor tasks for matter %s error %s.",
+                active_case_id,
+                type(exc).__name__,
+            )
+
     show_matter_overview(
         active_case,
         report_projection,
         provider_error=report_provider_error,
         selected_document_count=len(selected_documents),
+        issue_dashboard=overview_issue_dashboard,
+        tasks=overview_tasks,
+        issue_error=overview_issue_error,
+        task_error=overview_task_error,
     )
 elif st.session_state.get("mdi_marriage_document_view", False):
     show_marriage_document_entrypoint(active_case_id)

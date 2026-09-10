@@ -135,23 +135,23 @@ def test_valid_projection_uses_only_exact_frozen_inventory_counts(monkeypatch):
         "validate_case_report_projection",
         lambda value: None,
     )
+    projection = _projection()
 
     matter_overview.show_matter_overview(
         _case(),
-        _projection(),
-        selected_document_count=5,
+        projection,
+        selected_document_count=7,
     )
 
-    assert ("Selected documents", 5) in fake.metrics
-    assert ("Legal issues", 2) in fake.metrics
-    assert ("Chronology events", 3) in fake.metrics
-    assert ("Evidence citations", 4) in fake.metrics
-    assert ("Material conflicts", 1) in fake.metrics
-    assert ("Evidence gaps", 2) in fake.metrics
-    assert ("Risk areas", 3) in fake.metrics
-    assert fake.errors == []
-    assert any("not merits findings" in value for value in fake.captions)
+    assert ("Selected documents", 7) in fake.metrics
+    assert ("Legal issues", len(projection.issues)) in fake.metrics
+    assert ("Chronology events", len(projection.chronology)) in fake.metrics
+    assert ("Evidence citations", len(projection.citations)) in fake.metrics
 
+    labels = {label for label, _ in fake.metrics}
+    assert "Material conflicts" not in labels
+    assert "Evidence gaps" not in labels
+    assert "Risk areas" not in labels
 
 def test_invalid_projection_fails_closed_before_projection_metrics(monkeypatch):
     fake = _FakeStreamlit()
@@ -236,6 +236,7 @@ def test_module_dependency_boundary_is_presentation_only():
     allowed_roots = {
         "__future__",
         "collections",
+        "datetime",
         "typing",
         "streamlit",
         "case_reporting",
@@ -281,3 +282,148 @@ def test_metric_columns_use_at_most_two_columns_per_row(monkeypatch):
         ("Chronology events", 2),
         ("Evidence citations", 1),
     ]
+
+
+def test_swr1_i1_attention_orders_overdue_then_high_then_unsettled():
+    from datetime import date
+    from types import SimpleNamespace
+
+    def counts(**changes):
+        values = {
+            "disputed": 0,
+            "insufficiently_evidenced": 0,
+            "unresolved": 0,
+            "partially_supported": 0,
+            "well_supported": 0,
+        }
+        values.update(changes)
+        return SimpleNamespace(**values)
+
+    dashboard = SimpleNamespace(
+        issues=(
+            SimpleNamespace(
+                issue_analysis_id="issue-overdue",
+                issue_name="Overdue issue",
+                synthesis_counts=counts(insufficiently_evidenced=1),
+            ),
+            SimpleNamespace(
+                issue_analysis_id="issue-high",
+                issue_name="High task issue",
+                synthesis_counts=counts(disputed=1),
+            ),
+            SimpleNamespace(
+                issue_analysis_id="issue-unsettled",
+                issue_name="Unsettled issue",
+                synthesis_counts=counts(unresolved=1),
+            ),
+        )
+    )
+
+    def task(issue_id, issue_name, title, priority, due):
+        return SimpleNamespace(
+            status=SimpleNamespace(value="open"),
+            priority=SimpleNamespace(value=priority),
+            due_date=due,
+            issue_analysis_id=issue_id,
+            issue_name=issue_name,
+            title=title,
+            why_it_matters="Recorded reason.",
+        )
+
+    rows = matter_overview._attention_rows(
+        dashboard,
+        (
+            task(
+                "issue-high",
+                "High task issue",
+                "High priority work",
+                "high",
+                "2026-09-20",
+            ),
+            task(
+                "issue-overdue",
+                "Overdue issue",
+                "Overdue work",
+                "medium",
+                "2026-09-09",
+            ),
+        ),
+        today=date(2026, 9, 10),
+    )
+
+    assert [row["operational_state"] for row in rows] == [
+        "OVERDUE",
+        "HIGH-PRIORITY TASK",
+        "UNSETTLED ISSUE",
+    ]
+    assert [row["issue_name"] for row in rows] == [
+        "Overdue issue",
+        "High task issue",
+        "Unsettled issue",
+    ]
+
+
+def test_swr1_i1_does_not_create_a_legal_risk_score():
+    from pathlib import Path
+
+    source = Path("src/ui/matter_overview.py").read_text(encoding="utf-8")
+    assert "HIGH RISK" not in source
+    assert "risk scores" in source
+    assert "Task priority:" in source
+    assert "_UNSETTLED_POSITIONS" in source
+
+
+def test_swr1_i1_procedural_stage_is_truthfully_not_recorded():
+    from pathlib import Path
+
+    source = Path("src/ui/matter_overview.py").read_text(encoding="utf-8")
+    assert "Procedural stage: Not recorded in the matter workspace." in source
+    assert (
+        "does not infer procedural stage, hearing dates or legal deadlines from document text"
+        in source
+    )
+
+
+def test_swr1_i1_removes_ambiguous_report_attention_counters():
+    from pathlib import Path
+
+    source = Path("src/ui/matter_overview.py").read_text(encoding="utf-8")
+    for label in ("Material conflicts", "Evidence gaps", "Risk areas"):
+        assert label not in source
+    assert "Needs attention now" in source
+    assert "Matter information" in source
+    assert "Quick Start" not in source
+
+
+def test_swr1_i1_overview_remains_presentation_only():
+    from pathlib import Path
+
+    source = Path("src/ui/matter_overview.py").read_text(encoding="utf-8")
+    for forbidden in (
+        "load_active_governed_analytical_authority",
+        "build_legal_issue_dashboard",
+        "load_tasks",
+        "create_task",
+        "update_task",
+        "chromadb",
+        "openai",
+    ):
+        assert forbidden not in source
+
+
+def test_swr1_i1_app_composes_read_only_issue_and_task_state():
+    from pathlib import Path
+
+    app = Path("src/app.py").read_text(encoding="utf-8")
+    route = app.index("elif is_matter_overview_active(st.session_state):")
+    show = app.index("    show_matter_overview(", route)
+    tail = app[route : app.index("\nelse:", show)]
+
+    assert "load_active_governed_analytical_authority(" in tail
+    assert "build_legal_issue_dashboard(" in tail
+    assert "load_tasks(active_case_id)" in tail
+    assert "issue_dashboard=overview_issue_dashboard" in tail
+    assert "tasks=overview_tasks" in tail
+    assert "create_task(" not in tail
+    assert "update_task(" not in tail
+
