@@ -1091,9 +1091,14 @@ def _project_approved_task_queue(
     *,
     case_id: str,
     open_tasks: tuple[Any, ...],
+    today=None,
 ) -> tuple[tuple[Any, ...], tuple[Any, ...], tuple[Any, ...]]:
-    """Project READY/BLOCKED approved tasks without mutating task state."""
-    ready: list[tuple[int, int, Any]] = []
+    """Project READY/BLOCKED approved tasks using explicit operational state only."""
+    from datetime import date
+
+    current_day = date.today() if today is None else today
+
+    ready: list[tuple[int, int, object, int, int, Any]] = []
     blocked: list[tuple[int, int, Any]] = []
     unavailable: list[tuple[int, Any]] = []
 
@@ -1120,23 +1125,60 @@ def _project_approved_task_queue(
             else None
         )
 
-        ranked = (
-            _task_priority_order(task),
-            canonical_index,
-            task,
-        )
+        priority_order = _task_priority_order(task)
 
         if latest_outcome == "BLOCKED":
-            blocked.append(ranked)
-        else:
-            ready.append(ranked)
+            blocked.append((priority_order, canonical_index, task))
+            continue
 
-    ready.sort(key=lambda item: (item[0], item[1]))
+        due_raw = _clean(getattr(task, "due_date", ""))
+        due = None
+        if due_raw:
+            try:
+                due = date.fromisoformat(due_raw)
+            except ValueError:
+                due = None
+
+        raw_priority = getattr(task, "priority", None)
+        priority_value = _clean(
+            getattr(raw_priority, "value", raw_priority)
+        ).lower()
+
+        if due is not None and due < current_day:
+            operational_band = 0
+        elif priority_value == "high":
+            operational_band = 1
+        else:
+            operational_band = 2
+
+        status_order = 0 if status is TaskStatus.IN_PROGRESS else 1
+        due_order = due if due is not None else date.max
+
+        ready.append(
+            (
+                operational_band,
+                status_order,
+                due_order,
+                priority_order,
+                canonical_index,
+                task,
+            )
+        )
+
+    ready.sort(
+        key=lambda item: (
+            item[0],
+            item[1],
+            item[2],
+            item[3],
+            item[4],
+        )
+    )
     blocked.sort(key=lambda item: (item[0], item[1]))
     unavailable.sort(key=lambda item: item[0])
 
     return (
-        tuple(item[2] for item in ready),
+        tuple(item[5] for item in ready),
         tuple(item[2] for item in blocked),
         tuple(item[1] for item in unavailable),
     )
