@@ -260,6 +260,50 @@ def _next_recorded_work(
     )
 
 
+def _attention_groups(
+    rows: tuple[dict[str, str], ...],
+) -> tuple[dict[str, Any], ...]:
+    """Group ranked operational rows by legal issue without changing rank."""
+    groups: list[dict[str, Any]] = []
+    by_key: dict[str, dict[str, Any]] = {}
+
+    for row in rows:
+        key = row["issue_id"] or ("name:" + row["issue_name"])
+        group = by_key.get(key)
+        if group is None:
+            group = {
+                "issue_id": row["issue_id"],
+                "issue_name": row["issue_name"],
+                "position": row["position"],
+                "rows": [],
+            }
+            by_key[key] = group
+            groups.append(group)
+        elif (
+            group["position"] == "NOT ASSESSED"
+            and row["position"] != "NOT ASSESSED"
+        ):
+            group["position"] = row["position"]
+
+        group["rows"].append(row)
+
+    return tuple(groups)
+
+
+def _group_attention_label(group: dict[str, Any]) -> str:
+    states = {
+        row["operational_state"]
+        for row in group["rows"]
+    }
+    if "OVERDUE" in states:
+        return "OVERDUE"
+    if "HIGH-PRIORITY TASK" in states:
+        return "HIGH PRIORITY"
+    if states == {"UNSETTLED ISSUE"}:
+        return "UNSETTLED"
+    return "OPEN WORK"
+
+
 def show_matter_overview(
     active_case: MatterRecord | None,
     report_projection: Any | None,
@@ -283,36 +327,35 @@ def show_matter_overview(
     matter_status = _status_text(str(getattr(active_case, "status", "") or ""))
     st.caption("Reference: " + reference + " \u00b7 Matter status: " + matter_status)
 
-    st.subheader("Parties")
-    st.write("Claimant: " + _party_text(getattr(active_case, "claimant", None)))
-    st.write("Respondent: " + _party_text(getattr(active_case, "respondent", None)))
-
-    st.subheader("Current matter position")
-    st.write("Procedural stage: Not recorded in the matter workspace.")
-    st.caption(
-        "This Overview does not infer procedural stage, hearing dates or legal deadlines from document text."
-    )
-
     st.subheader("Needs attention now")
     rows = _attention_rows(issue_dashboard, tuple(tasks or ()))
-    if rows:
-        for index, row in enumerate(rows[:5], start=1):
-            st.write(f"{index}. {row['issue_name']}")
-            details = [row["operational_state"]]
-            if row["position"] != "NOT ASSESSED":
-                details.append("Current position: " + row["position"])
-            if row["kind"] == "task":
-                if row["priority"] and row["priority"] != "NOT_SET":
-                    details.append(
-                        "Task priority: "
-                        + row["priority"].replace("_", " ").title()
-                    )
-                if row["due"]:
-                    details.append("Due: " + row["due"])
+    groups = _attention_groups(rows)
+
+    if groups:
+        for index, group in enumerate(groups[:5], start=1):
+            st.write(f"{index}. {group['issue_name']}")
+
+            details = []
+            if group["position"] != "NOT ASSESSED":
+                details.append(group["position"])
+            details.append(_group_attention_label(group))
             st.caption(" \u00b7 ".join(details))
-            st.write(row["work"])
-            if row["why"]:
-                st.caption("Why it matters: " + row["why"])
+
+            task_rows = [
+                row
+                for row in group["rows"]
+                if row["kind"] == "task"
+            ]
+            if task_rows:
+                for row in task_rows:
+                    line = "\u2022 " + row["work"]
+                    if row["due"]:
+                        line += " \u00b7 Due " + row["due"]
+                    st.write(line)
+            else:
+                st.write(
+                    "No open task is currently recorded for this unsettled issue."
+                )
     else:
         st.caption(
             "No prioritised attention item can be shown from the currently "
@@ -331,8 +374,15 @@ def show_matter_overview(
     st.subheader("Next work due")
     st.write(_next_work_due(tuple(tasks or ())))
 
-    st.subheader("Next legal work already recorded")
-    st.write(_next_recorded_work(issue_dashboard, tuple(tasks or ())))
+    st.subheader("Current matter position")
+    st.write("Procedural stage: Not recorded in the matter workspace.")
+    st.caption(
+        "This Overview does not infer procedural stage, hearing dates or legal deadlines from document text."
+    )
+
+    st.subheader("Parties")
+    st.write("Claimant: " + _party_text(getattr(active_case, "claimant", None)))
+    st.write("Respondent: " + _party_text(getattr(active_case, "respondent", None)))
 
     st.subheader("Matter information")
 

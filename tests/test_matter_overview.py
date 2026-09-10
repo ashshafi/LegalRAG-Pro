@@ -369,9 +369,8 @@ def test_swr1_i1_does_not_create_a_legal_risk_score():
     source = Path("src/ui/matter_overview.py").read_text(encoding="utf-8")
     assert "HIGH RISK" not in source
     assert "risk scores" in source
-    assert "Task priority:" in source
+    assert "Task priority:" not in source
     assert "_UNSETTLED_POSITIONS" in source
-
 
 def test_swr1_i1_procedural_stage_is_truthfully_not_recorded():
     from pathlib import Path
@@ -426,4 +425,87 @@ def test_swr1_i1_app_composes_read_only_issue_and_task_state():
     assert "tasks=overview_tasks" in tail
     assert "create_task(" not in tail
     assert "update_task(" not in tail
+
+
+def test_swr1_i1_r3_attention_precedes_secondary_matter_sections():
+    from pathlib import Path
+
+    source = Path("src/ui/matter_overview.py").read_text(encoding="utf-8")
+    attention = source.index('st.subheader("Needs attention now")')
+    due = source.index('st.subheader("Next work due")')
+    position = source.index('st.subheader("Current matter position")')
+    parties = source.index('st.subheader("Parties")')
+    information = source.index('st.subheader("Matter information")')
+
+    assert attention < due < position < parties < information
+    assert 'st.subheader("Next legal work already recorded")' not in source
+
+
+def test_swr1_i1_r3_groups_multiple_tasks_under_one_issue():
+    rows = (
+        {
+            "kind": "task",
+            "issue_id": "knowledge",
+            "issue_name": "Employer knowledge",
+            "position": "DISPUTED",
+            "work": "Task one",
+            "due": "",
+            "priority": "HIGH",
+            "operational_state": "HIGH-PRIORITY TASK",
+            "why": "",
+        },
+        {
+            "kind": "task",
+            "issue_id": "knowledge",
+            "issue_name": "Employer knowledge",
+            "position": "DISPUTED",
+            "work": "Task two",
+            "due": "",
+            "priority": "HIGH",
+            "operational_state": "HIGH-PRIORITY TASK",
+            "why": "",
+        },
+        {
+            "kind": "issue",
+            "issue_id": "limitation",
+            "issue_name": "Limitation",
+            "position": "UNRESOLVED",
+            "work": "No task",
+            "due": "",
+            "priority": "",
+            "operational_state": "UNSETTLED ISSUE",
+            "why": "",
+        },
+    )
+
+    groups = matter_overview._attention_groups(rows)
+
+    assert [group["issue_name"] for group in groups] == [
+        "Employer knowledge",
+        "Limitation",
+    ]
+    assert len(groups[0]["rows"]) == 2
+    assert matter_overview._group_attention_label(groups[0]) == "HIGH PRIORITY"
+    assert matter_overview._group_attention_label(groups[1]) == "UNSETTLED"
+
+
+def test_swr1_i1_r3_overdue_group_outranks_high_priority_label():
+    group = {
+        "rows": [
+            {"operational_state": "HIGH-PRIORITY TASK"},
+            {"operational_state": "OVERDUE"},
+        ]
+    }
+    assert matter_overview._group_attention_label(group) == "OVERDUE"
+
+
+def test_swr1_i1_r3_visual_copy_is_solicitor_facing():
+    from pathlib import Path
+
+    source = Path("src/ui/matter_overview.py").read_text(encoding="utf-8")
+    assert "HIGH-PRIORITY TASK" in source
+    assert '"HIGH PRIORITY"' in source
+    assert "Task priority:" not in source
+    assert "Why it matters:" not in source
+    assert "Next legal work already recorded" not in source
 
