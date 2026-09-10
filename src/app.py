@@ -42,6 +42,7 @@ from ui.matter_overview import (
     show_matter_overview,
     synchronise_matter_overview_session_state,
 )
+from ui.marriage_document_entrypoint import show_marriage_document_entrypoint
 from ui.reports import show_report_viewer, synchronise_report_session_state
 from ui.sidebar import show_sidebar
 from ui.source_evidence import (
@@ -199,6 +200,8 @@ elif is_matter_overview_active(st.session_state):
         provider_error=report_provider_error,
         selected_document_count=len(selected_documents),
     )
+elif st.session_state.get("mdi_marriage_document_view", False):
+    show_marriage_document_entrypoint(active_case_id)
 else:
     show_chat(
         selected_documents,

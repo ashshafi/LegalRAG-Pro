@@ -104,6 +104,7 @@ def show_sidebar(
         ),
     )
     if overview_clicked:
+        st.session_state["mdi_marriage_document_view"] = False
         set_matter_overview_view(st.session_state, True)
         st.session_state["u8_evidence_inspection_view"] = False
         st.session_state["ppr3_legal_issue_dashboard_view"] = False
@@ -118,6 +119,7 @@ def show_sidebar(
         disabled=active_case_id is None,
     )
     if finance_clicked:
+        st.session_state["mdi_marriage_document_view"] = False
         set_matter_overview_view(st.session_state, False)
         st.session_state["ppr3_legal_issue_dashboard_view"] = False
         st.session_state["u8_evidence_inspection_view"] = False
@@ -138,6 +140,7 @@ def show_sidebar(
         disabled=tools_disabled,
     )
     if timeline_clicked:
+        st.session_state["mdi_marriage_document_view"] = False
         st.session_state["m7_source_evidence_view"] = False
         st.session_state["m6_workspace_view"] = None
         st.session_state["m55_main_view"] = "assistant"
@@ -153,9 +156,11 @@ def show_sidebar(
         disabled=not reports_available,
     )
     if evidence_clicked:
+        st.session_state["mdi_marriage_document_view"] = False
         st.session_state["m7_source_evidence_view"] = False
         st.session_state["m6_workspace_view"] = "evidence"
     if people_clicked:
+        st.session_state["mdi_marriage_document_view"] = False
         st.session_state["m7_source_evidence_view"] = False
         st.session_state["m6_workspace_view"] = "people"
 
@@ -170,6 +175,7 @@ def show_sidebar(
         ),
     )
     if dashboard_clicked:
+        st.session_state["mdi_marriage_document_view"] = False
         set_matter_overview_view(st.session_state, False)
         st.session_state.pop("case_operator_workspace_case_id", None)
         st.session_state["ppr3_legal_issue_dashboard_view"] = True
@@ -192,6 +198,7 @@ def show_sidebar(
         ),
     )
     if workspace_clicked:
+        st.session_state["mdi_marriage_document_view"] = False
         st.session_state["m7_source_evidence_view"] = False
         st.session_state["m6_workspace_view"] = "review"
 
@@ -220,6 +227,7 @@ def show_sidebar(
         disabled=active_case_id is None,
     )
     if assistant_clicked:
+        st.session_state["mdi_marriage_document_view"] = False
         st.session_state["u8_evidence_inspection_view"] = False
         st.session_state["m7_source_evidence_view"] = False
         st.session_state["m6_workspace_view"] = None
@@ -243,6 +251,7 @@ def show_sidebar(
         ),
     )
     if reports_clicked:
+        st.session_state["mdi_marriage_document_view"] = False
         st.session_state["m7_source_evidence_view"] = False
         st.session_state["m6_workspace_view"] = None
         st.session_state["m55_main_view"] = "reports"
@@ -261,6 +270,7 @@ def show_sidebar(
         ),
     )
     if source_evidence_clicked:
+        st.session_state["mdi_marriage_document_view"] = False
         st.session_state["m7_source_evidence_view"] = True
         st.session_state["m6_workspace_view"] = None
         st.session_state["m55_main_view"] = "assistant"
@@ -287,6 +297,25 @@ def show_sidebar(
 
     st.sidebar.divider()
     with st.sidebar.expander("📄 Documents", expanded=False):
+        marriage_review_clicked = st.button(
+            "Nikah Nama review",
+            width="stretch",
+            disabled=active_case_id is None,
+            help=(
+                None
+                if active_case_id is not None
+                else "Select a matter before opening the Nikah Nama review."
+            ),
+        )
+        if marriage_review_clicked:
+            set_matter_overview_view(st.session_state, False)
+            st.session_state["u8_evidence_inspection_view"] = False
+            st.session_state["ppr3_legal_issue_dashboard_view"] = False
+            st.session_state["m7_source_evidence_view"] = False
+            st.session_state["m6_workspace_view"] = None
+            st.session_state["m55_main_view"] = "assistant"
+            st.session_state["mdi_marriage_document_view"] = True
+        st.divider()
         selected_documents: list[str] = []
         if active_case_id is not None and not docs:
             st.info(
