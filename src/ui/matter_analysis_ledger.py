@@ -4,6 +4,10 @@ from hashlib import sha256
 from typing import Any
 
 import streamlit as st
+from controlled_agentic_analysis_review_inbox import (
+    ProfessionalReviewInboxError,
+    load_professional_review_inbox,
+)
 
 from governed_analytical_authority.provider import (
     load_active_governed_analytical_authority,
@@ -1217,6 +1221,155 @@ def _stable_selectbox(
 
 
 
+def _swr1_i3_project_ai_review_activity(
+    items,
+    *,
+    authority_id: str,
+    issue_analysis_id: str,
+    element_id: str,
+) -> dict[str, object]:
+    """Project read-only AI review activity for one current assessment."""
+    scoped_items = []
+    for item in tuple(items or ()):
+        run = getattr(item, "run", None)
+        observation = getattr(item, "observation", None)
+        if run is None or observation is None:
+            continue
+        if str(getattr(run, "active_authority_id", "") or "") != str(
+            authority_id
+        ):
+            continue
+        if str(getattr(observation, "issue_analysis_id", "") or "") != str(
+            issue_analysis_id
+        ):
+            continue
+        if str(getattr(observation, "element_id", "") or "") != str(element_id):
+            continue
+        scoped_items.append(item)
+
+    reviewed_finding_count = 0
+    review_event_count = 0
+    awaiting_review_count = 0
+    reviewers: list[str] = []
+    seen_reviewers: set[str] = set()
+
+    for item in scoped_items:
+        events = tuple(getattr(item, "review_events", ()) or ())
+        if events:
+            reviewed_finding_count += 1
+            review_event_count += len(events)
+            for event in events:
+                reviewer = str(
+                    getattr(event, "reviewer_reference", "") or ""
+                ).strip()
+                if reviewer and reviewer not in seen_reviewers:
+                    seen_reviewers.add(reviewer)
+                    reviewers.append(reviewer)
+        else:
+            awaiting_review_count += 1
+
+    return {
+        "finding_count": len(scoped_items),
+        "reviewed_finding_count": reviewed_finding_count,
+        "review_event_count": review_event_count,
+        "awaiting_review_count": awaiting_review_count,
+        "reviewers": tuple(reviewers),
+    }
+
+
+def _swr1_i3_load_ai_review_activity(
+    *,
+    case_id: str,
+    authority_id: str,
+    issue_analysis_id: str,
+    element_id: str,
+) -> dict[str, object] | None:
+    """Load only the existing read-only AI review projection."""
+    try:
+        items = load_professional_review_inbox(case_id=case_id)
+    except ProfessionalReviewInboxError:
+        return None
+
+    return _swr1_i3_project_ai_review_activity(
+        items,
+        authority_id=authority_id,
+        issue_analysis_id=issue_analysis_id,
+        element_id=element_id,
+    )
+
+
+def _swr1_i3_render_professional_status(
+    *,
+    case_id: str,
+    authority_id: str,
+    issue_analysis_id: str,
+    element_id: str,
+) -> None:
+    """Render professional status without creating or inferring authority."""
+    st.markdown("#### Professional status")
+    st.write(
+        "**Professional adoption:** "
+        "Not recorded in the current assessment metadata"
+    )
+    st.write(
+        "**Last adopted / activated:** "
+        "Not recorded in the current assessment metadata"
+    )
+
+    activity = _swr1_i3_load_ai_review_activity(
+        case_id=case_id,
+        authority_id=authority_id,
+        issue_analysis_id=issue_analysis_id,
+        element_id=element_id,
+    )
+
+    if activity is None:
+        st.write(
+            "**AI review activity:** "
+            "Unavailable from the read-only AI review projection"
+        )
+        st.write("**New AI findings awaiting review:** Not available")
+    else:
+        finding_count = int(activity["finding_count"])
+        reviewed_finding_count = int(activity["reviewed_finding_count"])
+        review_event_count = int(activity["review_event_count"])
+        awaiting_review_count = int(activity["awaiting_review_count"])
+
+        if finding_count:
+            st.write(
+                "**AI review activity:** "
+                + str(reviewed_finding_count)
+                + " of "
+                + str(finding_count)
+                + " matching AI findings have recorded professional review "
+                "activity ("
+                + str(review_event_count)
+                + " review events)"
+            )
+        else:
+            st.write(
+                "**AI review activity:** "
+                "No AI findings are currently recorded for this assessment"
+            )
+
+        reviewers = tuple(activity["reviewers"])
+        if reviewers:
+            st.caption(
+                "Reviewers recorded for AI findings: "
+                + " · ".join(str(value) for value in reviewers)
+            )
+
+        st.write(
+            "**New AI findings awaiting review:** "
+            + str(awaiting_review_count)
+        )
+
+    st.caption(
+        "AI review activity is separate from professional adoption. "
+        "Reviewing or accepting an AI finding does not itself change the "
+        "current assessment."
+    )
+
 def _matter_ledger_fragment(function):
     fragment = getattr(st, "fragment", None)
     if fragment is None:
@@ -1843,6 +1996,13 @@ def show_matter_analysis_ledger(
                     st.caption(
                         "Confidence: "
                         + element.analytical_confidence
+                    )
+
+                    _swr1_i3_render_professional_status(
+                        case_id=ledger.case_id,
+                        authority_id=ledger.authority_id,
+                        issue_analysis_id=issue.issue_analysis_id,
+                        element_id=element.element_id,
                     )
 
                     with st.expander(
