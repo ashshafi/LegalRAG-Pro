@@ -767,18 +767,122 @@ def _render_chronology_task_creator(
     )
 
 
+def _chronology_status_filter_label(events, attribute: str, raw_value: object) -> str:
+    for event in events:
+        status = getattr(event, attribute, None)
+        if status is not None and getattr(status, "raw_value", None) == raw_value:
+            label = str(getattr(status, "label", "") or "").strip()
+            if label:
+                return label
+    return _humanise_token(raw_value) or "Not recorded"
+
+
+def _chronology_issue_filter_label(index: WorkspaceIndex, issue_id: object) -> str:
+    issue = index.issues_by_id.get(issue_id)
+    if issue is None:
+        return "Related legal issue"
+    return str(getattr(issue, "issue_name", "") or "Related legal issue").strip()
+
+
+def _chronology_issue_names(index: WorkspaceIndex, event) -> tuple[str, ...]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for issue_id in event.related_issue_ids:
+        issue = index.issues_by_id.get(issue_id)
+        if issue is None:
+            continue
+        name = str(getattr(issue, "issue_name", "") or "").strip()
+        if name and name not in seen:
+            seen.add(name)
+            result.append(name)
+    return tuple(result)
+
+
+def _chronology_source_rows(index: WorkspaceIndex, event) -> tuple[tuple[str, str], ...]:
+    rows: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for citation_id in event.citation_ids:
+        if citation_id in seen:
+            continue
+        citation = index.citations_by_id.get(citation_id)
+        if citation is None:
+            continue
+        label = str(getattr(citation, "citation", "") or "").strip()
+        if not label:
+            label = str(getattr(citation, "document_name", "") or "Source document").strip()
+            page = getattr(citation, "page", None)
+            if page is not None:
+                label += " · page " + str(page)
+        seen.add(citation_id)
+        rows.append((citation_id, label))
+    return tuple(rows)
+
+
+def _chronology_status_display(status) -> tuple[str, str]:
+    label = str(getattr(status, "label", "") or "").strip()
+    explanation = str(getattr(status, "explanation", "") or "").strip()
+    return (
+        label or _humanise_token(getattr(status, "raw_value", None)) or "Not recorded",
+        explanation,
+    )
+
+
+def _open_chronology_source(citation_id: str) -> None:
+    """Navigate to the existing projection-bound M7 source-evidence viewer."""
+    st.session_state["m7_source_evidence_citation_id"] = citation_id
+    st.session_state["m7_source_evidence_view"] = True
+    st.session_state["m6_workspace_view"] = None
+    st.session_state["m55_main_view"] = "assistant"
+    st.rerun()
+
+
 def _render_chronology(active_case_id: str, index: WorkspaceIndex) -> None:
     st.header("Chronology")
+    st.caption(
+        "A solicitor-facing chronology of the frozen matter record. "
+        "Technical identities remain available under Technical / audit details."
+    )
     events = tuple(index.events_by_id[key.primary_id] for key in index.event_keys)
+
     with st.form(key="workspace_chronology_filter_form", clear_on_submit=False):
         st.text_input("Search", key="m6_chronology_query")
-        st.multiselect("Event type", _first_values(item.event_type for item in events), key="m6_chronology_event_types")
-        st.multiselect("Participant", _first_values(value for item in events for value in item.participants), key="m6_chronology_participants")
-        st.multiselect("Occurrence status", _first_values(item.occurrence_status.raw_value for item in events), key="m6_chronology_occurrence_statuses")
-        st.multiselect("Timing status", _first_values(item.timing_status.raw_value for item in events), key="m6_chronology_timing_statuses")
-        st.multiselect("Confidence", _first_values(item.confidence.raw_value for item in events), key="m6_chronology_confidences")
-        st.multiselect("Related legal issue", _first_values(value for item in events for value in item.related_issue_ids), key="m6_chronology_issue_ids")
+        st.multiselect(
+            "Event type",
+            _first_values(item.event_type for item in events),
+            key="m6_chronology_event_types",
+            format_func=lambda value: _humanise_token(value) or "Not recorded",
+        )
+        st.multiselect(
+            "Participant",
+            _first_values(value for item in events for value in item.participants),
+            key="m6_chronology_participants",
+        )
+        st.multiselect(
+            "Occurrence status",
+            _first_values(item.occurrence_status.raw_value for item in events),
+            key="m6_chronology_occurrence_statuses",
+            format_func=lambda value: _chronology_status_filter_label(events, "occurrence_status", value),
+        )
+        st.multiselect(
+            "Timing status",
+            _first_values(item.timing_status.raw_value for item in events),
+            key="m6_chronology_timing_statuses",
+            format_func=lambda value: _chronology_status_filter_label(events, "timing_status", value),
+        )
+        st.multiselect(
+            "Confidence",
+            _first_values(item.confidence.raw_value for item in events),
+            key="m6_chronology_confidences",
+            format_func=lambda value: _chronology_status_filter_label(events, "confidence", value),
+        )
+        st.multiselect(
+            "Related legal issue",
+            _first_values(value for item in events for value in item.related_issue_ids),
+            key="m6_chronology_issue_ids",
+            format_func=lambda value: _chronology_issue_filter_label(index, value),
+        )
         st.form_submit_button("APPLY CHRONOLOGY FILTERS", use_container_width=True)
+
     query = str(st.session_state.get("m6_chronology_query", ""))
     event_types = _selected("m6_chronology_event_types")
     participants = _selected("m6_chronology_participants")
@@ -807,24 +911,57 @@ def _render_chronology(active_case_id: str, index: WorkspaceIndex) -> None:
     if not visible:
         st.info(_NO_FILTER_MATCH_TEXT if active else _EMPTY_FROZEN_TEXT)
         return
+
     for event in visible:
-        st.subheader(_chronology_event_heading(event))
-        _text("What happened", event.description)
-        _text("Participants", event.participants)
-        st.caption(
-            "Occurrence: "
-            + event.occurrence_status.label
-            + " · Timing: "
-            + event.timing_status.label
-            + " · Confidence: "
-            + event.confidence.label
-        )
-        _render_chronology_task_creator(
-            active_case_id=active_case_id,
-            index=index,
-            event=event,
-        )
-        with st.expander("Audit details", expanded=False):
+        st.subheader(_chronology_time(event) or "Date / period not recorded")
+        event_type = _humanise_token(event.event_type)
+        if event_type:
+            st.caption(event_type)
+
+        st.markdown("**What the record shows**")
+        st.write(event.description)
+
+        st.markdown("**People**")
+        st.write(" · ".join(str(value) for value in event.participants) if event.participants else "None recorded.")
+
+        st.markdown("**Relevant to**")
+        issue_names = _chronology_issue_names(index, event)
+        if issue_names:
+            for issue_name in issue_names:
+                st.write("• " + issue_name)
+        else:
+            st.write("No related legal issue is recorded.")
+
+        st.markdown("**Status**")
+        occurrence_label, occurrence_explanation = _chronology_status_display(event.occurrence_status)
+        timing_label, timing_explanation = _chronology_status_display(event.timing_status)
+        confidence_label, confidence_explanation = _chronology_status_display(event.confidence)
+        st.write("Occurrence: " + occurrence_label)
+        if occurrence_explanation:
+            st.caption(occurrence_explanation)
+        st.write("Timing: " + timing_label)
+        if timing_explanation:
+            st.caption(timing_explanation)
+        st.caption("Assessment confidence: " + confidence_label)
+        if confidence_explanation:
+            st.caption(confidence_explanation)
+
+        st.markdown("**Source**")
+        source_rows = _chronology_source_rows(index, event)
+        if source_rows:
+            for citation_id, source_label in source_rows:
+                st.write(source_label)
+                if st.button(
+                    "Open source",
+                    key="swr1_i2_open_source::" + event.event_id + "::" + citation_id,
+                ):
+                    _open_chronology_source(citation_id)
+        else:
+            st.write("No source reference is recorded for this event.")
+
+        _render_chronology_task_creator(active_case_id=active_case_id, index=index, event=event)
+
+        with st.expander("Technical / audit details", expanded=False):
             _text("Event ID", event.event_id)
             _text("Normalised event core", event.normalized_event_core)
             _text("Event type", event.event_type)
@@ -852,6 +989,7 @@ def _render_chronology(active_case_id: str, index: WorkspaceIndex) -> None:
                 _text("Temporal extent", assertion.temporal_extent)
                 _text("Extraction basis", assertion.extraction_basis)
 
+        st.divider()
 
 def _render_people(index: WorkspaceIndex) -> None:
     st.header("People")
