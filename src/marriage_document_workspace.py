@@ -214,6 +214,10 @@ def build_marriage_document_workspace(
         )
 
     actions = []
+    if additional_date is not None:
+        actions.append(
+            f"Check what the date {additional_date.value} relates to against the original page."
+        )
     if any(condition.note for condition in conditions):
         actions.append("Check item 21 against the original page.")
     if missing:

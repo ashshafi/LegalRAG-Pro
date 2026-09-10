@@ -25,6 +25,8 @@ from targeted_candidate_search_activation.validation import (
     validate_targeted_candidate_governance_gate,
 )
 
+from .explicit_recovery import reconcile_source_explicit_facts
+
 
 MARRIAGE_FACT_EXTRACTION_SCHEMA_VERSION = "marriage-fact-extraction/1.0"
 
@@ -536,6 +538,11 @@ def extract_marriage_document_intelligence(
         payload,
         transcription_text,
     )
+    payload = reconcile_source_explicit_facts(
+        payload,
+        transcription_text,
+    )
+    payload = validate_extraction_payload(payload)
 
     facts = tuple(
         MarriageFact(

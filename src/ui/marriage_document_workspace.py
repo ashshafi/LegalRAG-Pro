@@ -15,7 +15,7 @@ def _show_particular(label: str, value: str, note: str | None) -> None:
 
 def _show_condition(condition) -> None:
     with st.container(border=True):
-        left, right = st.columns([6, 1])
+        left, right = st.columns([5, 1.5])
         with left:
             st.markdown(
                 f"**Item {condition.item_number}: {condition.subject}**"
@@ -45,10 +45,11 @@ def show_marriage_document_workspace(
             caption += f" | Page {page_text}"
         st.caption(caption)
 
-    st.info(
-        "Partial review. The sections reviewed so far do not contain the "
-        "main party and registration details."
-    )
+    if workspace.partial:
+        st.info(
+            "Partial review. Important marriage particulars remain to be "
+            "recovered from the reviewed sections."
+        )
 
     st.markdown("### What this page shows")
 
@@ -92,13 +93,13 @@ def show_marriage_document_workspace(
         )
 
     st.markdown("### Recommended next step")
-    st.markdown(
-        "1. Check item 21 and the date 02/10/09 against the original page."
-    )
-    st.markdown(
-        "2. Review the remaining Nikah Nama sections for the parties, "
-        "marriage date, registration details, mehr and witnesses."
-    )
+    if workspace.actions:
+        for index, action in enumerate(workspace.actions, start=1):
+            st.markdown(f"{index}. {action}")
+    else:
+        st.caption(
+            "No further action has been generated from the reviewed sections."
+        )
 
     st.caption(
         "If a certified English translation is required for formal use, "
