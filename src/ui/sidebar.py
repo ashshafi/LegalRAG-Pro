@@ -142,7 +142,7 @@ def show_sidebar(
     if timeline_clicked:
         st.session_state["mdi_marriage_document_view"] = False
         st.session_state["m7_source_evidence_view"] = False
-        st.session_state["m6_workspace_view"] = None
+        st.session_state["m6_workspace_view"] = "chronology"
         st.session_state["m55_main_view"] = "assistant"
 
     evidence_clicked = st.sidebar.button(
