@@ -20,6 +20,8 @@ from pypdf import PdfReader
 from .models import (
     EXTRACTION_PROFILE_ID,
     EXTRACTION_PROFILE_SCHEMA_VERSION,
+    QUALITY_GATED_EXTRACTION_PROFILE_ID,
+    QUALITY_GATED_EXTRACTION_PROFILE_SCHEMA_VERSION,
     ExtractionMethod,
     ExtractionProfile,
 )
@@ -65,6 +67,33 @@ class _OcrRuntime:
     poppler_version: str
     tesseract_cmd: str | None
     poppler_path: str | None
+
+
+_GLYPH_INDEX_TOKEN_PATTERN: Final[re.Pattern[str]] = re.compile(r"(?<!\S)/\d+(?!\S)")
+
+
+def _native_text_is_usable(text: object) -> bool:
+    # Conservative quality gate for broken PDF character maps.
+    # It does not judge spelling, grammar, meaning or language.
+    if not isinstance(text, str) or not text.strip():
+        return False
+
+    stripped = text.strip()
+    alpha_count = sum(character.isalpha() for character in stripped)
+    glyph_tokens = _GLYPH_INDEX_TOKEN_PATTERN.findall(stripped)
+
+    if len(glyph_tokens) >= 8 and alpha_count == 0:
+        return False
+
+    nonspace = [character for character in stripped if not character.isspace()]
+    placeholders = sum(
+        character in {"\u25a1", "\ufffd"}
+        for character in nonspace
+    )
+    if len(nonspace) >= 40 and alpha_count == 0 and placeholders >= 4:
+        return False
+
+    return True
 
 
 def _package_version(distribution: str) -> str:
@@ -201,10 +230,23 @@ def _ocr_page(pdf_bytes: bytes, page_number: int, runtime: _OcrRuntime) -> str:
     return text
 
 
-def _build_profile(*, pypdf_version: str, ocr_runtime: _OcrRuntime | None) -> ExtractionProfile:
+def _build_profile(
+    *,
+    pypdf_version: str,
+    ocr_runtime: _OcrRuntime | None,
+    quality_gate_triggered: bool = False,
+) -> ExtractionProfile:
     profile = ExtractionProfile(
-        profile_id=EXTRACTION_PROFILE_ID,
-        profile_schema_version=EXTRACTION_PROFILE_SCHEMA_VERSION,
+        profile_id=(
+            QUALITY_GATED_EXTRACTION_PROFILE_ID
+            if quality_gate_triggered
+            else EXTRACTION_PROFILE_ID
+        ),
+        profile_schema_version=(
+            QUALITY_GATED_EXTRACTION_PROFILE_SCHEMA_VERSION
+            if quality_gate_triggered
+            else EXTRACTION_PROFILE_SCHEMA_VERSION
+        ),
         pypdf_package_version=pypdf_version,
         pdf2image_package_version=(
             ocr_runtime.pdf2image_package_version if ocr_runtime else None
@@ -245,6 +287,7 @@ def extract_pdf_pages(pdf_bytes: bytes) -> PdfExtractionResult:
     pypdf_version = _package_version("pypdf")
     ocr_runtime: _OcrRuntime | None = None
     extracted: list[ExtractedPage] = []
+    quality_gate_triggered = False
 
     for page_number, page in enumerate(reader.pages, start=1):
         try:
@@ -252,7 +295,14 @@ def extract_pdf_pages(pdf_bytes: bytes) -> PdfExtractionResult:
         except Exception:
             pypdf_text = None
 
-        if isinstance(pypdf_text, str) and pypdf_text.strip():
+        native_text_present = (
+            isinstance(pypdf_text, str) and bool(pypdf_text.strip())
+        )
+        native_text_usable = _native_text_is_usable(pypdf_text)
+        if native_text_present and not native_text_usable:
+            quality_gate_triggered = True
+
+        if native_text_usable:
             extracted.append(
                 ExtractedPage(
                     page_number=page_number,
@@ -273,7 +323,11 @@ def extract_pdf_pages(pdf_bytes: bytes) -> PdfExtractionResult:
             )
         )
 
-    profile = _build_profile(pypdf_version=pypdf_version, ocr_runtime=ocr_runtime)
+    profile = _build_profile(
+        pypdf_version=pypdf_version,
+        ocr_runtime=ocr_runtime,
+        quality_gate_triggered=quality_gate_triggered,
+    )
     return PdfExtractionResult(extraction_profile=profile, pages=tuple(extracted))
 
 

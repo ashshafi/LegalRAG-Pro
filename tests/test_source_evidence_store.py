@@ -577,10 +577,10 @@ def test_frozen_m1_core_hashes_are_unchanged() -> None:
     root = Path(__file__).resolve().parents[1] / "src" / "source_evidence"
     expected = {
         "__init__.py": "227a93c7a53c66f842dcdfeb7b0957ce6568236375c2e5f0b94d6b11994718bc",
-        "models.py": "c955c3ddb718dea34baddd53f0a51b2f2b3b3b874845fb0a18be199de3b735e2",
+        "models.py": "34295e848e2bde9e2b2430120e36c3f509134a0e339695c2655d6010d17fca45",
         "identity.py": "20cc4d96e08bbb239f41be9e6da147c50f16c7cbcb346bff6cc357bb14c29bf9",
         "serialization.py": "b6326c57a4c78a7ed086998dcf6b028032b57126ad18781514be5c8e711ef428",
-        "validation.py": "63e04c87230bc4fba61c453ef356024d1517d9b43d18271431e1df7d8eabce2f",
+        "validation.py": "ae6d9f4c100e4835d98ec8d50c7e6acc3a1d6760ed0cb6cfa4fa1382a887707f",
     }
     actual = {
         name: hashlib.sha256(

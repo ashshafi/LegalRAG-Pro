@@ -17,6 +17,8 @@ from .models import (
     EVIDENCE_BINDING_SCHEMA_VERSION,
     EXTRACTION_PROFILE_ID,
     EXTRACTION_PROFILE_SCHEMA_VERSION,
+    QUALITY_GATED_EXTRACTION_PROFILE_ID,
+    QUALITY_GATED_EXTRACTION_PROFILE_SCHEMA_VERSION,
     PDF_MEDIA_TYPE,
     PROJECTION_EVIDENCE_BINDING_SCHEMA_VERSION,
     SOURCE_BOUND_ANALYSIS_RECEIPT_SCHEMA_VERSION,
@@ -86,10 +88,23 @@ def _validate_plain_pdf_filename(value: str) -> None:
 def validate_extraction_profile(value: ExtractionProfile, *, requires_ocr: bool = False) -> None:
     if not isinstance(value, ExtractionProfile):
         raise ValueError("value must be an ExtractionProfile instance.")
-    if value.profile_id != EXTRACTION_PROFILE_ID:
-        raise ValueError("ExtractionProfile.profile_id is not the frozen v1 value.")
-    if value.profile_schema_version != EXTRACTION_PROFILE_SCHEMA_VERSION:
-        raise ValueError("ExtractionProfile.profile_schema_version is not the frozen v1 value.")
+    if value.profile_id == EXTRACTION_PROFILE_ID:
+        if value.profile_schema_version != EXTRACTION_PROFILE_SCHEMA_VERSION:
+            raise ValueError(
+                "ExtractionProfile.profile_schema_version is not the frozen v1 value."
+            )
+    elif value.profile_id == QUALITY_GATED_EXTRACTION_PROFILE_ID:
+        if (
+            value.profile_schema_version
+            != QUALITY_GATED_EXTRACTION_PROFILE_SCHEMA_VERSION
+        ):
+            raise ValueError(
+                "ExtractionProfile.profile_schema_version is not the governed quality-gated v3 value."
+            )
+    else:
+        raise ValueError(
+            "ExtractionProfile.profile_id is not a governed extraction profile."
+        )
     _required_text(value.pypdf_package_version, field_name="pypdf_package_version")
     if value.ocr_language != "eng":
         raise ValueError("ExtractionProfile.ocr_language must be 'eng'.")
@@ -256,8 +271,13 @@ def validate_evidence_binding(value: EvidenceBinding) -> None:
             raise ValueError("FULL_CHAIN_BOUND requires chunk_id == evidence_key.")
         if value.bound_text_sha256 != value.chunk_text_sha256:
             raise ValueError("FULL_CHAIN_BOUND requires bound_text_sha256 == chunk_text_sha256.")
-        if value.extraction_profile_id != EXTRACTION_PROFILE_ID:
-            raise ValueError("FULL_CHAIN_BOUND extraction_profile_id is not the frozen v1 profile.")
+        if value.extraction_profile_id not in {
+            EXTRACTION_PROFILE_ID,
+            QUALITY_GATED_EXTRACTION_PROFILE_ID,
+        }:
+            raise ValueError(
+                "FULL_CHAIN_BOUND extraction_profile_id is not a governed extraction profile."
+            )
         if value.chunking_profile_id != CHUNKING_PROFILE_ID:
             raise ValueError("FULL_CHAIN_BOUND chunking_profile_id is not the frozen v1 profile.")
     elif value.binding_class is BindingClass.ANALYTICAL_TEXT_BOUND:

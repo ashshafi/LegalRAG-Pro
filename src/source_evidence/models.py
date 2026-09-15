@@ -18,6 +18,8 @@ SOURCE_EVIDENCE_STORE_VERSION: Final[str] = "source-evidence-store/1.0"
 
 EXTRACTION_PROFILE_ID: Final[str] = "pdf-page-extraction/1.0"
 EXTRACTION_PROFILE_SCHEMA_VERSION: Final[str] = "1.0"
+QUALITY_GATED_EXTRACTION_PROFILE_ID: Final[str] = "pdf-page-extraction/3.0"
+QUALITY_GATED_EXTRACTION_PROFILE_SCHEMA_VERSION: Final[str] = "3.0"
 CHUNKING_PROFILE_ID: Final[str] = "recursive-character-text-splitter/1.0"
 CHUNKING_PROFILE_SCHEMA_VERSION: Final[str] = "1.0"
 SOURCE_BOUND_RETRIEVAL_VERIFIER_VERSION: Final[str] = "source-bound-retrieval-verifier/1.0"
@@ -202,6 +204,8 @@ __all__ = [
     "EVIDENCE_BINDING_SCHEMA_VERSION",
     "EXTRACTION_PROFILE_ID",
     "EXTRACTION_PROFILE_SCHEMA_VERSION",
+    "QUALITY_GATED_EXTRACTION_PROFILE_ID",
+    "QUALITY_GATED_EXTRACTION_PROFILE_SCHEMA_VERSION",
     "EvidenceBinding",
     "ExtractionMethod",
     "ExtractionProfile",

@@ -18,7 +18,6 @@ from .identity import (
 from .models import (
     CHUNKING_PROFILE_ID,
     EVIDENCE_BINDING_SCHEMA_VERSION,
-    EXTRACTION_PROFILE_ID,
     PDF_MEDIA_TYPE,
     SOURCE_DOCUMENT_MANIFEST_SCHEMA_VERSION,
     BindingClass,
@@ -117,7 +116,7 @@ def _build_binding(
         page_text_sha256=page.page_text_sha256,
         chunk_text_sha256=chunk.chunk_text_sha256,
         bound_text_sha256=chunk.chunk_text_sha256,
-        extraction_profile_id=EXTRACTION_PROFILE_ID,
+        extraction_profile_id=manifest.extraction_profile.profile_id,
         chunking_profile_id=CHUNKING_PROFILE_ID,
         evidence_binding_id="sha256:" + "0" * 64,
     )
