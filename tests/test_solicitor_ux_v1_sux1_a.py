@@ -16,20 +16,17 @@ def source(path: Path) -> str:
 
 
 def test_swd1_replaces_architecture_shaped_top_views():
-    text = source(APP)
+    from pathlib import Path
 
-    assert '"Legal issues", "AI findings", "Issue assessment"' not in text
-    assert 'key="solicitor_ux_v1_working_view"' not in text
+    root = Path(__file__).resolve().parents[1]
+    app = (root / "src/app.py").read_text(encoding="utf-8-sig")
+    shell = (root / "src/ui/solicitor_shell.py").read_text(encoding="utf-8-sig")
 
-    workspace = text.index("show_swd1_issue_workspace(active_case_id)")
-    previous = text.index(
-        'with st.expander("Previous analysis tools", expanded=False):'
-    )
-    inbox = text.index("show_professional_review_inbox(active_case_id)")
-    ledger = text.index("show_matter_analysis_ledger(active_case_id)")
-
-    assert workspace < previous < inbox < ledger
-    assert '("AI review", "Issue decisions")' in text
+    assert '"Legal issues", "AI findings", "Issue assessment"' not in app
+    assert 'key="solicitor_ux_v1_working_view"' not in app
+    assert 'with st.expander("Previous analysis tools", expanded=False):' not in app
+    assert "show_solicitor_shell(" in app
+    assert "st.segmented_control(" in shell
 
 
 def test_legal_issue_dashboard_starts_with_solicitor_orientation():

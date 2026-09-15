@@ -724,6 +724,7 @@ def _render_chronology_task_creator(
     index: WorkspaceIndex,
     event,
 ) -> None:
+    """Create only an operational reference to the frozen chronology event."""
     related_ids = tuple(
         dict.fromkeys(
             str(value).strip()

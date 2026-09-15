@@ -9,6 +9,7 @@ from controlled_agentic_analysis_review_inbox import (
 
 from ui.solicitor_tasks import show_issue_task_creator, show_solicitor_tasks
 from ui.case_operator import show_case_operator
+from ui.solicitor_workflow import open_issue_chronology, open_issue_evidence
 
 from collections.abc import Callable
 from typing import Any
@@ -1139,7 +1140,7 @@ def show_swd1_issue_workspace(
 
     """Render SWD1-I1/I2 without changing analytical or authority state."""
 
-    st.header("Legal Issues")
+    st.header("Issues")
 
     if st.button("Tasks", key="mw1_open_tasks::" + active_case_id):
         st.session_state["mw1_task_workspace_case_id"] = active_case_id
@@ -1198,6 +1199,29 @@ def show_swd1_issue_workspace(
         }
     else:
         st.session_state.pop("mw1_evidence_task_context", None)
+
+    if selected_issue is not None and active_case_id is not None:
+        issue_id = str(getattr(selected_issue, "issue_analysis_id", "") or "").strip()
+        if issue_id:
+            evidence_col, chronology_col, _workflow_spacer = st.columns([1.6, 1.6, 4.8])
+            with evidence_col:
+                if st.button(
+                    "Open evidence for this issue",
+                    key="wc1_issue_evidence::" + active_case_id + "::" + issue_id,
+                    use_container_width=True,
+                ):
+                    open_issue_evidence(active_case_id, issue_id)
+                    st.rerun()
+            with chronology_col:
+                if st.button(
+                    "Open chronology for this issue",
+                    key="wc1_issue_chronology::" + active_case_id + "::" + issue_id,
+                    use_container_width=True,
+                ):
+                    open_issue_chronology(active_case_id, issue_id)
+                    st.rerun()
+            with _workflow_spacer:
+                st.empty()
 
     if selected_issue is None:
         st.info(

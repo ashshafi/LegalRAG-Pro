@@ -95,12 +95,20 @@ def test_service_call_is_after_explicit_submit_return_guard():
 
 
 def test_app_composition_order():
-    source = APP.read_text(encoding="utf-8")
-    assert "from ui.document_upload import show_document_upload" in source
-    case_i = source.index("active_case = show_case_selector()")
-    upload_i = source.index("show_document_upload(active_case_id)")
-    sidebar_i = source.index("selected_documents, timeline_clicked = show_sidebar(")
-    assert case_i < upload_i < sidebar_i
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    app = (root / "src/app.py").read_text(encoding="utf-8-sig")
+    shell = (root / "src/ui/solicitor_shell.py").read_text(encoding="utf-8-sig")
+    documents = (root / "src/ui/solicitor_documents.py").read_text(encoding="utf-8-sig")
+
+    case_i = app.index("active_case = show_case_selector()")
+    shell_i = app.index("show_solicitor_shell(")
+    assert case_i < shell_i
+    assert "show_document_upload(active_case_id)" not in app
+    assert 'route_solicitor_view("Documents"' in shell
+    assert "CaseRepository().require_access(" in documents
+    assert "current_user_identity()" in documents
 
 
 def test_existing_m7_route_order_remains():

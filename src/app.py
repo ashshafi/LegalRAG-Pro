@@ -1,4 +1,4 @@
-﻿import logging
+import logging
 
 from dotenv import load_dotenv
 
@@ -28,6 +28,7 @@ from ui.evidence_inspection import (
 )
 from ui.document_upload import show_document_upload
 from ui.header import show_header
+from ui.product_theme import apply_product_theme
 from governed_analytical_authority.provider import (
     GovernedAnalyticalAuthorityProviderError,
     load_active_governed_analytical_authority,
@@ -46,6 +47,9 @@ from ui.matter_overview import (
 from ui.marriage_document_entrypoint import show_marriage_document_entrypoint
 from ui.reports import show_report_viewer, synchronise_report_session_state
 from ui.sidebar import show_sidebar
+from ui.solicitor_shell import show_solicitor_shell
+from ui.solicitor_documents import show_documents_workspace
+from ui.solicitor_drafts import show_drafts_workspace
 from ui.source_evidence import (
     show_source_evidence,
     synchronise_source_evidence_session_state,
@@ -68,6 +72,16 @@ from ui.finance_workspace_entrypoint import show_finance_workspace
 from ui.finance_binding_manager import show_finance_binding_manager
 from ui.finance_binding_lifecycle_manager import show_finance_binding_lifecycle_manager
 
+from ui.solicitor_overview import show_solicitor_overview as show_matter_overview
+from ui.solicitor_reports import show_solicitor_report_center as show_report_viewer
+
+from ui.solicitor_chat import show_solicitor_chat as show_chat
+from ui.solicitor_workspace import show_solicitor_workspace as show_workspace
+from ui.solicitor_evidence_inspection import show_solicitor_evidence_inspection as show_evidence_inspection
+from ui.solicitor_audit import show_solicitor_audit as show_source_evidence
+
+apply_product_theme()
+
 show_header()
 
 active_case = show_case_selector()
@@ -86,7 +100,8 @@ if active_case_id is not None:
             active_case_id,
             type(exc).__name__,
         )
-synchronise_report_session_state(active_case_id, report_projection)
+if st.session_state.get("m55_main_view", "assistant") != "finance":
+    synchronise_report_session_state(active_case_id, report_projection)
 synchronise_workspace_session_state(active_case_id, report_projection)
 synchronise_source_evidence_session_state(active_case_id, report_projection)
 synchronise_matter_overview_session_state(
@@ -99,13 +114,15 @@ reports_available = (
     and report_provider_error is None
 )
 
+show_solicitor_shell(
+    active_case,
+    reports_available=reports_available,
+)
+
 selected_documents, timeline_clicked = show_sidebar(
     active_case_id=active_case_id,
     reports_available=reports_available,
 )
-show_document_upload(active_case_id)
-show_document_details(active_case_id)
-show_document_register(active_case_id)
 if active_case_id is not None and not reports_available:
     if report_provider_error is not None:
         st.sidebar.caption(
@@ -122,20 +139,21 @@ if active_case is not None:
         else ""
     )
     if st.session_state.get("m55_main_view", "assistant") != "finance":
-        st.caption(
-            f"Active matter: {active_case.name}{case_reference} "
-            f"· Status: {active_case.status.title()}"
-        )
+        pass  # D3 matter shell renders active matter identity
 else:
     st.info(
         "Create a matter in the sidebar to use matter-scoped document retrieval."
     )
-if st.session_state.get("u8_evidence_inspection_view", False):
+if st.session_state.get("ux_d2_documents_view", False):
+    show_documents_workspace(active_case_id)
+elif st.session_state.get("ux_d2_drafts_view", False):
+    show_drafts_workspace(active_case_id)
+elif st.session_state.get("u8_evidence_inspection_view", False):
     show_evidence_inspection(active_case_id)
 elif st.session_state.get("ppr3_legal_issue_dashboard_view", False):
     show_swd1_issue_workspace(active_case_id)
     if not st.session_state.get("mw1_task_workspace_case_id"):
-        with st.expander("Previous analysis tools", expanded=False):
+        with st.expander("History and previous analysis", expanded=False):
             st.caption("Previous analytical views are retained here while the solicitor workspace is introduced.")
             _previous_analysis_view = st.radio(
                 "Choose previous analysis tool",

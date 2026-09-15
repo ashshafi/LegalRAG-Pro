@@ -20,8 +20,23 @@ from case_management.migration import (
 
 DB_PATH = Path("db").resolve()
 
-client = chromadb.PersistentClient(path=str(DB_PATH))
-collection = client.get_collection("legal_documents")
+_client = None
+_collection = None
+
+def _get_legal_documents_collection():
+    global _client, _collection
+    if _collection is None:
+        _client = chromadb.PersistentClient(path=str(DB_PATH))
+        _collection = _client.get_collection("legal_documents")
+    return _collection
+
+
+class _LazyCollectionProxy:
+    def __getattr__(self, name):
+        return getattr(_get_legal_documents_collection(), name)
+
+
+collection = _LazyCollectionProxy()
 
 
 def get_documents(case_id: str | None = None) -> list[str]:

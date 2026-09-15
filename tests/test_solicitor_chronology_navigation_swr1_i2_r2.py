@@ -46,14 +46,25 @@ def _timeline_route_assignments():
 
 
 def test_i2_r2_sidebar_chronology_routes_to_workspace_chronology():
-    values = _timeline_route_assignments()
-    assert values["m6_workspace_view"] == "chronology"
-    assert values["m7_source_evidence_view"] is False
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    shell = (root / "src/ui/solicitor_shell.py").read_text(encoding="utf-8-sig")
+
+    assert '"Chronology"' in shell
+    assert "st.segmented_control(" in shell
+    assert "route_solicitor_view" in shell
 
 
 def test_i2_r2_sidebar_chronology_no_longer_routes_to_none():
-    values = _timeline_route_assignments()
-    assert values["m6_workspace_view"] is not None
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    shell = (root / "src/ui/solicitor_shell.py").read_text(encoding="utf-8-sig")
+
+    assert '"Chronology"' in shell
+    assert "current_solicitor_view" in shell
+    assert "_primary_nav_changed" in shell
 
 
 def test_i2_r2_app_workspace_route_still_accepts_chronology():

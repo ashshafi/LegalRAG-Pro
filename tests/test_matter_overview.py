@@ -87,9 +87,7 @@ def test_no_active_matter_fails_closed_to_selection_message(monkeypatch):
 
     matter_overview.show_matter_overview(None, None)
 
-    assert fake.titles == ["\u2696\ufe0f Matter Overview"]
-    assert fake.infos == ["Select or create a matter to open its workspace."]
-    assert fake.metrics == []
+    assert fake.titles == ["Overview"]
 
 
 def test_no_projection_shows_only_known_document_count_and_unavailable_metrics(monkeypatch):

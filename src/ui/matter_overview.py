@@ -316,16 +316,13 @@ def show_matter_overview(
     task_error: Exception | None = None,
 ) -> None:
     """Render solicitor orientation from already-validated read-only application state."""
-    st.title("\u2696\ufe0f Matter Overview")
+    st.title("Overview")
 
     if active_case is None:
         st.info("Select or create a matter to open its workspace.")
         return
 
-    st.header(str(getattr(active_case, "name", "") or "Active matter"))
-    reference = _party_text(getattr(active_case, "case_number", None))
-    matter_status = _status_text(str(getattr(active_case, "status", "") or ""))
-    st.caption("Reference: " + reference + " \u00b7 Matter status: " + matter_status)
+    st.caption("Current matter orientation from recorded issue and work state.")
 
     st.subheader("Needs attention now")
     rows = _attention_rows(issue_dashboard, tuple(tasks or ()))

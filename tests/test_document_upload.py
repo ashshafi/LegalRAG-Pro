@@ -1,6 +1,13 @@
 """Tests for case-aware in-app PDF uploads."""
 
 from __future__ import annotations
+from case_management.access import (
+    MatterAccessContext,
+    MatterMembership,
+    MatterRole,
+    UserIdentity,
+)
+from case_management.document_context import normalise_case_id
 
 import sys
 import unittest
@@ -19,6 +26,21 @@ from document_upload import DocumentUploadError, upload_case_pdf  # noqa: E402
 PDF_BYTES = b"%PDF-1.7\n% LegalRAG test PDF\n"
 
 
+
+
+def _rc4_access_for_case(case_id: str) -> MatterAccessContext:
+    user = UserIdentity.from_email("document-upload-test@example.test")
+    cleaned_case_id = normalise_case_id(case_id)
+    return MatterAccessContext(
+        user=user,
+        membership=MatterMembership(
+            case_id=cleaned_case_id,  # type: ignore[arg-type]
+            user_id=user.user_id,
+            role=MatterRole.OWNER,
+        ),
+    )
+
+
 class DocumentUploadTests(unittest.TestCase):
     """Verify validation, storage, case scoping, and rollback."""
 
@@ -34,6 +56,7 @@ class DocumentUploadTests(unittest.TestCase):
                 filename="ET1.pdf",
                 content=PDF_BYTES,
                 case_id=" case-123 ",
+                access=_rc4_access_for_case(" case-123 "),
                 docs_folder=temp_dir,
                 indexer=fake_indexer,
             )
@@ -56,6 +79,7 @@ class DocumentUploadTests(unittest.TestCase):
                     filename="ET1.pdf",
                     content=PDF_BYTES,
                     case_id=" ",
+                    access=_rc4_access_for_case(" "),
                     docs_folder=temp_dir,
                     indexer=lambda *_args, **_kwargs: 1,
                 )
@@ -70,6 +94,7 @@ class DocumentUploadTests(unittest.TestCase):
                     filename="fake.pdf",
                     content=b"this is not a pdf",
                     case_id="case-123",
+                    access=_rc4_access_for_case("case-123"),
                     docs_folder=temp_dir,
                     indexer=lambda *_args, **_kwargs: 1,
                 )
@@ -87,6 +112,7 @@ class DocumentUploadTests(unittest.TestCase):
                     filename="ET1.pdf",
                     content=PDF_BYTES,
                     case_id="case-123",
+                    access=_rc4_access_for_case("case-123"),
                     docs_folder=temp_dir,
                     indexer=lambda *_args, **_kwargs: 1,
                 )
@@ -111,6 +137,7 @@ class DocumentUploadTests(unittest.TestCase):
                 filename="ET1.pdf",
                 content=PDF_BYTES,
                 case_id="case-b",
+                access=_rc4_access_for_case("case-b"),
                 docs_folder=temp_dir,
                 indexer=fake_indexer,
             )
@@ -134,6 +161,7 @@ class DocumentUploadTests(unittest.TestCase):
                     filename="ET1.pdf",
                     content=PDF_BYTES,
                     case_id="case-123",
+                    access=_rc4_access_for_case("case-123"),
                     docs_folder=temp_dir,
                     indexer=failing_indexer,
                 )
@@ -152,6 +180,7 @@ class DocumentUploadTests(unittest.TestCase):
                     filename="blank.pdf",
                     content=PDF_BYTES,
                     case_id="case-123",
+                    access=_rc4_access_for_case("case-123"),
                     docs_folder=temp_dir,
                     indexer=lambda *_args, **_kwargs: 0,
                 )

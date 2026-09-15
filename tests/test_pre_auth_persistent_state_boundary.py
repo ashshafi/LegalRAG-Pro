@@ -45,7 +45,7 @@ def test_config_has_no_module_scope_chroma_open():
 def test_config_import_is_chroma_side_effect_free_and_accessors_cache(monkeypatch):
     calls = []
     fake_dotenv = types.ModuleType("dotenv")
-    fake_dotenv.load_dotenv = lambda: None
+    fake_dotenv.load_dotenv = lambda *args, **kwargs: None
     fake_openai = types.ModuleType("openai")
     fake_openai.OpenAI = type("FakeOpenAI", (), {})
     fake_chromadb = types.ModuleType("chromadb")
@@ -79,11 +79,32 @@ def test_config_import_is_chroma_side_effect_free_and_accessors_cache(monkeypatc
 
 
 def test_app_auth_call_remains_before_first_ui_statement():
-    tree = ast.parse((SRC / "app.py").read_text(encoding="utf-8"))
+    import ast
+
+    source = (SRC / "app.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
     auth_lines = [
         node.lineno
         for node in ast.walk(tree)
-        if isinstance(node, ast.Call) and dotted(node.func).endswith("require_private_access")
+        if isinstance(node, ast.Call)
+        and dotted(node.func).endswith("require_private_access")
     ]
     assert auth_lines
-    assert min(auth_lines) == 44
+
+    auth_line = min(auth_lines)
+    case_lines = [
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and dotted(node.func).endswith("show_case_selector")
+    ]
+    shell_lines = [
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and dotted(node.func).endswith("show_solicitor_shell")
+    ]
+    assert case_lines
+    assert shell_lines
+    assert auth_line < min(case_lines)
+    assert auth_line < min(shell_lines)

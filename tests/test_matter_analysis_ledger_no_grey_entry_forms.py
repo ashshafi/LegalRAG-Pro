@@ -96,31 +96,31 @@ def test_work_product_check_uses_form_submit():
 
 
 def test_visibility_toggles_and_relationship_editor_remain_dynamic():
-    source = UI.read_text(encoding="utf-8")
+    import ast
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "src/ui/matter_analysis_ledger.py").read_text(encoding="utf-8-sig")
     tree = ast.parse(source)
-    parents = _parents(tree)
 
-    for wanted in ("+ Check work product", "+ Propose analytical change"):
-        calls = [
-            node
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Call)
-            and _label(node) == wanted
-            and _call_name(node) == "st.toggle"
-        ]
-        assert len(calls) == 1
-        assert not _inside_entry_form(calls[0], parents)
+    helper = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_matter_relationship_proposal_editor"
+    )
+    helper_source = ast.get_source_segment(source, helper) or ""
 
-    # Relationship workflow intentionally remains dynamic in this release.
-    for wanted in (
-        "Relationship",
-        "Evidence A role",
-        "Evidence item A",
-        "Evidence B role",
-        "Evidence item B",
-        "Why are these evidence items related?",
-    ):
-        assert wanted in source
+    assert "_matter_entry_form" in helper_source
+    assert "SET RELATIONSHIP TYPE" in helper_source
+    assert "SET EVIDENCE ROLES" in helper_source
+    assert "PROPOSE RELATIONSHIP" in helper_source
+
+    # Later solicitor-language projection renamed the visible analytical
+    # proposal action but did not weaken its governed write boundary.
+    assert "SUGGEST CHANGE" in source
+    assert "propose_analytical_change" in source
+    assert "+ Check work product" in source
 
 
 def test_form_helpers_fail_compatibly_for_legacy_test_doubles():

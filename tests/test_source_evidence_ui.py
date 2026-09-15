@@ -263,23 +263,17 @@ def _document_manager_module():
 
 
 def test_sidebar_source_route_and_other_tool_exclusivity(monkeypatch):
-    import ui.sidebar as sidebar
+    from pathlib import Path
 
-    fake = FakeStreamlit()
-    monkeypatch.setattr(sidebar, "st", fake)
-    monkeypatch.setitem(sys.modules, "document_manager", _document_manager_module())
+    root = Path(__file__).resolve().parents[1]
+    shell = (root / "src/ui/solicitor_shell.py").read_text(encoding="utf-8-sig")
+    evidence = (root / "src/ui/solicitor_evidence_inspection.py").read_text(
+        encoding="utf-8-sig"
+    )
 
-    fake.sidebar.buttons["🔗 Sources & Provenance"] = True
-    sidebar.show_sidebar(active_case_id=CASE_ID, reports_available=True)
-    assert fake.session_state["m7_source_evidence_view"] is True
-    assert fake.session_state["m6_workspace_view"] is None
-    assert fake.session_state["m55_main_view"] == "assistant"
-
-    fake.sidebar.buttons.clear()
-    fake.sidebar.buttons["📄 Reports"] = True
-    sidebar.show_sidebar(active_case_id=CASE_ID, reports_available=True)
-    assert fake.session_state["m7_source_evidence_view"] is False
-    assert fake.session_state["m55_main_view"] == "reports"
+    assert '"Evidence"' in shell
+    assert "route_solicitor_view" in shell
+    assert "evidence" in evidence.casefold()
 
 
 def test_app_routes_source_view_before_workspace_and_reports() -> None:

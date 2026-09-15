@@ -1,33 +1,14 @@
+"""LegalRAG Pro D4 masthead."""
+from __future__ import annotations
 import streamlit as st
 
-
-def show_header():
-    st.sidebar.markdown("### ⚖ LegalRAG Pro")
-    st.sidebar.caption("Auditable Case Intelligence")
-    if st.session_state.get("m55_main_view", "assistant") == "finance":
-        return
-
-    st.markdown("""
-    <div style="
-        background-color:#1E293B;
-        padding:20px;
-        border-radius:12px;
-        margin-bottom:20px;
-    ">
-
-    <h1 style="color:white;margin:0;">
-    ⚖ LegalRAG Pro
-    </h1>
-
-    <p style="
-        color:#CBD5E1;
-        font-size:18px;
-        margin-top:8px;
-    ">
-    Auditable Case Intelligence
-    </p>
-
-    </div>
-    """,
-    unsafe_allow_html=True
+def show_header() -> None:
+    st.markdown(
+        '<div class="lr-appbar"><div class="lr-brand"><span class="lr-brand-mark">LR</span>'
+        '<div><div class="lr-brand-name">LegalRAG Pro</div>'
+        '<div class="lr-brand-meta">Auditable Case Intelligence</div></div></div>'
+        '<div class="lr-appbar-right">Professional matter workspace</div></div>',
+        unsafe_allow_html=True,
     )
+
+__all__=["show_header"]

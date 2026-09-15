@@ -50,10 +50,20 @@ def test_u8f_bridge_uses_u8d_and_document_catalog_instead_of_direct_chroma_acces
     imports = _imports(PACKAGE / "governed_retrieval.py")
     assert "evidence_search" in imports
     assert "document_catalog" in imports
+
     source = (PACKAGE / "governed_retrieval.py").read_text(encoding="utf-8")
-    assert "from retriever import retrieve as retriever_callable" in source
-    assert ".query(" not in source
-    assert "collection.query" not in source
+
+    # Successor U8F contract: the optional injected semantic retriever remains
+    # supported, while the default path now uses a distinct default_retriever
+    # so interactive_semantic_only can suppress query expansion without
+    # changing the injected-retriever contract.
+    assert "semantic_retriever: SemanticRetriever | None = None" in source
+    assert "retriever_callable = semantic_retriever" in source
+    assert "from retriever import retrieve as default_retriever" in source
+    assert "semantic_results = default_retriever(" in source
+    assert "semantic_results = retriever_callable(" in source
+    assert "interactive_semantic_only" in source
+    assert "expand_search_query=not interactive_semantic_only" in source
 
 
 def test_u8f_bridge_contains_no_source_store_or_filesystem_write_operations():

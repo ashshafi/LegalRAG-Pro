@@ -1,4 +1,11 @@
 from __future__ import annotations
+from case_management.access import (
+    MatterAccessContext,
+    MatterMembership,
+    MatterRole,
+    UserIdentity,
+)
+from case_management.document_context import normalise_case_id
 
 import inspect
 import sys
@@ -42,6 +49,21 @@ from source_evidence.serialization import (
     source_document_manifest_identity_payload_to_dict,
 )
 from source_evidence.store import SourceEvidenceStore
+
+
+def _rc4_access_for_case(case_id: str) -> MatterAccessContext:
+    user = UserIdentity.from_email("source-evidence-ingestion-test@example.test")
+    cleaned_case_id = normalise_case_id(case_id)
+    return MatterAccessContext(
+        user=user,
+        membership=MatterMembership(
+            case_id=cleaned_case_id,  # type: ignore[arg-type]
+            user_id=user.user_id,
+            role=MatterRole.OWNER,
+        ),
+    )
+
+
 
 CASE_ID = "12345678-1234-4234-8234-123456789abc"
 OTHER_CASE_ID = "87654321-4321-4321-8321-cba987654321"
@@ -285,6 +307,9 @@ def _runtime(tmp_path: Path, collection: FakeCollection, *, openai=None, maximum
 
 
 def _install_capture_and_runtime(monkeypatch, manifest, runtime):
+    monkeypatch.setattr(
+        ingestion, "assert_ai_processing_allowed", lambda **_kwargs: None
+    )
     calls: list[dict[str, object]] = []
 
     def fake_capture(pdf_path, *, case_id, original_filename, store):
@@ -812,6 +837,7 @@ def test_document_upload_default_passes_exact_upload_digest(tmp_path, monkeypatc
         filename="ET1.pdf",
         content=content,
         case_id=" case-123 ",
+        access=_rc4_access_for_case(" case-123 "),
         docs_folder=tmp_path,
     )
     assert result.chunks_indexed == 3
@@ -835,6 +861,7 @@ def test_injected_upload_indexer_receives_only_frozen_arguments(tmp_path):
         filename="ET1.pdf",
         content=b"%PDF-1.7\nfixture\n",
         case_id="case-123",
+        access=_rc4_access_for_case("case-123"),
         docs_folder=tmp_path,
         indexer=injected,
     )
@@ -876,6 +903,7 @@ def test_default_upload_failure_removes_new_working_pdf_but_retains_immutable_ma
             filename="ET1.pdf",
             content=b"%PDF-1.7\nfixture\n",
             case_id="case-123",
+            access=_rc4_access_for_case("case-123"),
             docs_folder=working.parent,
         )
     assert not working.exists()
@@ -898,6 +926,7 @@ def test_default_upload_failure_retains_identical_preexisting_working_pdf(
             filename="ET1.pdf",
             content=content,
             case_id="case-123",
+            access=_rc4_access_for_case("case-123"),
             docs_folder=tmp_path,
         )
     assert working.read_bytes() == content
@@ -911,6 +940,7 @@ def test_default_zero_chunk_upload_removes_new_working_pdf(tmp_path, monkeypatch
             filename="ET1.pdf",
             content=b"%PDF-1.7\nblank\n",
             case_id="case-123",
+            access=_rc4_access_for_case("case-123"),
             docs_folder=tmp_path,
         )
     assert not working.exists()

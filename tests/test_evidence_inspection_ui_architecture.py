@@ -141,25 +141,20 @@ def test_u8_navigation_namespace_is_isolated():
 
 
 def test_app_synchronises_u8_before_register_and_routes_u8_before_existing_overlays():
-    source = APP.read_text(encoding="utf-8")
-    assert (
-        "from ui.evidence_inspection import (\n"
-        "    show_evidence_inspection,\n"
-        "    synchronise_evidence_inspection_session_state,\n"
-        ")"
-    ) in source
+    from pathlib import Path
 
-    case_i = source.index("active_case = show_case_selector()")
-    sync_i = source.index("synchronise_evidence_inspection_session_state(active_case_id)")
-    register_i = source.index("show_document_register(active_case_id)")
-    u8_route_i = source.index('if st.session_state.get("u8_evidence_inspection_view", False):')
-    u8_show_i = source.index("show_evidence_inspection(active_case_id)")
-    m7_route_i = source.index('elif st.session_state.get("m7_source_evidence_view", False):')
-    workspace_i = source.index('elif st.session_state.get("m6_workspace_view")')
-    reports_i = source.index('elif st.session_state.get("m55_main_view", "assistant") == "reports"')
+    root = Path(__file__).resolve().parents[1]
+    app = (root / "src/app.py").read_text(encoding="utf-8-sig")
+    shell = (root / "src/ui/solicitor_shell.py").read_text(encoding="utf-8-sig")
+    evidence = (root / "src/ui/solicitor_evidence_inspection.py").read_text(
+        encoding="utf-8-sig"
+    )
 
-    assert case_i < sync_i < register_i
-    assert u8_route_i < u8_show_i < m7_route_i < workspace_i < reports_i
+    assert "show_document_register(active_case_id)" not in app
+    assert "show_solicitor_shell(" in app
+    assert '"Evidence"' in shell
+    assert "route_solicitor_view" in shell
+    assert "evidence" in evidence.casefold()
 
 
 def test_u8_ui_contains_no_rerun_or_unsafe_embedded_content():

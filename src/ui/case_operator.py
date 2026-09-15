@@ -86,6 +86,17 @@ from task_work_authority_scope import (
     record_task_work_authority_scope,
     resolve_task_work_authority_scope,
 )
+from ui.solicitor_workflow import open_drafts_for_task_work
+from governed_agentic_investigation import (
+    GovernedAgenticDecision,
+    GovernedAgenticInvestigationError,
+    append_governed_agentic_investigation_receipt,
+    append_governed_agentic_professional_decision,
+    build_governed_agentic_investigation_plan,
+    combine_governed_agentic_step_results,
+    profile_governed_agentic_step_result,
+    build_governed_agentic_performance_profile,
+)
 
 AuthorityLoader = Callable[[str], GovernedRuntimeAnalyticalAuthority | None]
 
@@ -3957,6 +3968,30 @@ def _render_drafting_workflow(
         )
         return
 
+    if not st.session_state.get("ux_d2_drafts_view", False):
+        wc2_draft_col, wc2_draft_spacer = st.columns([2.4, 4.6])
+        with wc2_draft_col:
+            if st.button(
+                "Draft from this work",
+                key=(
+                    "wc2_open_drafts::"
+                    + case_id
+                    + "::"
+                    + task_id
+                    + "::"
+                    + selected_progress_id
+                ),
+                use_container_width=True,
+            ):
+                open_drafts_for_task_work(
+                    case_id,
+                    task_id,
+                    selected_progress_id,
+                )
+                st.rerun()
+        with wc2_draft_spacer:
+            st.empty()
+
     selected_row = (
         row_by_progress_id[
             selected_progress_id
@@ -4215,6 +4250,522 @@ def _render_drafting_workflow(
 
 
 
+
+_GAC1_PROPOSAL_STATE_KEY = "gac1_governed_agentic_proposal_v1"
+
+
+def _gac1_reviewer_reference() -> str:
+    identity = current_user_identity()
+    value = (
+        getattr(identity, "user_id", None)
+        or getattr(identity, "email", None)
+        or str(identity)
+    )
+    return str(value)
+
+
+def _clear_gac1_proposal_state() -> None:
+    st.session_state.pop(_GAC1_PROPOSAL_STATE_KEY, None)
+
+
+def _render_gac1_semantic_button_styles() -> None:
+    # Keyed Streamlit containers give these rules a narrow Case Operator scope.
+    st.markdown(
+        """
+        <style>
+        .st-key-gac1_run_action button {
+            background-color: #1d4ed8 !important;
+            border-color: #1d4ed8 !important;
+            color: #ffffff !important;
+            font-weight: 700 !important;
+        }
+        .st-key-gac1_run_action button:hover {
+            background-color: #1e40af !important;
+            border-color: #1e40af !important;
+        }
+        .st-key-gac1_accept_action button {
+            background-color: #15803d !important;
+            border-color: #15803d !important;
+            color: #ffffff !important;
+            font-weight: 700 !important;
+        }
+        .st-key-gac1_accept_action button:hover {
+            background-color: #166534 !important;
+            border-color: #166534 !important;
+        }
+        .st-key-gac1_reject_action button {
+            background-color: #b91c1c !important;
+            border-color: #b91c1c !important;
+            color: #ffffff !important;
+            font-weight: 700 !important;
+        }
+        .st-key-gac1_reject_action button:hover {
+            background-color: #991b1b !important;
+            border-color: #991b1b !important;
+        }
+        .st-key-gac1_run_action button:focus-visible,
+        .st-key-gac1_accept_action button:focus-visible,
+        .st-key-gac1_reject_action button:focus-visible {
+            outline: 3px solid #f59e0b !important;
+            outline-offset: 2px !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_gac1_compact_proposal(result: dict) -> None:
+    st.markdown("#### Proposal summary")
+    elapsed = result.get("gac1_total_elapsed_seconds")
+    if isinstance(elapsed, (int, float)):
+        st.caption(
+            f"Three governed steps completed in {float(elapsed):.1f} seconds. "
+            "Review the summary first; the complete source-grounded analysis remains available below."
+        )
+    else:
+        st.caption(
+            "Review the summary first; the complete source-grounded analysis remains available below."
+        )
+
+    summaries = result.get("gac1_step_summaries")
+    if isinstance(summaries, list) and summaries:
+        for item in summaries:
+            if not isinstance(item, dict):
+                continue
+            title = _clean(item.get("title", "Investigation step"))
+            summary = _clean(item.get("summary", ""))
+            st.markdown(f"**{title}**")
+            st.write(summary if summary else "No compact summary is available for this step.")
+            source_count = item.get("source_count")
+            relied_count = item.get("relied_evidence_count")
+            if isinstance(source_count, int) and isinstance(relied_count, int):
+                st.caption(
+                    f"{source_count} source reference(s); "
+                    f"{relied_count} relied evidence key(s)."
+                )
+    else:
+        st.write("A compact step summary is not available for this earlier proposal.")
+
+    if result.get("new_ai_finding"):
+        st.warning(
+            "New AI finding — provisional only. It has not changed the Current Assessment "
+            "and requires professional review before reliance."
+        )
+
+
+
+def _render_gac1_performance_profile(profile: dict) -> None:
+    with st.expander("Performance diagnostics", expanded=True):
+        st.caption(
+            "Diagnostic only. These measurements do not change the legal analysis, "
+            "task state, Current Assessment or professional decision."
+        )
+        steps = profile.get("steps")
+        if isinstance(steps, list):
+            for index, item in enumerate(steps, start=1):
+                if not isinstance(item, dict):
+                    continue
+                title = _clean(item.get("title", f"Step {index}"))
+                st.markdown(f"**Step {index}: {title}**")
+                elapsed = item.get("elapsed_seconds")
+                source_count = item.get("deduped_source_count")
+                file_page_count = item.get("unique_file_page_count")
+                relied = item.get("relied_evidence_key_count")
+                scope = item.get("answer_scope_evidence_key_count")
+                mode = _clean(item.get("retrieval_mode", "unknown"))
+                result_bytes = item.get("result_json_bytes")
+                st.write(
+                    f"{float(elapsed):.1f}s · retrieval mode: {mode} · "
+                    f"{source_count} source reference(s) · "
+                    f"{file_page_count} unique file/page pair(s) · "
+                    f"{relied} relied evidence key(s) · "
+                    f"{scope} answer-scope evidence key(s)"
+                )
+                receipt = item.get("search_receipt")
+                if isinstance(receipt, dict):
+                    st.caption(
+                        "Search receipt: "
+                        f"{receipt.get('documents_inspected')} document(s), "
+                        f"{receipt.get('pages_inspected')} page(s), "
+                        f"{receipt.get('chunks_inspected')} chunk(s), "
+                        f"case corpus complete: "
+                        f"{'yes' if receipt.get('case_corpus_complete') else 'no'}."
+                    )
+                if isinstance(result_bytes, int):
+                    st.caption(f"Returned result envelope: {result_bytes / 1024:.1f} KiB.")
+                flags = item.get("flags")
+                if isinstance(flags, list) and flags:
+                    st.warning("Diagnostic flag(s): " + ", ".join(str(v) for v in flags))
+
+        phases = profile.get("phase_seconds")
+        if isinstance(phases, dict):
+            st.markdown("**Server-side phase timings**")
+            phase_labels = (
+                ("plan_build", "Plan construction"),
+                ("step_calls_and_validation", "Three governed calls + validation"),
+                ("combine", "Combine proposal"),
+                ("matter_access", "Matter access validation"),
+                ("receipt_append", "Execution receipt append"),
+                ("session_prepare", "Session-state preparation"),
+                ("server_pre_rerun_total", "Total before Streamlit rerun"),
+                ("unaccounted_server_seconds", "Unaccounted server overhead"),
+                ("post_rerun_render_delay", "Rerun/render delay"),
+            )
+            for key, label in phase_labels:
+                value = phases.get(key)
+                if isinstance(value, (int, float)):
+                    st.write(f"{label}: **{float(value):.3f}s**")
+
+        flags = profile.get("flags")
+        if isinstance(flags, list) and flags:
+            st.error("Performance finding(s): " + ", ".join(str(v) for v in flags))
+
+
+def _render_governed_agentic_investigation(
+    *,
+    case_id: str,
+    documents: list[str],
+    selected_task,
+) -> None:
+    # Run bounded multi-step task analysis; persist task work only after acceptance.
+    from time import monotonic, time
+
+    task_id = _clean(getattr(selected_task, "task_id", ""))
+    if not task_id:
+        return
+
+    _render_gac1_semantic_button_styles()
+
+    st.markdown("### Governed agentic investigation")
+    st.caption(
+        "Runs a bounded three-step investigation over governed matter evidence. "
+        "Progress is shown step by step. The execution receipt is audit-only. "
+        "The proposed result does not become task work unless you explicitly accept it."
+    )
+
+    proposal = st.session_state.get(_GAC1_PROPOSAL_STATE_KEY)
+    if not (
+        isinstance(proposal, dict)
+        and proposal.get("case_id") == case_id
+        and proposal.get("task_id") == task_id
+    ):
+        proposal = None
+
+    with st.container(key="gac1_run_action"):
+        run_clicked = st.button(
+            "Run governed investigation",
+            key=f"gac1_run_{task_id}",
+            type="primary",
+        )
+
+    if run_clicked:
+        interaction_started = monotonic()
+        try:
+            plan_started = monotonic()
+            plan = build_governed_agentic_investigation_plan(selected_task)
+            plan_elapsed = monotonic() - plan_started
+            step_results = []
+            step_profiles = []
+            validation_seconds = 0.0
+            total_steps = len(plan.steps)
+            overall_started = monotonic()
+            progress = st.progress(0)
+            status = st.status(
+                f"Governed investigation — preparing {total_steps} steps",
+                expanded=True,
+            )
+
+            for index, step in enumerate(plan.steps, start=1):
+                status.update(
+                    label=(
+                        f"Step {index} of {total_steps} — {step.title}"
+                    ),
+                    state="running",
+                    expanded=True,
+                )
+                status.write(
+                    f"Running step {index} of {total_steps}. "
+                    "The task and Current Assessment remain unchanged while this runs."
+                )
+                step_started = monotonic()
+                try:
+                    result = _run_question(case_id, documents, step.question)
+                except Exception as exc:
+                    elapsed = monotonic() - step_started
+                    name = type(exc).__name__
+                    if name == "APITimeoutError":
+                        message = (
+                            f"Step {index} of {total_steps} timed out after {elapsed:.1f} seconds. "
+                            "No proposed task work was created."
+                        )
+                    elif name == "RateLimitError":
+                        message = (
+                            f"Step {index} of {total_steps} was stopped by provider rate limiting "
+                            f"after {elapsed:.1f} seconds. No proposed task work was created."
+                        )
+                    else:
+                        message = (
+                            f"Step {index} of {total_steps} failed after {elapsed:.1f} seconds. "
+                            "No proposed task work was created."
+                        )
+                    status.update(label=message, state="error", expanded=True)
+                    st.error(message)
+                    st.caption(f"{name}: {exc}")
+                    return
+
+                elapsed = monotonic() - step_started
+                if not isinstance(result, dict):
+                    status.update(
+                        label=f"Step {index} of {total_steps} returned an invalid result.",
+                        state="error",
+                        expanded=True,
+                    )
+                    st.error("The governed investigation returned an invalid step result. No task work was created.")
+                    return
+
+                result = dict(result)
+                result["gac1_elapsed_seconds"] = round(elapsed, 3)
+                validation_started = monotonic()
+                analytical_failure = _analytical_failure_reason(result)
+                validation_seconds += monotonic() - validation_started
+                if analytical_failure is not None:
+                    status.update(
+                        label=f"Step {index} of {total_steps} failed analytical validation.",
+                        state="error",
+                        expanded=True,
+                    )
+                    st.error(
+                        "A governed agentic step failed analytical validation. "
+                        "No proposed task work was created."
+                    )
+                    st.caption(analytical_failure)
+                    return
+
+                step_results.append(result)
+                step_profiles.append(
+                    profile_governed_agentic_step_result(
+                        step_id=step.step_id,
+                        title=step.title,
+                        elapsed_seconds=elapsed,
+                        result=result,
+                    )
+                )
+                progress.progress(index / total_steps)
+                status.write(
+                    f"Step {index} of {total_steps} completed in {elapsed:.1f} seconds."
+                )
+
+            total_elapsed = monotonic() - overall_started
+
+            combine_started = monotonic()
+            combined = combine_governed_agentic_step_results(
+                plan=plan,
+                step_results=step_results,
+            )
+            combine_elapsed = monotonic() - combine_started
+            combined["gac1_total_elapsed_seconds"] = round(total_elapsed, 3)
+            combined["gac1_step_elapsed_seconds"] = [
+                float(result.get("gac1_elapsed_seconds", 0.0))
+                for result in step_results
+            ]
+
+            access_started = monotonic()
+            access = CaseRepository().require_access(
+                current_user_identity(),
+                case_id,
+            )
+            access_elapsed = monotonic() - access_started
+
+            receipt_started = monotonic()
+            receipt = append_governed_agentic_investigation_receipt(
+                case_id=case_id,
+                access=access,
+                task_id=task_id,
+                plan=plan,
+                step_results=step_results,
+                proposed_result=combined,
+            )
+            receipt_elapsed = monotonic() - receipt_started
+
+            phase_seconds = {
+                "plan_build": plan_elapsed,
+                "step_calls_and_validation": (
+                    sum(float(v.get("gac1_elapsed_seconds", 0.0)) for v in step_results)
+                    + validation_seconds
+                ),
+                "combine": combine_elapsed,
+                "matter_access": access_elapsed,
+                "receipt_append": receipt_elapsed,
+            }
+            status.update(
+                label=f"Governed investigation complete in {total_elapsed:.1f} seconds",
+                state="complete",
+                expanded=False,
+            )
+        except Exception as exc:
+            st.error(
+                "The governed agentic investigation could not complete. "
+                "No new task work was recorded."
+            )
+            st.caption(f"{type(exc).__name__}: {exc}")
+            return
+
+        session_started = monotonic()
+        proposal_payload = {
+            "case_id": case_id,
+            "task_id": task_id,
+            "receipt_id": receipt.receipt_id,
+            "plan_id": plan.plan_id,
+            "question": (
+                "Governed agentic investigation proposal for approved task: "
+                + _clean(getattr(selected_task, "title", "Task"))
+            ),
+            "result": combined,
+            "completed_wall_time": time(),
+        }
+        phase_seconds["session_prepare"] = monotonic() - session_started
+        phase_seconds["server_pre_rerun_total"] = (
+            monotonic() - interaction_started
+        )
+        proposal_payload["performance_profile"] = (
+            build_governed_agentic_performance_profile(
+                step_profiles=step_profiles,
+                phase_seconds=phase_seconds,
+            )
+        )
+        st.session_state[_GAC1_PROPOSAL_STATE_KEY] = proposal_payload
+        st.rerun()
+
+    if proposal is None:
+        return
+
+    result = proposal.get("result")
+    if not isinstance(result, dict):
+        _clear_gac1_proposal_state()
+        return
+
+    performance_profile = proposal.get("performance_profile")
+    completed_wall_time = proposal.get("completed_wall_time")
+    if (
+        isinstance(performance_profile, dict)
+        and isinstance(completed_wall_time, (int, float))
+    ):
+        phases = performance_profile.get("phase_seconds")
+        if isinstance(phases, dict) and "post_rerun_render_delay" not in phases:
+            phases["post_rerun_render_delay"] = round(
+                max(0.0, time() - float(completed_wall_time)),
+                3,
+            )
+
+    st.info(
+        "Agentic investigation complete. Review the proposal below. "
+        "It is not yet recorded task work."
+    )
+    _render_gac1_compact_proposal(result)
+    if isinstance(performance_profile, dict):
+        _render_gac1_performance_profile(performance_profile)
+
+    with st.expander(
+        "Full governed analysis and source/page references",
+        expanded=False,
+    ):
+        _render_result(result, heading="Full proposed agentic work result")
+
+    st.caption("Execution receipt: " + _clean(proposal.get("receipt_id", "")))
+    st.markdown("#### Professional decision")
+    st.caption(
+        "Green accepts the proposal as recorded task work. Red rejects it. "
+        "Neither action completes the task or changes the Current Assessment."
+    )
+
+    left, right = st.columns(2)
+
+    with left:
+        with st.container(key="gac1_accept_action"):
+            accept_clicked = st.button(
+                "Accept proposed work",
+                key=f"gac1_accept_{task_id}",
+                type="primary",
+                use_container_width=True,
+            )
+
+    with right:
+        with st.container(key="gac1_reject_action"):
+            reject_clicked = st.button(
+                "Reject proposal",
+                key=f"gac1_reject_{task_id}",
+                use_container_width=True,
+            )
+
+    if accept_clicked:
+        question = _clean(
+            proposal.get("question", "Governed agentic investigation")
+        )
+        receipt_id = _clean(proposal.get("receipt_id", ""))
+        try:
+            access = CaseRepository().require_access(
+                current_user_identity(),
+                case_id,
+            )
+            append_governed_agentic_professional_decision(
+                case_id=case_id,
+                access=access,
+                task_id=task_id,
+                receipt_id=receipt_id,
+                decision=GovernedAgenticDecision.ACCEPTED,
+                reviewer_reference=_gac1_reviewer_reference(),
+                reviewer_note="Accepted for conversion into recorded task work.",
+            )
+        except GovernedAgenticInvestigationError as exc:
+            st.error("The professional acceptance decision could not be recorded.")
+            st.caption(str(exc))
+            return
+
+        if _persist_task_work_result(
+            case_id=case_id,
+            task_id=task_id,
+            question=question,
+            result=result,
+        ):
+            _clear_gac1_proposal_state()
+            st.success(
+                "Proposed agentic work accepted and recorded as task work. "
+                "The task status and Current Assessment were not changed."
+            )
+            st.rerun()
+        else:
+            st.warning(
+                "The proposal was professionally accepted, but ordinary task-work "
+                "persistence did not complete. The proposal remains available for retry."
+            )
+
+    if reject_clicked:
+        receipt_id = _clean(proposal.get("receipt_id", ""))
+        try:
+            access = CaseRepository().require_access(
+                current_user_identity(),
+                case_id,
+            )
+            append_governed_agentic_professional_decision(
+                case_id=case_id,
+                access=access,
+                task_id=task_id,
+                receipt_id=receipt_id,
+                decision=GovernedAgenticDecision.REJECTED,
+                reviewer_reference=_gac1_reviewer_reference(),
+                reviewer_note="Rejected; not recorded as task work.",
+            )
+        except GovernedAgenticInvestigationError as exc:
+            st.error("The rejection decision could not be recorded.")
+            st.caption(str(exc))
+            return
+
+        _clear_gac1_proposal_state()
+        st.success("Proposal rejected. No task work was recorded.")
+        st.rerun()
+
+
 def _render_approved_task_execution(
     *,
     case_id: str,
@@ -4384,6 +4935,12 @@ def _render_approved_task_execution(
         "Retry blocked task"
         if blocked
         else ("Continue selected task" if continuing else "Work selected task")
+    )
+
+    _render_governed_agentic_investigation(
+        case_id=case_id,
+        documents=documents,
+        selected_task=selected_task,
     )
 
     if st.button(
@@ -4693,7 +5250,7 @@ def show_case_operator(
         all_tasks=tuple(tasks),
     )
 
-    st.subheader("Current attention queue")
+    st.subheader("Issues requiring attention")
     st.caption(
         "Read-only orientation from unresolved, disputed or limited parts of the Current "
         "Assessment. This preserves canonical case order and is not itself a merits ranking."
@@ -4713,7 +5270,7 @@ def show_case_operator(
 
     selected = select_opening_issue(dashboard)
     st.divider()
-    st.subheader("Autonomous opening review")
+    st.subheader("Priority issue review")
     if selected is None:
         st.info("No legal issue is available for autonomous review.")
     else:
@@ -4726,7 +5283,7 @@ def show_case_operator(
         )
 
         if st.button(
-            "Run autonomous opening review",
+            "Review priority issue",
             type="primary",
             key="case_operator_run_opening",
         ):
@@ -4734,7 +5291,7 @@ def show_case_operator(
             st.rerun()
 
     if issues:
-        st.subheader("Investigate one issue manually")
+        st.subheader("Investigate one issue")
         issue_by_id = {
             str(getattr(issue, "issue_analysis_id", index)): issue
             for index, issue in enumerate(issues)
@@ -4747,7 +5304,7 @@ def show_case_operator(
             ),
             key="case_operator_issue",
         )
-        if st.button("Run issue investigation", key="case_operator_run_issue"):
+        if st.button("Investigate issue", key="case_operator_run_issue"):
             question = build_issue_investigation_question(issue_by_id[selected_id])
             result = _run_question(case_id, documents, question)
             st.session_state[_TRACE_KEY] = [

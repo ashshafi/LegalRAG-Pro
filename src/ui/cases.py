@@ -32,7 +32,7 @@ def show_case_selector(repository: CaseRepository | None = None) -> Case | None:
     user = current_user_identity()
     cases = repo.list_for_user(user)
 
-    st.sidebar.title("🗂 Matters")
+    st.sidebar.markdown("#### Matters")
 
     if not cases:
         st.sidebar.info("No matters yet. Create your first matter below.")
@@ -61,19 +61,19 @@ def show_case_selector(repository: CaseRepository | None = None) -> Case | None:
 
     access = repo.require_access(user, active_case.case_id)
 
-    with st.sidebar.expander("➕ Create matter"):
+    with st.sidebar.expander("Create matter"):
         _show_create_case_form(repo, user=user, embedded=True)
 
-    with st.sidebar.expander("✏️ Edit active matter"):
+    with st.sidebar.expander("Edit active matter"):
         if access.membership.can_manage_matter:
             _show_edit_case_form(repo, active_case, access=access)
         else:
             st.caption("You have read-only access to this matter.")
 
-    with st.sidebar.expander("👥 Matter access"):
+    with st.sidebar.expander("Matter access"):
         _show_matter_access(repo, active_case, user=user, access=access)
 
-    with st.sidebar.expander("📥 Assign legacy documents"):
+    with st.sidebar.expander("Assign legacy documents"):
         if access.membership.can_manage_matter:
             _show_legacy_assignment(active_case, access=access)
         else:

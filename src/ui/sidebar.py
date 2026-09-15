@@ -79,263 +79,47 @@ def show_sidebar(
     *,
     reports_available: bool = False,
 ):
-    """Display document selection and matter-workspace navigation.
-    When a case is active, only documents indexed/assigned to that case are
-    displayed. With no active case the historic global document listing remains
-    available for backwards compatibility.
-    """
+    """Render secondary matter controls and document context only."""
+    from document_manager import get_documents
+
     try:
-        from document_manager import get_documents
         docs = get_documents(active_case_id)
     except Exception:
         LOGGER.exception("Unable to load indexed document metadata.")
         docs = []
         st.sidebar.warning("Indexed documents could not be loaded.")
 
-    st.sidebar.caption("MATTER")
-    overview_clicked = st.sidebar.button(
-        "▣ Overview",
-        width="stretch",
-        disabled=active_case_id is None,
-        help=(
-            None
-            if active_case_id is not None
-            else "Select or create a matter to open its overview."
-        ),
-    )
-    if overview_clicked:
-        st.session_state["mdi_marriage_document_view"] = False
-        set_matter_overview_view(st.session_state, True)
-        st.session_state["u8_evidence_inspection_view"] = False
-        st.session_state["ppr3_legal_issue_dashboard_view"] = False
-        st.session_state["m7_source_evidence_view"] = False
-        st.session_state["m6_workspace_view"] = None
-        st.session_state["m55_main_view"] = "assistant"
-
+    st.sidebar.caption("MATTER TOOLS")
     finance_clicked = st.sidebar.button(
-        "💹 Finance",
-        width="stretch",
-        type="primary" if st.session_state.get("m55_main_view") == "finance" else "secondary",
+        "Finance",
+        use_container_width=True,
         disabled=active_case_id is None,
+        type="primary" if st.session_state.get("m55_main_view") == "finance" else "secondary",
     )
     if finance_clicked:
-        st.session_state["mdi_marriage_document_view"] = False
         set_matter_overview_view(st.session_state, False)
         st.session_state["ppr3_legal_issue_dashboard_view"] = False
         st.session_state["u8_evidence_inspection_view"] = False
         st.session_state["m7_source_evidence_view"] = False
         st.session_state["m6_workspace_view"] = None
+        st.session_state["ux_d2_documents_view"] = False
+        st.session_state["ux_d2_drafts_view"] = False
+        st.session_state.pop("case_operator_workspace_case_id", None)
+        st.session_state.pop("mw1_task_workspace_case_id", None)
         st.session_state["m55_main_view"] = "finance"
+        st.rerun()
 
-    st.sidebar.divider()
-    _show_case_upload(active_case_id, docs)
-
-    st.sidebar.divider()
-    st.sidebar.caption("CASE INTELLIGENCE")
-
-    tools_disabled = active_case_id is not None and not docs
-    timeline_clicked = st.sidebar.button(
-        "🕒 Chronology",
-        width="stretch",
-        disabled=tools_disabled,
-    )
-    if timeline_clicked:
-        st.session_state["mdi_marriage_document_view"] = False
-        st.session_state["m7_source_evidence_view"] = False
-        st.session_state["m6_workspace_view"] = "chronology"
-        st.session_state["m55_main_view"] = "assistant"
-
-    evidence_clicked = st.sidebar.button(
-        "🔎 Evidence",
-        width="stretch",
-        disabled=not reports_available,
-    )
-    people_clicked = st.sidebar.button(
-        "👥 People",
-        width="stretch",
-        disabled=not reports_available,
-    )
-    if evidence_clicked:
-        st.session_state["mdi_marriage_document_view"] = False
-        st.session_state["m7_source_evidence_view"] = False
-        st.session_state["m6_workspace_view"] = "evidence"
-    if people_clicked:
-        st.session_state["mdi_marriage_document_view"] = False
-        st.session_state["m7_source_evidence_view"] = False
-        st.session_state["m6_workspace_view"] = "people"
-
-    dashboard_clicked = st.sidebar.button(
-        "⚖️ Legal Issues",
-        width="stretch",
-        disabled=active_case_id is None,
-        help=(
-            None
-            if active_case_id is not None
-            else "An active matter is required for Legal Issues."
-        ),
-    )
-    if dashboard_clicked:
-        st.session_state["mdi_marriage_document_view"] = False
-        set_matter_overview_view(st.session_state, False)
-        st.session_state.pop("case_operator_workspace_case_id", None)
-        st.session_state["ppr3_legal_issue_dashboard_view"] = True
-        st.session_state["u8_evidence_inspection_view"] = False
-        st.session_state["m7_source_evidence_view"] = False
-        st.session_state["m6_workspace_view"] = None
-        st.session_state["m55_main_view"] = "assistant"
-
-    st.sidebar.divider()
-    st.sidebar.caption("LEGAL WORK")
-
-    workspace_clicked = st.sidebar.button(
-        "📚 Matter workspace",
-        width="stretch",
-        disabled=not reports_available,
-        help=(
-            None
-            if reports_available
-            else "A validated report is required for the active matter."
-        ),
-    )
-    if workspace_clicked:
-        st.session_state["mdi_marriage_document_view"] = False
-        st.session_state["m7_source_evidence_view"] = False
-        st.session_state["m6_workspace_view"] = "review"
-
-    operator_clicked = st.sidebar.button(
-        "Case Operator",
-        width="stretch",
-        disabled=active_case_id is None,
-        help=(
-            None
-            if active_case_id is not None
-            else "An active matter is required for Case Operator."
-        ),
-    )
-    if operator_clicked:
-        set_matter_overview_view(st.session_state, False)
-        st.session_state["case_operator_workspace_case_id"] = active_case_id
-        st.session_state["ppr3_legal_issue_dashboard_view"] = True
-        st.session_state["u8_evidence_inspection_view"] = False
-        st.session_state["m7_source_evidence_view"] = False
-        st.session_state["m6_workspace_view"] = None
-        st.session_state["m55_main_view"] = "assistant"
-
-    assistant_clicked = st.sidebar.button(
-        "💬 Assistant",
-        width="stretch",
-        disabled=active_case_id is None,
-    )
-    if assistant_clicked:
-        st.session_state["mdi_marriage_document_view"] = False
-        st.session_state["u8_evidence_inspection_view"] = False
-        st.session_state["m7_source_evidence_view"] = False
-        st.session_state["m6_workspace_view"] = None
-        st.session_state["m55_main_view"] = "assistant"
-
-    st.sidebar.button(
-        "✍ Drafting",
-        width="stretch",
-        disabled=True,
-        help="Planned legal-work capability; not active in PPR4-M3.",
-    )
-
-    reports_clicked = st.sidebar.button(
-        "📄 Reports",
-        width="stretch",
-        disabled=not reports_available,
-        help=(
-            None
-            if reports_available
-            else "A validated frozen report projection is required for the active matter."
-        ),
-    )
-    if reports_clicked:
-        st.session_state["mdi_marriage_document_view"] = False
-        st.session_state["m7_source_evidence_view"] = False
-        st.session_state["m6_workspace_view"] = None
-        st.session_state["m55_main_view"] = "reports"
-
-    st.sidebar.divider()
-    st.sidebar.caption("AUDIT")
-
-    source_evidence_clicked = st.sidebar.button(
-        "🔗 Sources & Provenance",
-        width="stretch",
-        disabled=not reports_available,
-        help=(
-            None
-            if reports_available
-            else "A validated frozen report projection is required for the active matter."
-        ),
-    )
-    if source_evidence_clicked:
-        st.session_state["mdi_marriage_document_view"] = False
-        st.session_state["m7_source_evidence_view"] = True
-        st.session_state["m6_workspace_view"] = None
-        st.session_state["m55_main_view"] = "assistant"
-
-    st.sidebar.button(
-        "🛡 Audit Trail",
-        width="stretch",
-        disabled=True,
-        help="Planned consolidated audit presentation; not active in PPR4-M3.",
-    )
-
-    if (
-        timeline_clicked
-        or workspace_clicked
-        or evidence_clicked
-        or people_clicked
-        or assistant_clicked
-        or source_evidence_clicked
-        or reports_clicked
-    ):
-        set_matter_overview_view(st.session_state, False)
-        st.session_state["ppr3_legal_issue_dashboard_view"] = False
-        st.session_state.pop("case_operator_workspace_case_id", None)
-
-    st.sidebar.divider()
-    with st.sidebar.expander("📄 Documents", expanded=False):
-        marriage_review_clicked = st.button(
-            "Nikah Nama review",
-            width="stretch",
-            disabled=active_case_id is None,
-            help=(
-                None
-                if active_case_id is not None
-                else "Select a matter before opening the Nikah Nama review."
-            ),
-        )
-        if marriage_review_clicked:
-            set_matter_overview_view(st.session_state, False)
-            st.session_state["u8_evidence_inspection_view"] = False
-            st.session_state["ppr3_legal_issue_dashboard_view"] = False
-            st.session_state["m7_source_evidence_view"] = False
-            st.session_state["m6_workspace_view"] = None
-            st.session_state["m55_main_view"] = "assistant"
-            st.session_state["mdi_marriage_document_view"] = True
-        st.divider()
-        selected_documents: list[str] = []
+    selected_documents: list[str] = []
+    with st.sidebar.expander("Documents in context", expanded=False):
         if active_case_id is not None and not docs:
-            st.info(
-                "No documents are assigned to this matter yet. "
-                "Assign a legacy document above or upload a new PDF below."
-            )
+            st.info("No indexed documents are assigned to this matter yet.")
         elif not docs:
             st.info("No indexed documents found.")
         for filename in docs:
-            if st.checkbox(
-                filename,
-                value=True,
-                key=f"document_{active_case_id or 'legacy'}_{filename}",
-            ):
+            if st.checkbox(filename, value=True, key=f"document_{active_case_id or 'legacy'}_{filename}"):
                 selected_documents.append(filename)
 
-    st.sidebar.title("📊 Status")
+    st.sidebar.caption("Matter navigation is in the solicitor bar above the working page.")
     if active_case_id is not None:
-        st.sidebar.info(f"{len(docs)} document(s) in active matter")
-    else:
-        st.sidebar.info(f"{len(docs)} document(s) indexed")
-
-    return selected_documents, timeline_clicked
+        st.sidebar.caption(f"{len(docs)} document(s) in this matter")
+    return selected_documents, False

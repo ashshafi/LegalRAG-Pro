@@ -38,17 +38,17 @@ def test_matter_ledger_renderer_is_streamlit_fragment_bounded():
 
 
 def test_matter_ledger_dynamic_relationship_controls_remain_interactive_widgets():
-    source = UI.read_text(encoding="utf-8")
+    from pathlib import Path
 
-    for label in (
-        "+ Check work product",
-        "Status expressed by the work product",
-        "Confidence expressed by the work product",
-        "Governed evidence cited",
-        "+ Propose analytical change",
-        "Proposed analytical status",
-        "Proposed confidence",
-        "+ Propose relationship",
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "src/ui/matter_analysis_ledger.py").read_text(encoding="utf-8-sig")
+
+    assert "_matter_relationship_proposal_editor" in source
+    assert "_matter_entry_form" in source
+    for token in (
+        "SET RELATIONSHIP TYPE",
+        "SET EVIDENCE ROLES",
+        "PROPOSE RELATIONSHIP",
         "Relationship",
         "Evidence A role",
         "Evidence item A",
@@ -56,7 +56,12 @@ def test_matter_ledger_dynamic_relationship_controls_remain_interactive_widgets(
         "Evidence item B",
         "Why are these evidence items related?",
     ):
-        assert label in source
+        assert token in source
+
+    # SUX1 translated the old technical action label to solicitor-facing
+    # language while preserving the governed backend proposal service.
+    assert "SUGGEST CHANGE" in source
+    assert "propose_analytical_change" in source
 
 
 def test_fragment_release_does_not_add_openai_or_network_calls():

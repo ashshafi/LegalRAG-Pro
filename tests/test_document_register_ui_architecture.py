@@ -114,16 +114,19 @@ def test_register_contains_no_rerun_unsafe_html_or_markdown():
 
 
 def test_app_composition_is_case_upload_details_register_then_sidebar():
-    source = APP.read_text(encoding="utf-8")
-    assert "from ui.document_register import show_document_register" in source
+    from pathlib import Path
 
-    case_i = source.index("active_case = show_case_selector()")
-    upload_i = source.index("show_document_upload(active_case_id)")
-    details_i = source.index("show_document_details(active_case_id)")
-    register_i = source.index("show_document_register(active_case_id)")
-    sidebar_i = source.index("selected_documents, timeline_clicked = show_sidebar(")
+    root = Path(__file__).resolve().parents[1]
+    app = (root / "src/app.py").read_text(encoding="utf-8-sig")
+    shell = (root / "src/ui/solicitor_shell.py").read_text(encoding="utf-8-sig")
+    documents = (root / "src/ui/solicitor_documents.py").read_text(encoding="utf-8-sig")
 
-    assert case_i < upload_i < details_i < register_i < sidebar_i
+    assert "active_case = show_case_selector()" in app
+    assert "show_solicitor_shell(" in app
+    assert "show_document_register(active_case_id)" not in app
+    assert '"Documents"' in shell
+    assert "_show_upload" in documents
+    assert "upload_case_pdf(" in documents
 
 
 def test_existing_source_workspace_report_route_order_remains():
