@@ -4470,13 +4470,108 @@ def _render_gac2_compact_proposal(result: dict[str, Any]) -> None:
                 st.write(summary)
             metrics = []
             if isinstance(source_count, int):
-                metrics.append(f"{source_count} source reference(s)")
+                metrics.append(f"{source_count} coverage source reference(s)")
             if isinstance(relied_count, int):
-                metrics.append(f"{relied_count} relied evidence key(s)")
+                metrics.append(f"{relied_count} exact relied evidence key(s)")
             if isinstance(elapsed, (int, float)):
                 metrics.append(f"{float(elapsed):.1f}s")
             if metrics:
                 st.caption(" · ".join(metrics))
+
+
+def _gac2_source_page_label(source: Any) -> str:
+    if not isinstance(source, dict):
+        return "Source metadata unavailable"
+    filename = ""
+    for key in ("file", "filename", "source_filename", "original_filename"):
+        value = source.get(key)
+        if isinstance(value, str) and value.strip():
+            filename = value.strip()
+            break
+    page = None
+    for key in ("page", "page_number", "source_page_number"):
+        value = source.get(key)
+        if isinstance(value, int) and value > 0:
+            page = value
+            break
+        if isinstance(value, str) and value.strip().isdigit():
+            page = int(value.strip())
+            break
+    if filename and page is not None:
+        return f"{filename} — p.{page}"
+    if filename:
+        return filename
+    if page is not None:
+        return f"Page {page}"
+    return "Source metadata unavailable"
+
+
+def _render_gac2_reference_binding_audit(result: dict[str, Any]) -> bool:
+    st.markdown("##### Source/page binding audit")
+    summaries = result.get("gac2_step_summaries")
+    if not isinstance(summaries, list) or not summaries:
+        st.error(
+            "This proposal has no GAC2 reference-binding audit. Rerun the "
+            "investigation before professional acceptance."
+        )
+        return False
+
+    blocked = []
+    for item in summaries:
+        if not isinstance(item, dict):
+            blocked.append("unknown-step")
+            continue
+        step_id = _clean(item.get("step_id", "unknown-step")) or "unknown-step"
+        title = _clean(item.get("title", "Investigation step")) or "Investigation step"
+        status = _clean(item.get("reference_binding_status", ""))
+        relied_sources = item.get("relied_sources")
+        if not isinstance(relied_sources, list):
+            relied_sources = []
+
+        if status == "bound" and relied_sources:
+            with st.expander(f"{title} — exact relied sources", expanded=False):
+                seen = set()
+                for source in relied_sources:
+                    label = _gac2_source_page_label(source)
+                    if label in seen:
+                        continue
+                    seen.add(label)
+                    st.write("- " + label)
+                st.caption(
+                    "These references are derived from exact relied-evidence keys, "
+                    "not from the broader search-coverage source list."
+                )
+        else:
+            blocked.append(step_id)
+            with st.expander(f"{title} — reference binding incomplete", expanded=True):
+                st.error(
+                    "This step does not have an exact relied-evidence source/page binding. "
+                    "Any inline document/page references in its narrative must be treated "
+                    "as unverified for professional reliance."
+                )
+                source_count = item.get("source_count")
+                if isinstance(source_count, int):
+                    st.caption(
+                        f"{source_count} source reference(s) were available as search "
+                        "coverage, but coverage is not proof of reliance."
+                    )
+
+    declared_complete = result.get("gac2_reference_binding_complete") is True
+    declared_blocked = result.get("gac2_reference_binding_blocked_steps")
+    if not isinstance(declared_blocked, list):
+        declared_blocked = []
+
+    if blocked or not declared_complete or declared_blocked:
+        st.error(
+            "Professional acceptance is blocked until every GAC2 step has an exact "
+            "relied source/page binding. Rerun after the reference-binding gap is resolved."
+        )
+        return False
+
+    st.success(
+        "Reference binding complete: every GAC2 step has exact relied source/page metadata."
+    )
+    return True
 
 
 def _render_governed_agentic_investigation_v2(
@@ -4753,6 +4848,8 @@ def _render_governed_agentic_investigation_v2(
     ):
         _render_result(result, heading="Full proposed GAC2 work result")
 
+    reference_binding_complete = _render_gac2_reference_binding_audit(result)
+
     st.caption("Execution receipt: " + _clean(proposal.get("receipt_id", "")))
     st.markdown("#### Professional decision")
     st.caption(
@@ -4768,6 +4865,7 @@ def _render_governed_agentic_investigation_v2(
             key=f"gac2_accept_{task_id}",
             type="primary",
             use_container_width=True,
+            disabled=not reference_binding_complete,
         )
     with right:
         reject_clicked = st.button(
@@ -5509,13 +5607,23 @@ def _render_result(result: dict[str, Any], *, heading: str = "Operator result") 
 
     labels = _source_labels(result)
     if labels:
-        with st.expander("Source/page references returned in this investigation", expanded=False):
-            for label in labels:
-                st.write("? " + label)
-            st.caption(
+        if result.get("gac2_proposal"):
+            title = "Search coverage references (not relied-source proof)"
+            caption = (
+                "These references show search/inspection coverage only. Exact relied "
+                "source/page bindings are shown separately in the GAC2 binding audit. "
+                "Do not infer reliance from this list."
+            )
+        else:
+            title = "Source/page references returned in this investigation"
+            caption = (
                 "Use Evidence / Sources & Provenance to inspect important source text before "
                 "using a proposition in a witness statement, submission or correspondence."
             )
+        with st.expander(title, expanded=False):
+            for label in labels:
+                st.write("- " + label)
+            st.caption(caption)
 
 
 def _run_question(case_id: str, documents: list[str], question: str) -> dict[str, Any]:

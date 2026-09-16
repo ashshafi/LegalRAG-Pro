@@ -290,6 +290,16 @@ def _list_values(result: Mapping[str, Any], key: str) -> list[Any]:
     return list(value) if isinstance(value, (list, tuple)) else []
 
 
+def _source_evidence_key(source: Any) -> str | None:
+    if not isinstance(source, Mapping):
+        return None
+    for key in ("evidence_key", "source_evidence_key"):
+        value = source.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
 def _dedupe_dicts(values: Iterable[Any]) -> list[dict[str, Any]]:
     seen: set[str] = set()
     output: list[dict[str, Any]] = []
@@ -406,14 +416,40 @@ def combine_governed_agentic_investigation_v2_results(
             for value in _list_values(result, "relied_evidence_keys")
             if isinstance(value, str) and value
         ]
+        deduped_sources = _dedupe_dicts(sources)
+        relied_set = set(relied)
+        bound_source_keys = {
+            key
+            for key in (_source_evidence_key(source) for source in deduped_sources)
+            if key is not None and key in relied_set
+        }
+        relied_sources = [
+            dict(source)
+            for source in deduped_sources
+            if isinstance(source, Mapping)
+            and _source_evidence_key(source) in relied_set
+        ]
+        if relied_set and relied_set.issubset(bound_source_keys):
+            reference_binding_status = "bound"
+        elif relied_set:
+            reference_binding_status = "relied_keys_without_source_metadata"
+        elif deduped_sources:
+            reference_binding_status = "coverage_only"
+        else:
+            reference_binding_status = "unbound"
+        new_ai_finding = bool(result.get("new_ai_finding"))
         elapsed = result.get("gac2_elapsed_seconds")
         step_summaries.append(
             {
                 "step_id": step.step_id,
                 "title": step.title,
                 "summary": _compact_summary_text(answer),
-                "source_count": len(_dedupe_dicts(sources)),
-                "relied_evidence_count": len(set(relied)),
+                "source_count": len(deduped_sources),
+                "relied_evidence_count": len(relied_set),
+                "relied_source_count": len(relied_sources),
+                "new_ai_finding": new_ai_finding,
+                "reference_binding_status": reference_binding_status,
+                "relied_sources": relied_sources,
                 "elapsed_seconds": (
                     float(elapsed) if isinstance(elapsed, (int, float)) else None
                 ),
@@ -454,6 +490,12 @@ def combine_governed_agentic_investigation_v2_results(
         ]
     )
 
+    blocked_reference_steps = [
+        item["step_id"]
+        for item in step_summaries
+        if item.get("reference_binding_status") != "bound"
+    ]
+
     combined: dict[str, Any] = {
         "answer": "\n".join(answer_parts).strip(),
         "sources": _dedupe_dicts(all_sources),
@@ -473,6 +515,9 @@ def combine_governed_agentic_investigation_v2_results(
         "gac2_objective": plan.objective,
         "gac2_step_count": len(plan.steps),
         "gac2_step_summaries": step_summaries,
+        "gac2_reference_binding_complete": not blocked_reference_steps,
+        "gac2_reference_binding_blocked_steps": blocked_reference_steps,
+        "gac2_reference_binding_schema": "gac2-reference-binding-audit/v1",
         "gac2_proposal": True,
     }
 
