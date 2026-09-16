@@ -89,6 +89,177 @@ def _explicit_location_integrity_text(explicit_location: Any) -> str:
     lines.append(f"verification_complete: {'yes' if complete else 'no'}")
     return "\n".join(lines)
 
+def bind_source_comparison_relied_evidence_keys(
+    *,
+    answer: str,
+    sources: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Bind explicit document/page citations to exact governed evidence rows only."""
+
+    import re
+    import unicodedata
+
+    def _normalise(value: Any) -> str:
+        result = unicodedata.normalize("NFKC", str(value or ""))
+        result = result.replace("\u2013", "-").replace("\u2014", "-")
+        return re.sub(r"\s+", " ", result).strip().lower()
+
+    def _source_key(source: dict[str, Any]) -> str | None:
+        for name in ("evidence_key", "source_evidence_key"):
+            value = source.get(name)
+            if isinstance(value, str) and value:
+                return value
+        return None
+
+    def _source_file(source: dict[str, Any]) -> str | None:
+        for name in ("file", "filename", "source_filename", "original_filename"):
+            value = source.get(name)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return None
+
+    def _source_page(source: dict[str, Any]) -> int | None:
+        for name in ("page", "page_number", "source_page_number"):
+            value = source.get(name)
+            if isinstance(value, int) and value > 0:
+                return value
+            if isinstance(value, str) and value.strip().isdigit():
+                page = int(value.strip())
+                if page > 0:
+                    return page
+        return None
+
+    def _aliases(filename: str) -> tuple[str, ...]:
+        stem = re.sub(r"(?i)\.pdf$", "", filename).strip()
+        normalised_stem = _normalise(stem)
+        values = [normalised_stem]
+        appendix = re.match(r"^(appendix\s+[a-z0-9]+)\b", normalised_stem)
+        if appendix:
+            values.append(appendix.group(1))
+        return tuple(dict.fromkeys(item for item in values if item))
+
+    if not isinstance(answer, str) or not answer.strip() or not isinstance(sources, list):
+        return {
+            "schema": "new-ai-finding-citation-binding/v1",
+            "status": "unbound",
+            "relied_evidence_keys": [],
+            "matched_citations": [],
+            "ambiguous_citations": [],
+        }
+
+    normalised_answer = _normalise(answer)
+    candidates: list[dict[str, Any]] = []
+
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        evidence_key = _source_key(source)
+        filename = _source_file(source)
+        page = _source_page(source)
+        if not evidence_key or not filename or page is None:
+            continue
+
+        for alias in _aliases(filename):
+            start = 0
+            while True:
+                pos = normalised_answer.find(alias, start)
+                if pos < 0:
+                    break
+                tail_start = pos + len(alias)
+                tail = normalised_answer[tail_start : tail_start + 220]
+                page_match = re.search(
+                    r"\b(pp?|pages?)\s*\.?\s*(\d+)(?:\s*-\s*(\d+))?",
+                    tail,
+                )
+                if page_match is not None:
+                    first_page = int(page_match.group(2))
+                    last_page = int(page_match.group(3) or first_page)
+                    low, high = sorted((first_page, last_page))
+                    if low <= page <= high:
+                        candidates.append(
+                            {
+                                "citation_position": pos,
+                                "page_marker_position": tail_start + page_match.start(),
+                                "alias": alias,
+                                "alias_length": len(alias),
+                                "page": page,
+                                "evidence_key": evidence_key,
+                                "file": filename,
+                            }
+                        )
+                start = pos + max(1, len(alias))
+
+    grouped: dict[tuple[int, int], list[dict[str, Any]]] = {}
+    for item in candidates:
+        grouped.setdefault(
+            (int(item["page_marker_position"]), int(item["page"])),
+            [],
+        ).append(item)
+
+    matched: list[dict[str, Any]] = []
+    ambiguous: list[dict[str, Any]] = []
+    for signature, rows in grouped.items():
+        max_len = max(int(row["alias_length"]) for row in rows)
+        strongest = [row for row in rows if int(row["alias_length"]) == max_len]
+        keys = sorted({str(row["evidence_key"]) for row in strongest})
+        if len(keys) != 1:
+            ambiguous.append(
+                {
+                    "page_marker_position": signature[0],
+                    "page": signature[1],
+                    "candidate_evidence_keys": keys,
+                }
+            )
+            continue
+        chosen = sorted(
+            strongest,
+            key=lambda row: (
+                int(row["citation_position"]),
+                str(row["file"]).lower(),
+                str(row["evidence_key"]),
+            ),
+        )[0]
+        matched.append(
+            {
+                "citation_position": int(chosen["citation_position"]),
+                "file": str(chosen["file"]),
+                "page": int(chosen["page"]),
+                "evidence_key": str(chosen["evidence_key"]),
+            }
+        )
+
+    matched.sort(
+        key=lambda row: (
+            int(row["citation_position"]),
+            str(row["file"]).lower(),
+            int(row["page"]),
+            str(row["evidence_key"]),
+        )
+    )
+    relied: list[str] = []
+    seen: set[str] = set()
+    for row in matched:
+        key = str(row["evidence_key"])
+        if key not in seen:
+            seen.add(key)
+            relied.append(key)
+
+    return {
+        "schema": "new-ai-finding-citation-binding/v1",
+        "status": "bound" if relied else "unbound",
+        "relied_evidence_keys": relied,
+        "matched_citations": [
+            {
+                "file": row["file"],
+                "page": row["page"],
+                "evidence_key": row["evidence_key"],
+            }
+            for row in matched
+        ],
+        "ambiguous_citations": ambiguous,
+    }
+
+
 def wrap_source_comparison_new_ai_finding_prompt(
     *,
     base_prompt: str,

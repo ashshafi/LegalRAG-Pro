@@ -646,6 +646,15 @@ def ask(
 
     sources = _build_sources(results)
 
+    new_ai_reference_binding = None
+    if new_ai_finding_mode:
+        from new_ai_finding import bind_source_comparison_relied_evidence_keys
+
+        new_ai_reference_binding = bind_source_comparison_relied_evidence_keys(
+            answer=response.output_text,
+            sources=sources,
+        )
+
     payload = {
         "answer": (
             validated_analytical_answer.answer
@@ -668,6 +677,10 @@ def ask(
                 "new_ai_finding_status": "professional_review_required",
                 "current_assessment_changed": False,
                 "new_ai_finding_notice": NEW_AI_FINDING_NOTICE,
+                "relied_evidence_keys": list(
+                    (new_ai_reference_binding or {}).get("relied_evidence_keys") or []
+                ),
+                "new_ai_finding_reference_binding": new_ai_reference_binding,
             }
         )
 
