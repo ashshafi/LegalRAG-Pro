@@ -97,6 +97,15 @@ from governed_agentic_investigation import (
     profile_governed_agentic_step_result,
     build_governed_agentic_performance_profile,
 )
+from governed_agentic_investigation_v2 import (
+    GovernedAgenticDecisionV2,
+    GovernedAgenticInvestigationV2Error,
+    append_governed_agentic_investigation_v2_professional_decision,
+    append_governed_agentic_investigation_v2_receipt,
+    build_governed_agentic_investigation_v2_plan,
+    combine_governed_agentic_investigation_v2_results,
+    load_governed_agentic_investigation_v2_receipts,
+)
 
 AuthorityLoader = Callable[[str], GovernedRuntimeAnalyticalAuthority | None]
 
@@ -4422,6 +4431,416 @@ def _render_gac1_performance_profile(profile: dict) -> None:
             st.error("Performance finding(s): " + ", ".join(str(v) for v in flags))
 
 
+
+_GAC2_PLAN_STATE_KEY = "gac2_governed_agentic_plan_v1"
+_GAC2_PROPOSAL_STATE_KEY = "gac2_governed_agentic_proposal_v1"
+
+
+def _default_gac2_objective(task: Any) -> str:
+    title = _clean(getattr(task, "title", "")) or "approved matter task"
+    why = _clean(getattr(task, "why_it_matters", ""))
+    if why:
+        return f"Investigate {title}. Focus on: {why}"
+    return f"Investigate {title} against the governed matter evidence."
+
+
+def _clear_gac2_proposal_state() -> None:
+    st.session_state.pop(_GAC2_PROPOSAL_STATE_KEY, None)
+
+
+def _render_gac2_compact_proposal(result: dict[str, Any]) -> None:
+    st.markdown("#### Investigation summary")
+    objective = _clean(result.get("gac2_objective", ""))
+    if objective:
+        st.markdown("**Objective**")
+        st.write(objective)
+
+    summaries = result.get("gac2_step_summaries")
+    if isinstance(summaries, list) and summaries:
+        for item in summaries:
+            if not isinstance(item, dict):
+                continue
+            title = _clean(item.get("title", "Investigation step"))
+            summary = _clean(item.get("summary", ""))
+            elapsed = item.get("elapsed_seconds")
+            source_count = item.get("source_count")
+            relied_count = item.get("relied_evidence_count")
+            st.markdown(f"**{title}**")
+            if summary:
+                st.write(summary)
+            metrics = []
+            if isinstance(source_count, int):
+                metrics.append(f"{source_count} source reference(s)")
+            if isinstance(relied_count, int):
+                metrics.append(f"{relied_count} relied evidence key(s)")
+            if isinstance(elapsed, (int, float)):
+                metrics.append(f"{float(elapsed):.1f}s")
+            if metrics:
+                st.caption(" · ".join(metrics))
+
+
+def _render_governed_agentic_investigation_v2(
+    *,
+    case_id: str,
+    documents: list[str],
+    selected_task,
+) -> None:
+    """Run an objective-led, reviewable five-step investigation for one task."""
+
+    from time import monotonic
+
+    task_id = _clean(getattr(selected_task, "task_id", ""))
+    if not task_id:
+        return
+
+    st.markdown("### Advanced governed investigation")
+    st.caption(
+        "Define the investigation objective, review the five-step plan, then explicitly "
+        "run it. The investigation remains proposed work until you accept it. "
+        "Task status, Current Assessment, drafts and report projections are not changed."
+    )
+
+    try:
+        prior_receipts = load_governed_agentic_investigation_v2_receipts(
+            case_id,
+            task_id,
+        )
+    except GovernedAgenticInvestigationV2Error as exc:
+        st.error("Persisted GAC2 investigation history could not be validated.")
+        st.caption(str(exc))
+        return
+
+    if prior_receipts:
+        with st.expander(
+            f"Previous advanced investigations ({len(prior_receipts)})",
+            expanded=False,
+        ):
+            for receipt in reversed(prior_receipts[-5:]):
+                st.markdown(
+                    "**"
+                    + _clean(getattr(receipt, "recorded_at", ""))
+                    + "**"
+                )
+                st.write(_clean(getattr(receipt, "objective", "")))
+                st.caption("Receipt: " + _clean(getattr(receipt, "receipt_id", "")))
+
+    objective = st.text_area(
+        "Investigation objective",
+        value=_default_gac2_objective(selected_task),
+        key=f"gac2_objective_{task_id}",
+        help=(
+            "Keep the objective within the selected approved task. "
+            "Preparing the plan makes no evidence call and changes no matter state."
+        ),
+    )
+    objective_value = _clean(objective)
+
+    plan_state = st.session_state.get(_GAC2_PLAN_STATE_KEY)
+    if not (
+        isinstance(plan_state, dict)
+        and plan_state.get("case_id") == case_id
+        and plan_state.get("task_id") == task_id
+    ):
+        plan_state = None
+
+    proposal = st.session_state.get(_GAC2_PROPOSAL_STATE_KEY)
+    if not (
+        isinstance(proposal, dict)
+        and proposal.get("case_id") == case_id
+        and proposal.get("task_id") == task_id
+    ):
+        proposal = None
+
+    if st.button(
+        "Prepare investigation plan",
+        key=f"gac2_prepare_{task_id}",
+    ):
+        try:
+            plan = build_governed_agentic_investigation_v2_plan(
+                selected_task,
+                objective=objective_value,
+            )
+        except GovernedAgenticInvestigationV2Error as exc:
+            st.error("The investigation plan could not be prepared.")
+            st.caption(str(exc))
+            return
+
+        st.session_state[_GAC2_PLAN_STATE_KEY] = {
+            "case_id": case_id,
+            "task_id": task_id,
+            "requested_objective": objective_value,
+            "plan": plan,
+        }
+        _clear_gac2_proposal_state()
+        st.rerun()
+
+    if plan_state is None:
+        st.info(
+            "Prepare the plan first. No investigation will run until you explicitly "
+            "approve the prepared plan."
+        )
+        return
+
+    plan = plan_state.get("plan")
+    if plan is None:
+        st.session_state.pop(_GAC2_PLAN_STATE_KEY, None)
+        st.rerun()
+
+    plan_matches_objective = (
+        plan_state.get("requested_objective") == objective_value
+    )
+    st.markdown("#### Proposed investigation plan")
+    st.caption("Plan ID: " + _clean(getattr(plan, "plan_id", "")))
+    for index, step in enumerate(getattr(plan, "steps", ()), start=1):
+        st.markdown(f"**{index}. {_clean(getattr(step, 'title', 'Step'))}**")
+        st.caption(_clean(getattr(step, "step_id", "")))
+
+    if not plan_matches_objective:
+        st.warning(
+            "The objective has changed since this plan was prepared. "
+            "Prepare a new plan before running the investigation."
+        )
+
+    run_clicked = st.button(
+        "Run approved investigation plan",
+        key=f"gac2_run_{task_id}",
+        type="primary",
+        disabled=not plan_matches_objective or proposal is not None,
+    )
+
+    if run_clicked:
+        step_results = []
+        total_steps = len(plan.steps)
+        overall_started = monotonic()
+        progress = st.progress(0)
+        status = st.status(
+            f"Advanced governed investigation — {total_steps} approved steps",
+            expanded=True,
+        )
+
+        for index, step in enumerate(plan.steps, start=1):
+            status.update(
+                label=f"Step {index} of {total_steps} — {step.title}",
+                state="running",
+                expanded=True,
+            )
+            status.write(
+                "Running the approved step against governed matter evidence. "
+                "No professional state is changed while this runs."
+            )
+            step_started = monotonic()
+            try:
+                result = _run_question(case_id, documents, step.question)
+            except Exception as exc:
+                elapsed = monotonic() - step_started
+                status.update(
+                    label=f"Step {index} of {total_steps} failed after {elapsed:.1f}s.",
+                    state="error",
+                    expanded=True,
+                )
+                st.error(
+                    "The advanced governed investigation stopped. "
+                    "No proposed task work was created."
+                )
+                st.caption(f"{type(exc).__name__}: {exc}")
+                return
+
+            elapsed = monotonic() - step_started
+            if not isinstance(result, dict):
+                status.update(
+                    label=f"Step {index} of {total_steps} returned an invalid result.",
+                    state="error",
+                    expanded=True,
+                )
+                st.error(
+                    "The advanced governed investigation returned an invalid step result."
+                )
+                return
+
+            result = dict(result)
+            result["gac2_elapsed_seconds"] = round(elapsed, 3)
+            analytical_failure = _analytical_failure_reason(result)
+            if analytical_failure is not None:
+                status.update(
+                    label=f"Step {index} of {total_steps} failed analytical validation.",
+                    state="error",
+                    expanded=True,
+                )
+                st.error(
+                    "A GAC2 step failed governed analytical validation. "
+                    "No proposed task work was created."
+                )
+                st.caption(analytical_failure)
+                return
+
+            step_results.append(result)
+            progress.progress(index / total_steps)
+            status.write(
+                f"Step {index} of {total_steps} completed in {elapsed:.1f} seconds."
+            )
+
+        total_elapsed = monotonic() - overall_started
+
+        try:
+            combined = combine_governed_agentic_investigation_v2_results(
+                plan=plan,
+                step_results=step_results,
+            )
+            combined["gac2_total_elapsed_seconds"] = round(total_elapsed, 3)
+
+            access = CaseRepository().require_access(
+                current_user_identity(),
+                case_id,
+            )
+            receipt = append_governed_agentic_investigation_v2_receipt(
+                case_id=case_id,
+                access=access,
+                task_id=task_id,
+                plan=plan,
+                step_results=step_results,
+                proposed_result=combined,
+            )
+        except Exception as exc:
+            status.update(
+                label="Advanced investigation could not be sealed.",
+                state="error",
+                expanded=True,
+            )
+            st.error(
+                "The GAC2 investigation could not be sealed as an immutable "
+                "execution receipt. No task work was recorded."
+            )
+            st.caption(f"{type(exc).__name__}: {exc}")
+            return
+
+        status.update(
+            label=f"Advanced investigation complete in {total_elapsed:.1f} seconds",
+            state="complete",
+            expanded=False,
+        )
+        st.session_state[_GAC2_PROPOSAL_STATE_KEY] = {
+            "case_id": case_id,
+            "task_id": task_id,
+            "receipt_id": receipt.receipt_id,
+            "plan_id": plan.plan_id,
+            "question": (
+                "Advanced governed investigation for approved task: "
+                + _clean(getattr(selected_task, "title", "Task"))
+                + "\nObjective: "
+                + plan.objective
+            ),
+            "result": combined,
+        }
+        st.rerun()
+
+    if proposal is None:
+        return
+
+    result = proposal.get("result")
+    if not isinstance(result, dict):
+        _clear_gac2_proposal_state()
+        return
+
+    st.info(
+        "Advanced investigation complete. Review the proposal below. "
+        "It is not yet recorded task work."
+    )
+    _render_gac2_compact_proposal(result)
+
+    with st.expander(
+        "Full advanced governed analysis and source/page references",
+        expanded=False,
+    ):
+        _render_result(result, heading="Full proposed GAC2 work result")
+
+    st.caption("Execution receipt: " + _clean(proposal.get("receipt_id", "")))
+    st.markdown("#### Professional decision")
+    st.caption(
+        "Acceptance records this proposal through the existing task-work history only. "
+        "It does not complete the task, change Current Assessment, approve a draft, "
+        "or publish work product."
+    )
+
+    left, right = st.columns(2)
+    with left:
+        accept_clicked = st.button(
+            "Accept advanced investigation",
+            key=f"gac2_accept_{task_id}",
+            type="primary",
+            use_container_width=True,
+        )
+    with right:
+        reject_clicked = st.button(
+            "Reject advanced investigation",
+            key=f"gac2_reject_{task_id}",
+            use_container_width=True,
+        )
+
+    if accept_clicked:
+        receipt_id = _clean(proposal.get("receipt_id", ""))
+        try:
+            access = CaseRepository().require_access(
+                current_user_identity(),
+                case_id,
+            )
+            append_governed_agentic_investigation_v2_professional_decision(
+                case_id=case_id,
+                access=access,
+                task_id=task_id,
+                receipt_id=receipt_id,
+                decision=GovernedAgenticDecisionV2.ACCEPTED,
+                reviewer_reference=_gac1_reviewer_reference(),
+                reviewer_note="Accepted for conversion into recorded task work.",
+            )
+        except GovernedAgenticInvestigationV2Error as exc:
+            st.error("The GAC2 professional acceptance could not be recorded.")
+            st.caption(str(exc))
+            return
+
+        if _persist_task_work_result(
+            case_id=case_id,
+            task_id=task_id,
+            question=_clean(proposal.get("question", "Advanced governed investigation")),
+            result=result,
+        ):
+            _clear_gac2_proposal_state()
+            st.success(
+                "Advanced investigation accepted and recorded as task work. "
+                "Task status and Current Assessment were not changed."
+            )
+            st.rerun()
+        else:
+            st.warning(
+                "The investigation was professionally accepted, but ordinary task-work "
+                "persistence did not complete. The proposal remains available for retry."
+            )
+
+    if reject_clicked:
+        receipt_id = _clean(proposal.get("receipt_id", ""))
+        try:
+            access = CaseRepository().require_access(
+                current_user_identity(),
+                case_id,
+            )
+            append_governed_agentic_investigation_v2_professional_decision(
+                case_id=case_id,
+                access=access,
+                task_id=task_id,
+                receipt_id=receipt_id,
+                decision=GovernedAgenticDecisionV2.REJECTED,
+                reviewer_reference=_gac1_reviewer_reference(),
+                reviewer_note="Rejected; not recorded as task work.",
+            )
+        except GovernedAgenticInvestigationV2Error as exc:
+            st.error("The GAC2 rejection decision could not be recorded.")
+            st.caption(str(exc))
+            return
+
+        _clear_gac2_proposal_state()
+        st.success("Advanced investigation rejected. No task work was recorded.")
+        st.rerun()
+
+
 def _render_governed_agentic_investigation(
     *,
     case_id: str,
@@ -4937,11 +5356,21 @@ def _render_approved_task_execution(
         else ("Continue selected task" if continuing else "Work selected task")
     )
 
-    _render_governed_agentic_investigation(
+    _render_governed_agentic_investigation_v2(
         case_id=case_id,
         documents=documents,
         selected_task=selected_task,
     )
+
+    with st.expander(
+        "Legacy three-step governed investigation (GAC1)",
+        expanded=False,
+    ):
+        _render_governed_agentic_investigation(
+            case_id=case_id,
+            documents=documents,
+            selected_task=selected_task,
+        )
 
     if st.button(
         button_label,
