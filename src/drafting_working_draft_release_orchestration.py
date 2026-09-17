@@ -2,8 +2,8 @@
 
 This module adds no release state machine.
 
-It prepares a fresh exact WorkingDraft professional-review artifact, enforces the
-Drafting-specific NOT_AUTHORIZED approval prohibition, and delegates the actual
+It prepares a fresh exact WorkingDraft professional-review artifact, preserves
+Current Assessment authorization checks as professional-review metadata, and delegates the actual
 professional decision to the existing append-only ``work_product_release``
 state machine.
 
@@ -115,12 +115,7 @@ def assert_working_draft_release_decision_allowed(
     prepared_review: PreparedWorkingDraftProfessionalReview,
     decision: WorkProductReleaseDecision | str,
 ) -> WorkProductReleaseDecision:
-    """Apply Drafting-specific release policy before any release write.
-
-    ALIGNED and CAUTION remain professional-review states, not automatic release
-    decisions.  NOT_AUTHORIZED may be rejected but may never be approved for
-    reliance.
-    """
+    'Apply Drafting-specific release policy before any release write.\n\nALIGNED, CAUTION and NOT_AUTHORIZED remain professional-review states, not automatic release decisions. Current Assessment authorization checks remain visible review metadata and do not by themselves prevent internal professional reliance. Court or tribunal reliance remains a separate governed decision.'
 
     decision_value = _decision(
         decision
@@ -131,15 +126,10 @@ def assert_working_draft_release_decision_allowed(
             prepared_review,
     )
 
-    if (
-        decision_value
-        is WorkProductReleaseDecision.APPROVED_FOR_RELIANCE
-        and "NOT_AUTHORIZED" in results
-    ):
-        raise WorkingDraftProfessionalReleaseError(
-            "A WorkingDraft containing a NOT_AUTHORIZED statement "
-            "cannot be approved for reliance."
-        )
+    # R17/R5: Current Assessment NOT_AUTHORIZED remains professional-review
+    # metadata and does not by itself block internal professional reliance.
+    # Court/tribunal reliance and all other release guards remain separate.
+    pass
 
     return decision_value
 

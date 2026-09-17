@@ -282,7 +282,7 @@ def test_caution_can_reach_existing_approval_state_machine(
     )
 
 
-def test_not_authorized_cannot_be_approved_and_writes_nothing(
+def test_not_authorized_can_be_approved_for_internal_professional_reliance(
     monkeypatch,
     tmp_path,
 ):
@@ -296,29 +296,30 @@ def test_not_authorized_cannot_be_approved_and_writes_nothing(
         value,
     )
 
-    with pytest.raises(
-        orchestration.WorkingDraftProfessionalReleaseError,
-        match="NOT_AUTHORIZED",
-    ):
-        (
-            orchestration
-            .record_working_draft_professional_release(
-                draft=
-                    object(),
-                authority=
-                    object(),
-                **approval_values(
-                    root=tmp_path,
-                ),
-            )
+    result = (
+        orchestration
+        .record_working_draft_professional_release(
+            draft=
+                object(),
+            authority=
+                object(),
+            **approval_values(
+                root=tmp_path,
+            ),
         )
+    )
 
     assert (
-        wpr.load_work_product_release_events(
-            CASE_ID,
-            root=tmp_path,
-        )
-        == ()
+        result.release_projection.state
+        is wpr.WorkProductReleaseState.APPROVED_FOR_RELIANCE
+    )
+    assert (
+        result.event.decision
+        is wpr.WorkProductReleaseDecision.APPROVED_FOR_RELIANCE
+    )
+    assert (
+        result.release_projection.court_or_tribunal_reliance
+        is False
     )
 
 
@@ -1389,7 +1390,7 @@ def test_blank_reviewed_target_still_has_exact_published_snapshot_but_no_release
     )
 
 
-def test_not_authorized_approval_publishes_review_snapshot_but_no_release_event_d1i4i4i4i3(
+def test_not_authorized_internal_approval_publishes_review_snapshot_and_release_event_d1i4i4i4i3(
     monkeypatch,
     tmp_path,
 ):
@@ -1402,22 +1403,18 @@ def test_not_authorized_approval_publishes_review_snapshot_but_no_release_event_
         value,
     )
 
-    with pytest.raises(
-        orchestration.WorkingDraftProfessionalReleaseError,
-        match="NOT_AUTHORIZED",
-    ):
-        (
-            orchestration
-            .record_working_draft_professional_release(
-                draft=
-                    object(),
-                authority=
-                    object(),
-                **approval_values(
-                    root=tmp_path,
-                ),
-            )
+    result = (
+        orchestration
+        .record_working_draft_professional_release(
+            draft=
+                object(),
+            authority=
+                object(),
+            **approval_values(
+                root=tmp_path,
+            ),
         )
+    )
 
     store = wpa.WorkProductArtifactStore(
         tmp_path
@@ -1433,12 +1430,25 @@ def test_not_authorized_approval_publishes_review_snapshot_but_no_release_event_
         )
     )
 
-    assert (
+    events = (
         wpr.load_work_product_release_events(
             CASE_ID,
             root=tmp_path,
         )
-        == ()
+    )
+
+    assert len(events) == 1
+    assert (
+        result.release_projection.state
+        is wpr.WorkProductReleaseState.APPROVED_FOR_RELIANCE
+    )
+    assert (
+        result.event.decision
+        is wpr.WorkProductReleaseDecision.APPROVED_FOR_RELIANCE
+    )
+    assert (
+        result.release_projection.court_or_tribunal_reliance
+        is False
     )
 
 
