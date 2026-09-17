@@ -251,6 +251,109 @@ def generation_evidence_keys(
     return permitted
 
 
+def _generation_evidence_keys_for_recorded_work(
+    *,
+    retrieval_receipt: object,
+    element: object,
+) -> tuple[str, ...]:
+    # Prefer explicit answer scope; otherwise use accepted GAC2 recorded-work reliance.
+    explicit_answer_scope = tuple(
+        _collection(
+            getattr(
+                retrieval_receipt,
+                "answer_scope_evidence_keys",
+                (),
+            ),
+            "retrieval_receipt.answer_scope_evidence_keys",
+        )
+    )
+
+    if explicit_answer_scope:
+        return generation_evidence_keys(
+            retrieval_receipt=retrieval_receipt,
+            element=element,
+        )
+
+    search_receipt = getattr(
+        retrieval_receipt,
+        "evidence_search_receipt",
+        None,
+    )
+
+    if not (
+        isinstance(search_receipt, dict)
+        and search_receipt.get("schema")
+        == "gac2-aggregate-evidence-search-receipt/v1"
+    ):
+        return generation_evidence_keys(
+            retrieval_receipt=retrieval_receipt,
+            element=element,
+        )
+
+    relied_keys = tuple(
+        _required(
+            key,
+            "retrieval_receipt.relied_evidence_key",
+        )
+        for key in _collection(
+            getattr(
+                retrieval_receipt,
+                "relied_evidence_keys",
+                (),
+            ),
+            "retrieval_receipt.relied_evidence_keys",
+        )
+    )
+
+    if not relied_keys:
+        raise DraftingEvidenceSourceError(
+            "GAC2 recorded work contains no relied evidence keys."
+        )
+
+    if len(relied_keys) != len(set(relied_keys)):
+        raise DraftingEvidenceSourceError(
+            "GAC2 recorded work contains duplicate relied evidence keys."
+        )
+
+    source_items = _collection(
+        getattr(
+            retrieval_receipt,
+            "sources",
+            (),
+        ),
+        "retrieval_receipt.sources",
+    )
+
+    source_keys: set[str] = set()
+    for source_item in source_items:
+        if isinstance(source_item, dict):
+            source_key = source_item.get("evidence_key")
+        else:
+            source_key = getattr(
+                source_item,
+                "evidence_key",
+                None,
+            )
+
+        if source_key is None:
+            continue
+
+        source_keys.add(
+            _required(
+                source_key,
+                "retrieval_receipt.sources.evidence_key",
+            )
+        )
+
+    missing_source_keys = set(relied_keys) - source_keys
+    if missing_source_keys:
+        raise DraftingEvidenceSourceError(
+            "GAC2 relied evidence is not fully represented in receipt sources."
+        )
+
+    return tuple(sorted(relied_keys))
+
+
 def resolve_exact_evidence_row(
     *,
     case_id: str,
@@ -722,7 +825,7 @@ def reconstruct_bounded_generation_evidence(
 ]:
     """Reconstruct exact R68-and-element-bounded immutable evidence."""
 
-    keys = generation_evidence_keys(
+    keys = _generation_evidence_keys_for_recorded_work(
         retrieval_receipt=retrieval_receipt,
         element=element,
     )
