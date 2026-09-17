@@ -437,7 +437,56 @@ def combine_governed_agentic_investigation_v2_results(
             reference_binding_status = "coverage_only"
         else:
             reference_binding_status = "unbound"
+
         new_ai_finding = bool(result.get("new_ai_finding"))
+        new_ai_binding = result.get("new_ai_finding_reference_binding")
+        if not isinstance(new_ai_binding, Mapping):
+            new_ai_binding = {}
+
+        explicit_citation_count = new_ai_binding.get("explicit_citation_count")
+        bound_citation_count = new_ai_binding.get("bound_citation_count")
+        unmatched_citation_count = new_ai_binding.get("unmatched_citation_count")
+        ambiguous_citation_count = new_ai_binding.get("ambiguous_citation_count")
+
+        explicit_citation_count = (
+            explicit_citation_count
+            if isinstance(explicit_citation_count, int) and explicit_citation_count >= 0
+            else 0
+        )
+        bound_citation_count = (
+            bound_citation_count
+            if isinstance(bound_citation_count, int) and bound_citation_count >= 0
+            else 0
+        )
+        unmatched_citation_count = (
+            unmatched_citation_count
+            if isinstance(unmatched_citation_count, int) and unmatched_citation_count >= 0
+            else 0
+        )
+        ambiguous_citation_count = (
+            ambiguous_citation_count
+            if isinstance(ambiguous_citation_count, int) and ambiguous_citation_count >= 0
+            else 0
+        )
+
+        citation_binding_complete = (
+            new_ai_binding.get("citation_binding_complete") is True
+            and explicit_citation_count > 0
+            and bound_citation_count == explicit_citation_count
+            and unmatched_citation_count == 0
+            and ambiguous_citation_count == 0
+        )
+
+        if new_ai_finding and new_ai_binding:
+            if not citation_binding_complete:
+                reference_binding_status = "citation_binding_incomplete"
+            elif not relied_set:
+                reference_binding_status = "citation_binding_incomplete"
+            elif not relied_set.issubset(bound_source_keys):
+                reference_binding_status = "relied_keys_without_source_metadata"
+            else:
+                reference_binding_status = "bound"
+
         elapsed = result.get("gac2_elapsed_seconds")
         step_summaries.append(
             {
@@ -450,6 +499,31 @@ def combine_governed_agentic_investigation_v2_results(
                 "new_ai_finding": new_ai_finding,
                 "reference_binding_status": reference_binding_status,
                 "relied_sources": relied_sources,
+                "citation_binding_complete": (
+                    citation_binding_complete if new_ai_finding and new_ai_binding else None
+                ),
+                "explicit_citation_count": (
+                    explicit_citation_count if new_ai_finding and new_ai_binding else None
+                ),
+                "bound_citation_count": (
+                    bound_citation_count if new_ai_finding and new_ai_binding else None
+                ),
+                "unmatched_citation_count": (
+                    unmatched_citation_count if new_ai_finding and new_ai_binding else None
+                ),
+                "ambiguous_citation_count": (
+                    ambiguous_citation_count if new_ai_finding and new_ai_binding else None
+                ),
+                "unmatched_citations": (
+                    list(new_ai_binding.get("unmatched_citations") or [])
+                    if new_ai_finding and new_ai_binding
+                    else []
+                ),
+                "ambiguous_citations": (
+                    list(new_ai_binding.get("ambiguous_citations") or [])
+                    if new_ai_finding and new_ai_binding
+                    else []
+                ),
                 "elapsed_seconds": (
                     float(elapsed) if isinstance(elapsed, (int, float)) else None
                 ),

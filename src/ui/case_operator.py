@@ -4521,6 +4521,7 @@ def _render_gac2_reference_binding_audit(result: dict[str, Any]) -> bool:
         if not isinstance(item, dict):
             blocked.append("unknown-step")
             continue
+
         step_id = _clean(item.get("step_id", "unknown-step")) or "unknown-step"
         title = _clean(item.get("title", "Investigation step")) or "Investigation step"
         status = _clean(item.get("reference_binding_status", ""))
@@ -4528,8 +4529,23 @@ def _render_gac2_reference_binding_audit(result: dict[str, Any]) -> bool:
         if not isinstance(relied_sources, list):
             relied_sources = []
 
+        new_ai = item.get("new_ai_finding") is True
+        citation_complete = item.get("citation_binding_complete") is True
+        explicit_count = item.get("explicit_citation_count")
+        bound_count = item.get("bound_citation_count")
+        unmatched_count = item.get("unmatched_citation_count")
+        ambiguous_count = item.get("ambiguous_citation_count")
+
         if status == "bound" and relied_sources:
             with st.expander(f"{title} — exact relied sources", expanded=False):
+                if new_ai:
+                    st.caption(
+                        "Citation completeness: "
+                        f"{bound_count or 0}/{explicit_count or 0} explicit "
+                        "source/page coordinate(s) exactly bound; "
+                        f"{unmatched_count or 0} unmatched; "
+                        f"{ambiguous_count or 0} ambiguous."
+                    )
                 seen = set()
                 for source in relied_sources:
                     label = _gac2_source_page_label(source)
@@ -4544,11 +4560,44 @@ def _render_gac2_reference_binding_audit(result: dict[str, Any]) -> bool:
         else:
             blocked.append(step_id)
             with st.expander(f"{title} — reference binding incomplete", expanded=True):
-                st.error(
-                    "This step does not have an exact relied-evidence source/page binding. "
-                    "Any inline document/page references in its narrative must be treated "
-                    "as unverified for professional reliance."
-                )
+                if new_ai:
+                    st.error(
+                        "Not every explicit source/page citation in this New AI Finding "
+                        "is exactly bound to governed evidence. Professional reliance is "
+                        "blocked until all cited coordinates resolve uniquely."
+                    )
+                    st.caption(
+                        "Citation completeness: "
+                        f"{bound_count or 0}/{explicit_count or 0} explicit "
+                        "source/page coordinate(s) exactly bound; "
+                        f"{unmatched_count or 0} unmatched; "
+                        f"{ambiguous_count or 0} ambiguous."
+                    )
+
+                    unmatched = item.get("unmatched_citations")
+                    if isinstance(unmatched, list) and unmatched:
+                        st.markdown("**Unmatched citation coordinates**")
+                        for citation in unmatched[:20]:
+                            if isinstance(citation, dict):
+                                label = _clean(citation.get("label", "source"))
+                                page = citation.get("page")
+                                st.write(f"- {label} — p.{page}")
+
+                    ambiguous = item.get("ambiguous_citations")
+                    if isinstance(ambiguous, list) and ambiguous:
+                        st.markdown("**Ambiguous citation coordinates**")
+                        for citation in ambiguous[:20]:
+                            if isinstance(citation, dict):
+                                label = _clean(citation.get("label", "source"))
+                                page = citation.get("page")
+                                st.write(f"- {label} — p.{page}")
+                else:
+                    st.error(
+                        "This step does not have an exact relied-evidence source/page binding. "
+                        "Any inline document/page references in its narrative must be treated "
+                        "as unverified for professional reliance."
+                    )
+
                 source_count = item.get("source_count")
                 if isinstance(source_count, int):
                     st.caption(
@@ -4563,13 +4612,15 @@ def _render_gac2_reference_binding_audit(result: dict[str, Any]) -> bool:
 
     if blocked or not declared_complete or declared_blocked:
         st.error(
-            "Professional acceptance is blocked until every GAC2 step has an exact "
-            "relied source/page binding. Rerun after the reference-binding gap is resolved."
+            "Professional acceptance is blocked until every GAC2 step has exact "
+            "relied source/page binding and every New AI Finding citation is "
+            "completely resolved."
         )
         return False
 
     st.success(
-        "Reference binding complete: every GAC2 step has exact relied source/page metadata."
+        "Reference binding complete: every GAC2 step has exact relied source/page "
+        "metadata, and every New AI Finding citation is completely resolved."
     )
     return True
 
