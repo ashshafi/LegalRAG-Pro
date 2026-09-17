@@ -2725,11 +2725,20 @@ def _render_working_draft_professional_review(
         in evaluations
     )
 
+    _internal_professional_reliance_ready = (
+        bool(factual_basis_reviewed)
+        and bool(legal_authorities_reviewed)
+        and bool(professional_judgment_completed)
+        and int(unverified_authorities_remaining) == 0
+        and not bool(court_or_tribunal_reliance)
+    )
+    st.caption(
+        "Internal professional approval records a separate work-product decision. "
+        "It does not change, promote or replace the Current Assessment."
+    )
     if has_not_authorized:
         st.error(
-            "Approval for reliance is unavailable because at least one statement "
-            "goes beyond what the current case assessment presently supports. "
-            "You may reject the wording."
+            'One or more statements go beyond what the Current Assessment presently supports. That remains a material professional-review warning, but it does not by itself prevent approval for internal professional reliance. Internal approval does not change or promote the Current Assessment. Court or tribunal reliance remains a separate governed decision.'
         )
 
     try:
@@ -2806,9 +2815,9 @@ def _render_working_draft_professional_review(
 
         approve_clicked = (
             st.form_submit_button(
-                "Approve for reliance",
+                'Approve for internal professional reliance',
                 type="primary",
-                disabled=has_not_authorized,
+                disabled=not _internal_professional_reliance_ready,
             )
         )
         reject_clicked = (
