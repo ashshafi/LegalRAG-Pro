@@ -1280,6 +1280,28 @@ def _generation_question(
     )
 
 
+
+
+def _recorded_work_generation_question(*, base_question: str, progress: TaskWorkProgress) -> str:
+    recorded_work = _required_text(
+        getattr(progress, "answer", None),
+        "progress.answer",
+    )
+    return (
+        _required_text(base_question, "base_question")
+        + "\n\nACCEPTED RECORDED TASK WORK TO DRAFT FROM:\n"
+        + recorded_work
+        + "\n\nDRAFTING PRIORITIES FOR RECORDED WORK:\n"
+        + "- Treat the recorded task work as analytical guidance, not as evidence. "
+        + "Every factual proposition must still be supported by the permitted immutable evidence.\n"
+        + "- Lead with the task-specific contemporaneous evidence and the material findings identified in the recorded work.\n"
+        + "- Preserve qualifications, adverse evidence, uncertainty and unresolved evidential gaps.\n"
+        + "- Where timing is material, distinguish evidence before, at and after the relevant event or decision date.\n"
+        + "- Do not turn an advertisement, possibility, request or proposal into a finding of actual availability, suitability, feasibility or acceptance without supporting evidence.\n"
+        + "- Use older historical material as secondary context where relevant; do not let it displace stronger contemporaneous evidence central to the recorded task work.\n"
+        + "- Identify the further evidence needed to resolve material gaps. "
+        + "Do not strengthen the Current Assessment or state a conclusion beyond the evidence."
+    )
 def generate_working_draft_candidate(
     *,
     client: Any,
@@ -1364,6 +1386,10 @@ def generate_working_draft_candidate(
     question = _generation_question(
         task=task,
         element=element,
+    )
+    question = _recorded_work_generation_question(
+        base_question=question,
+        progress=progress,
     )
 
     output_schema = (
