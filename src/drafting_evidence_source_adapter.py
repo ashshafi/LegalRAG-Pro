@@ -127,6 +127,8 @@ def generation_evidence_keys(
         )
     )
 
+    statement_bound_to_selected_element = ()
+
     if not answer_scope:
         statement_bindings = _collection(
             getattr(
@@ -137,31 +139,60 @@ def generation_evidence_keys(
             "retrieval_receipt.answer_statement_bindings",
         )
 
+        selected_element_id = str(
+            getattr(element, "element_id", "") or ""
+        ).strip()
         derived_answer_scope = []
-        for binding in statement_bindings:
-            binding_keys = _collection(
-                getattr(
-                    binding,
-                    "evidence_keys",
-                    (),
-                ),
-                "retrieval_receipt.answer_statement_bindings.evidence_keys",
-            )
-            for key in binding_keys:
-                derived_answer_scope.append(
-                    _required(
-                        key,
-                        "retrieval_receipt.answer_statement_bindings.evidence_key",
-                    )
-                )
+        derived_element_bound_scope = []
 
-        answer_scope = tuple(
-            sorted(
-                set(
-                    derived_answer_scope
+        for binding in statement_bindings:
+            if isinstance(binding, dict):
+                raw_binding_keys = binding.get("evidence_keys", ())
+                raw_source_refs = binding.get("source_proposition_refs", ())
+            else:
+                raw_binding_keys = getattr(binding, "evidence_keys", ())
+                raw_source_refs = getattr(binding, "source_proposition_refs", ())
+
+            binding_keys = tuple(
+                _required(
+                    key,
+                    "retrieval_receipt.answer_statement_bindings.evidence_key",
+                )
+                for key in _collection(
+                    raw_binding_keys,
+                    "retrieval_receipt.answer_statement_bindings.evidence_keys",
                 )
             )
+            derived_answer_scope.extend(binding_keys)
+
+            source_refs = _collection(
+                raw_source_refs,
+                "retrieval_receipt.answer_statement_bindings.source_proposition_refs",
+            )
+
+            if selected_element_id and source_refs:
+                for source_ref in source_refs:
+                    if isinstance(source_ref, dict):
+                        ref_element_id = str(
+                            source_ref.get("element_id", "") or ""
+                        ).strip()
+                    else:
+                        ref_element_id = str(
+                            getattr(source_ref, "element_id", "") or ""
+                        ).strip()
+
+                    if ref_element_id == selected_element_id:
+                        derived_element_bound_scope.extend(binding_keys)
+                        break
+
+        statement_bound_to_selected_element = tuple(
+            sorted(set(derived_element_bound_scope))
         )
+
+        if statement_bound_to_selected_element:
+            answer_scope = statement_bound_to_selected_element
+        else:
+            answer_scope = tuple(sorted(set(derived_answer_scope)))
 
         if not answer_scope:
             raise DraftingEvidenceSourceError(
@@ -203,9 +234,14 @@ def generation_evidence_keys(
             "governed element contains no evidence keys."
         )
 
-    permitted = tuple(
-        sorted(set(answer_scope) & governed_element_keys)
-    )
+    if statement_bound_to_selected_element:
+        permitted = tuple(
+            sorted(set(statement_bound_to_selected_element))
+        )
+    else:
+        permitted = tuple(
+            sorted(set(answer_scope) & governed_element_keys)
+        )
 
     if not permitted:
         raise DraftingEvidenceSourceError(
