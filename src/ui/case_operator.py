@@ -86,6 +86,7 @@ from task_work_authority_scope import (
     record_task_work_authority_scope,
     resolve_task_work_authority_scope,
 )
+from case_operator_custom_task import render_custom_governed_task_initiation
 from ui.solicitor_workflow import open_drafts_for_task_work
 from governed_agentic_investigation import (
     GovernedAgenticDecision,
@@ -5348,6 +5349,9 @@ def _render_approved_task_execution(
         "recorded in separate append-only task-work history; task status and the Current "
         "Assessment remain unchanged unless you separately approve a status change."
     )
+
+    with st.expander("Start a custom governed task", expanded=False):
+        render_custom_governed_task_initiation(case_id=case_id)
 
     if not open_tasks:
         st.info("There are no open or in-progress matter tasks to work.")
