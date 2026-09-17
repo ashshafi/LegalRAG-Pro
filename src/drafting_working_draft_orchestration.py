@@ -129,6 +129,7 @@ def _validate_candidate_bridge(
     scope: TaskWorkAuthorityScope,
     authority: object,
 ) -> object:
+    from drafting_evidence_source_adapter import _generation_evidence_keys_for_recorded_work
     if not isinstance(
         candidate,
         WorkingDraftGenerationCandidate,
@@ -313,7 +314,7 @@ def _validate_candidate_bridge(
 
     try:
         expected_evidence_keys = (
-            generation_evidence_keys(
+            _generation_evidence_keys_for_recorded_work(
                 retrieval_receipt=
                     retrieval_receipt,
                 element=element,
