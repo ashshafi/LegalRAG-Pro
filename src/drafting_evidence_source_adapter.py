@@ -128,9 +128,45 @@ def generation_evidence_keys(
     )
 
     if not answer_scope:
-        raise DraftingEvidenceSourceError(
-            "R68 answer scope contains no evidence keys."
+        statement_bindings = _collection(
+            getattr(
+                retrieval_receipt,
+                "answer_statement_bindings",
+                (),
+            ),
+            "retrieval_receipt.answer_statement_bindings",
         )
+
+        derived_answer_scope = []
+        for binding in statement_bindings:
+            binding_keys = _collection(
+                getattr(
+                    binding,
+                    "evidence_keys",
+                    (),
+                ),
+                "retrieval_receipt.answer_statement_bindings.evidence_keys",
+            )
+            for key in binding_keys:
+                derived_answer_scope.append(
+                    _required(
+                        key,
+                        "retrieval_receipt.answer_statement_bindings.evidence_key",
+                    )
+                )
+
+        answer_scope = tuple(
+            sorted(
+                set(
+                    derived_answer_scope
+                )
+            )
+        )
+
+        if not answer_scope:
+            raise DraftingEvidenceSourceError(
+                "R68 answer scope contains no evidence keys."
+            )
 
     if len(answer_scope) != len(set(answer_scope)):
         raise DraftingEvidenceSourceError(
