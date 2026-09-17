@@ -570,12 +570,93 @@ def _validate_original_r68_coverage(
     }
 
 
+_GAC2_AGGREGATE_EVIDENCE_SEARCH_RECEIPT_SCHEMA = "gac2-aggregate-evidence-search-receipt/v1"
+
+
+def _validate_drafting_search_coverage(
+    retrieval_receipt: TaskWorkRetrievalReceipt,
+) -> dict[str, Any]:
+    payload = retrieval_receipt.evidence_search_receipt
+
+    if not (
+        isinstance(payload, dict)
+        and payload.get("schema")
+        == _GAC2_AGGREGATE_EVIDENCE_SEARCH_RECEIPT_SCHEMA
+    ):
+        return _validate_original_r68_coverage(
+            retrieval_receipt
+        )
+
+    if set(payload) != {
+        "schema",
+        "step_receipts",
+    }:
+        raise DraftingWorkingDraftGenerationError(
+            "GAC2 aggregate evidence-search receipt contains "
+            "unexpected fields."
+        )
+
+    step_payloads = payload.get("step_receipts")
+
+    if not isinstance(step_payloads, list) or not step_payloads:
+        raise DraftingWorkingDraftGenerationError(
+            "GAC2 aggregate evidence-search receipt has no "
+            "step receipts."
+        )
+
+    validated_steps: list[dict[str, Any]] = []
+
+    for step_index, step_payload in enumerate(
+        step_payloads,
+        start=1,
+    ):
+        if not isinstance(step_payload, dict):
+            raise DraftingWorkingDraftGenerationError(
+                f"GAC2 aggregate evidence-search receipt step "
+                f"{step_index} is invalid."
+            )
+
+        if (
+            step_payload.get("schema")
+            == _GAC2_AGGREGATE_EVIDENCE_SEARCH_RECEIPT_SCHEMA
+        ):
+            raise DraftingWorkingDraftGenerationError(
+                f"GAC2 aggregate evidence-search receipt step "
+                f"{step_index} is nested."
+            )
+
+        step_receipt = type(
+            "_DraftingAggregateEvidenceSearchStepReceipt",
+            (),
+            {},
+        )()
+        step_receipt.evidence_search_receipt = step_payload
+
+        try:
+            validated_step = _validate_original_r68_coverage(
+                step_receipt
+            )
+        except DraftingWorkingDraftGenerationError as exc:
+            raise DraftingWorkingDraftGenerationError(
+                f"GAC2 aggregate evidence-search receipt step "
+                f"{step_index} failed validation."
+            ) from exc
+
+        validated_steps.append(validated_step)
+
+    return {
+        "schema":
+            _GAC2_AGGREGATE_EVIDENCE_SEARCH_RECEIPT_SCHEMA,
+        "step_receipts": tuple(validated_steps),
+    }
+
+
 def _drafting_coverage_evidence(
     *,
     retrieval_receipt: TaskWorkRetrievalReceipt,
     rows: tuple[DraftingEvidenceRow, ...],
 ) -> _DraftingEvidence:
-    _validate_original_r68_coverage(
+    _validate_drafting_search_coverage(
         retrieval_receipt
     )
 
