@@ -94,12 +94,16 @@ def bind_source_comparison_relied_evidence_keys(
     answer: str,
     sources: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """Bind every explicit page-bearing citation to exact governed evidence.
+    """Bind every explicit page-bearing citation to a canonical governed source/page.
 
-    Search coverage is never treated as reliance. A New AI Finding is citation
-    complete only when every explicit document/page coordinate used in the
-    answer resolves uniquely to one governed evidence key. Missing or ambiguous
-    coordinates remain unbound.
+    Search coverage is never treated as reliance. Multiple governed evidence
+    rows may legitimately represent chunks from the same document page; those
+    rows are one source/page identity, not competing citation targets.
+
+    A New AI Finding is citation-complete only when every explicit citation
+    coordinate resolves to exactly one canonical document/page identity.
+    Missing coordinates and coordinates resolving to more than one canonical
+    document/page remain fail-closed.
     """
 
     import re
@@ -113,6 +117,10 @@ def bind_source_comparison_relied_evidence_keys(
             .replace("\u2212", "-")
         )
         return re.sub(r"\s+", " ", result).strip().lower()
+
+    def _canonical_file_identity(filename: str) -> str:
+        stem = re.sub(r"(?i)\.pdf$", "", filename).strip()
+        return _normalise(stem)
 
     def _source_key(source: dict[str, Any]) -> str | None:
         for name in ("evidence_key", "source_evidence_key"):
@@ -148,20 +156,24 @@ def bind_source_comparison_relied_evidence_keys(
             values.append(appendix.group(1))
         return tuple(dict.fromkeys(item for item in values if item))
 
-    if not isinstance(answer, str) or not answer.strip() or not isinstance(sources, list):
+    def _empty() -> dict[str, Any]:
         return {
-            "schema": "new-ai-finding-citation-completeness/v2",
+            "schema": "new-ai-finding-canonical-source-page-binding/v3",
             "status": "unbound",
             "citation_binding_complete": False,
             "explicit_citation_count": 0,
             "bound_citation_count": 0,
             "unmatched_citation_count": 0,
             "ambiguous_citation_count": 0,
+            "canonical_source_page_count": 0,
             "relied_evidence_keys": [],
             "matched_citations": [],
             "unmatched_citations": [],
             "ambiguous_citations": [],
         }
+
+    if not isinstance(answer, str) or not answer.strip() or not isinstance(sources, list):
+        return _empty()
 
     source_rows: list[dict[str, Any]] = []
     for source in sources:
@@ -172,11 +184,14 @@ def bind_source_comparison_relied_evidence_keys(
         page = _source_page(source)
         if not evidence_key or not filename or page is None:
             continue
+        canonical_file = _canonical_file_identity(filename)
         source_rows.append(
             {
                 "evidence_key": evidence_key,
                 "file": filename,
+                "canonical_file": canonical_file,
                 "page": page,
+                "canonical_source_page_id": f"{canonical_file}|p.{page}",
                 "aliases": _aliases(filename),
             }
         )
@@ -196,7 +211,6 @@ def bind_source_comparison_relied_evidence_keys(
         prefix = normalised_answer[prefix_start : page_match.start()]
         label_hits: list[tuple[int, int, int, int, str]] = []
 
-        # Known governed-source aliases.
         for row in source_rows:
             for alias in row["aliases"]:
                 pos = prefix.rfind(alias)
@@ -205,15 +219,12 @@ def bind_source_comparison_relied_evidence_keys(
                         (
                             prefix_start + pos,
                             prefix_start + pos + len(alias),
-                            1,  # known-source label wins ties
+                            1,
                             len(alias),
                             alias,
                         )
                     )
 
-        # Generic PDF label nearest the page marker. This is deliberately
-        # retained even when it is not in the governed source list so the
-        # citation is counted as unmatched rather than silently ignored.
         pdf_end = prefix.rfind(".pdf")
         if pdf_end >= 0:
             suffix = prefix[pdf_end + 4 :]
@@ -232,9 +243,8 @@ def bind_source_comparison_relied_evidence_keys(
                     generic = _normalise(generic)
                     label_hits.append(
                         (
-                            prefix_start + (
-                                boundary + width if boundary >= 0 else 0
-                            ),
+                            prefix_start
+                            + (boundary + width if boundary >= 0 else 0),
                             prefix_start + pdf_end,
                             0,
                             len(generic),
@@ -242,7 +252,6 @@ def bind_source_comparison_relied_evidence_keys(
                         )
                     )
 
-        # Generic short Appendix coordinate.
         for appendix_match in re.finditer(
             r"(appendix\s+[a-z0-9]+)"
             r"(?:\s*-[^,;\n]{0,150})?\s*[,;:]?\s*$",
@@ -260,12 +269,8 @@ def bind_source_comparison_relied_evidence_keys(
             )
 
         if not label_hits:
-            # A bare page number is not enough to identify a source citation.
             continue
 
-        # The citation label nearest to the page marker wins. If a generic
-        # label and an exact governed alias end at the same place, prefer the
-        # governed alias; then prefer the longer label.
         chosen = max(label_hits, key=lambda item: (item[1], item[2], item[3]))
         label = chosen[4]
 
@@ -289,29 +294,59 @@ def bind_source_comparison_relied_evidence_keys(
             if row["page"] == citation["page"]
             and citation["label"] in row["aliases"]
         ]
-        keys = sorted({str(row["evidence_key"]) for row in candidates})
 
-        if len(keys) == 1:
-            chosen = sorted(
-                (row for row in candidates if row["evidence_key"] == keys[0]),
-                key=lambda row: (str(row["file"]).lower(), str(row["evidence_key"])),
-            )[0]
+        by_source_page: dict[str, list[dict[str, Any]]] = {}
+        for row in candidates:
+            by_source_page.setdefault(
+                str(row["canonical_source_page_id"]),
+                [],
+            ).append(row)
+
+        if len(by_source_page) == 1:
+            canonical_id, page_rows = next(iter(by_source_page.items()))
+            page_rows = sorted(
+                page_rows,
+                key=lambda row: (
+                    str(row["file"]).lower(),
+                    str(row["evidence_key"]),
+                ),
+            )
+            evidence_keys = sorted(
+                {str(row["evidence_key"]) for row in page_rows}
+            )
+            chosen = page_rows[0]
             matched.append(
                 {
                     "label": citation["label"],
                     "page": citation["page"],
                     "position": citation["position"],
                     "file": chosen["file"],
-                    "evidence_key": chosen["evidence_key"],
+                    "canonical_source_page_id": canonical_id,
+                    "evidence_key": evidence_keys[0],
+                    "evidence_keys": evidence_keys,
                 }
             )
-        elif len(keys) > 1:
+        elif len(by_source_page) > 1:
+            candidate_pages = []
+            all_keys: list[str] = []
+            for canonical_id, page_rows in sorted(by_source_page.items()):
+                files = sorted({str(row["file"]) for row in page_rows})
+                keys = sorted({str(row["evidence_key"]) for row in page_rows})
+                all_keys.extend(keys)
+                candidate_pages.append(
+                    {
+                        "canonical_source_page_id": canonical_id,
+                        "files": files,
+                        "evidence_keys": keys,
+                    }
+                )
             ambiguous.append(
                 {
                     "label": citation["label"],
                     "page": citation["page"],
                     "position": citation["position"],
-                    "candidate_evidence_keys": keys,
+                    "candidate_source_pages": candidate_pages,
+                    "candidate_evidence_keys": sorted(set(all_keys)),
                 }
             )
         else:
@@ -320,21 +355,40 @@ def bind_source_comparison_relied_evidence_keys(
     matched.sort(
         key=lambda row: (
             int(row["position"]),
-            str(row["file"]).lower(),
+            str(row["canonical_source_page_id"]),
             int(row["page"]),
-            str(row["evidence_key"]),
         )
     )
-    unmatched.sort(key=lambda row: (int(row["position"]), str(row["label"]), int(row["page"])))
-    ambiguous.sort(key=lambda row: (int(row["position"]), str(row["label"]), int(row["page"])))
+    unmatched.sort(
+        key=lambda row: (
+            int(row["position"]),
+            str(row["label"]),
+            int(row["page"]),
+        )
+    )
+    ambiguous.sort(
+        key=lambda row: (
+            int(row["position"]),
+            str(row["label"]),
+            int(row["page"]),
+        )
+    )
 
     relied: list[str] = []
-    seen: set[str] = set()
+    seen_keys: set[str] = set()
+    canonical_pages: list[str] = []
+    seen_pages: set[str] = set()
+
     for row in matched:
-        key = str(row["evidence_key"])
-        if key not in seen:
-            seen.add(key)
-            relied.append(key)
+        canonical_id = str(row["canonical_source_page_id"])
+        if canonical_id not in seen_pages:
+            seen_pages.add(canonical_id)
+            canonical_pages.append(canonical_id)
+        for key in row["evidence_keys"]:
+            key = str(key)
+            if key not in seen_keys:
+                seen_keys.add(key)
+                relied.append(key)
 
     explicit_count = len(citation_specs)
     bound_count = len(matched)
@@ -355,19 +409,22 @@ def bind_source_comparison_relied_evidence_keys(
         status = "unbound"
 
     return {
-        "schema": "new-ai-finding-citation-completeness/v2",
+        "schema": "new-ai-finding-canonical-source-page-binding/v3",
         "status": status,
         "citation_binding_complete": citation_binding_complete,
         "explicit_citation_count": explicit_count,
         "bound_citation_count": bound_count,
         "unmatched_citation_count": unmatched_count,
         "ambiguous_citation_count": ambiguous_count,
+        "canonical_source_page_count": len(canonical_pages),
         "relied_evidence_keys": relied,
         "matched_citations": [
             {
                 "file": row["file"],
                 "page": row["page"],
+                "canonical_source_page_id": row["canonical_source_page_id"],
                 "evidence_key": row["evidence_key"],
+                "evidence_keys": list(row["evidence_keys"]),
             }
             for row in matched
         ],
@@ -379,7 +436,8 @@ def bind_source_comparison_relied_evidence_keys(
             {
                 "label": row["label"],
                 "page": row["page"],
-                "candidate_evidence_keys": row["candidate_evidence_keys"],
+                "candidate_source_pages": list(row["candidate_source_pages"]),
+                "candidate_evidence_keys": list(row["candidate_evidence_keys"]),
             }
             for row in ambiguous
         ],
