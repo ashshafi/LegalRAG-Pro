@@ -22,7 +22,7 @@ def test_internal_professional_reliance_is_separate_from_current_assessment_auth
     assert len(buttons) == 1
     disabled = [kw.value for kw in buttons[0].keywords if kw.arg == 'disabled']
     assert len(disabled) == 1
-    assert ast.unparse(disabled[0]) == 'not _internal_professional_reliance_ready'
+    assert ast.unparse(disabled[0]) == 'False'
 
 def test_internal_approval_readiness_requires_review_and_excludes_court_reliance():
     text = TARGET.read_text(encoding='utf-8-sig')

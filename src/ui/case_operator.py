@@ -2817,7 +2817,7 @@ def _render_working_draft_professional_review(
             st.form_submit_button(
                 'Approve for internal professional reliance',
                 type="primary",
-                disabled=not _internal_professional_reliance_ready,
+                disabled=False,
             )
         )
         reject_clicked = (
@@ -2841,6 +2841,15 @@ def _render_working_draft_professional_review(
         return
 
     if approve_clicked:
+        # FORM_SUBMIT_READINESS_GUARD_R4
+        if not _internal_professional_reliance_ready:
+            st.error(
+                "Internal professional approval was not recorded. "
+                "Review the factual basis and legal authorities, apply professional "
+                "judgment, ensure unverified legal authorities are zero, and leave "
+                "court or tribunal reliance unticked."
+            )
+            return
         if not factual_basis_reviewed:
             st.error(
                 "Confirm that you have reviewed the factual basis before approval."
