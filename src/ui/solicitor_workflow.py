@@ -113,10 +113,9 @@ def open_drafts_for_task_work(case_id: str, task_id: str, progress_id: str) -> N
         "task_id": task_id,
         "progress_id": progress_id,
     }
-    # This is the existing Case Operator drafting selector key. Setting it here
-    # merely preselects the exact recorded-work identity when the reused governed
-    # drafting renderer opens in Drafts.
-    st.session_state["case_operator_drafting_progress_" + task_id] = progress_id
+    # The Case Operator caller has already instantiated and selected the drafting
+    # progress widget in this rerun. Do not mutate that widget-owned key here.
+    # The exact case/task/progress handoff is carried by _WC2_DRAFT_HANDOFF_KEY.
     route_solicitor_view("Drafts", case_id=case_id)
 
 
