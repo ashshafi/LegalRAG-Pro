@@ -11,6 +11,7 @@ import streamlit as st
 from ui.matter_overview import set_matter_overview_view
 
 from document_upload import DocumentUploadError, upload_case_pdf
+from ui.matter_source_import import show_matter_source_import
 
 LOGGER = logging.getLogger(__name__)
 
@@ -122,4 +123,5 @@ def show_sidebar(
     st.sidebar.caption("Matter navigation is in the solicitor bar above the working page.")
     if active_case_id is not None:
         st.sidebar.caption(f"{len(docs)} document(s) in this matter")
+    show_matter_source_import(active_case_id)
     return selected_documents, False
