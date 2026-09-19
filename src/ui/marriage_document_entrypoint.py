@@ -12,7 +12,9 @@ from marriage_document_live import (
     LiveMarriageDocumentError,
     build_live_marriage_document_workspace,
     discover_approved_marriage_candidate_bundles,
+    discover_optional_native_marriage_source_context,
     live_marriage_candidate_fingerprint,
+    live_marriage_review_fingerprint,
 )
 from ui.marriage_document_workspace import (
     show_marriage_document_workspace,
@@ -69,7 +71,24 @@ def show_marriage_document_entrypoint(
         )
         return
 
-    fingerprint = live_marriage_candidate_fingerprint(bundles)
+    try:
+        native_context = (
+            discover_optional_native_marriage_source_context(
+                bundles
+            )
+        )
+    except LiveMarriageDocumentError as exc:
+        st.error(
+            "The governed native marriage-document material could not "
+            "be loaded: "
+            + str(exc)
+        )
+        return
+
+    fingerprint = live_marriage_review_fingerprint(
+        bundles,
+        native_context=native_context,
+    )
 
     cached_case = st.session_state.get(_CACHE_CASE)
     cached_fingerprint = st.session_state.get(
@@ -93,12 +112,13 @@ def show_marriage_document_entrypoint(
             }
         )
         st.caption(
-            "Approved source: "
+            "Governed source: "
             + " / ".join(source_names)
         )
         st.write(
-            "LegalRAG will read the currently approved document "
-            "fragments and prepare the solicitor review."
+            "LegalRAG will read the approved reviewed fragments "
+            "and eligible governed native source text, when available, "
+            "and prepare the solicitor review."
         )
 
         generate = st.button(
@@ -120,6 +140,7 @@ def show_marriage_document_entrypoint(
                     bundles=bundles,
                     provider=provider,
                     model=_MODEL,
+                    native_context=native_context,
                 )
         except Exception as exc:
             st.error(

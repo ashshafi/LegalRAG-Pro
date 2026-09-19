@@ -28,6 +28,15 @@ from marriage_document_workspace import (
     MarriageDocumentWorkspace,
     build_marriage_document_workspace,
 )
+from marriage_document_source_native import (
+    SourceEvidenceNativePage,
+    build_source_evidence_native_workspace_bridge,
+    load_source_evidence_native_pages,
+)
+from source_evidence.store import (
+    SourceEvidenceStore,
+    SourceEvidenceStoreError,
+)
 
 
 class LiveMarriageDocumentError(RuntimeError):
@@ -41,6 +50,20 @@ class LiveMarriageCandidateBundle:
     binding: Any
     receipt: Any
     transcription_text: str
+
+
+@dataclass(frozen=True)
+class LiveMarriageNativeSourceContext:
+    store: Any
+    manifest: Any
+    pages: tuple[SourceEvidenceNativePage, ...]
+
+    @property
+    def page_numbers(self) -> tuple[int, ...]:
+        return tuple(
+            value.provenance.page_number
+            for value in self.pages
+        )
 
 
 def candidate_transcription_base(
@@ -261,6 +284,253 @@ def discover_approved_marriage_candidate_bundles(
     )
 
 
+def _bundle_source_identity(
+    bundles: Iterable[LiveMarriageCandidateBundle],
+):
+    material = tuple(bundles)
+    if not material:
+        return None
+
+    candidates = tuple(
+        value.candidate
+        for value in material
+    )
+
+    fields = (
+        "case_id",
+        "source_document_instance_id",
+        "source_snapshot_id",
+        "original_filename",
+        "original_blob_sha256",
+        "original_byte_length",
+    )
+    resolved = {}
+
+    for field in fields:
+        values = {
+            getattr(candidate, field)
+            for candidate in candidates
+        }
+        if len(values) != 1:
+            return None
+        resolved[field] = next(iter(values))
+
+    return resolved
+
+
+def _native_structure_is_supported(
+    pages: tuple[SourceEvidenceNativePage, ...],
+) -> bool:
+    by_page = {
+        value.provenance.page_number:
+            " ".join(value.text.casefold().split())
+        for value in pages
+    }
+
+    required = {
+        2: (
+            "name of the bridegroom",
+            "name of the bride",
+            "name of the witnesses to the marriage",
+            "date on which the marriage was",
+            "amount of dower",
+        ),
+        3: (
+            "person by whom the marriage was",
+            "date of registration of marriage",
+        ),
+        4: (
+            "arbitration council",
+        ),
+    }
+
+    for page_number, tokens in required.items():
+        text = by_page.get(page_number, "")
+        if not text:
+            return False
+        if any(token not in text for token in tokens):
+            return False
+
+    return True
+
+
+def discover_optional_native_marriage_source_context(
+    bundles: Iterable[LiveMarriageCandidateBundle],
+    *,
+    store: SourceEvidenceStore | None = None,
+) -> LiveMarriageNativeSourceContext | None:
+    material = tuple(bundles)
+    identity = _bundle_source_identity(material)
+    if identity is None:
+        return None
+
+    resolved_store = (
+        SourceEvidenceStore()
+        if store is None
+        else store
+    )
+
+    try:
+        manifest = resolved_store.load_document_manifest(
+            identity["case_id"],
+            identity["source_document_instance_id"],
+        )
+    except SourceEvidenceStoreError:
+        return None
+
+    identity_pairs = (
+        (
+            "source_document_instance_id",
+            manifest.source_document_instance_id,
+        ),
+        (
+            "source_snapshot_id",
+            manifest.source_snapshot_id,
+        ),
+        (
+            "original_filename",
+            manifest.original_filename,
+        ),
+        (
+            "original_blob_sha256",
+            manifest.original_blob_sha256,
+        ),
+        (
+            "original_byte_length",
+            manifest.original_byte_length,
+        ),
+    )
+
+    for field, manifest_value in identity_pairs:
+        if manifest_value != identity[field]:
+            raise LiveMarriageDocumentError(
+                "Governed native marriage source identity does not "
+                "match the approved candidate source."
+            )
+
+    by_page = {
+        int(page.page_number): page
+        for page in manifest.pages
+    }
+    required_pages = (2, 3, 4)
+
+    if any(page_number not in by_page for page_number in required_pages):
+        return None
+
+    for page_number in required_pages:
+        page = by_page[page_number]
+        method = (
+            page.extraction_method.value
+            if hasattr(page.extraction_method, "value")
+            else str(page.extraction_method)
+        )
+        if method != "pypdf_text":
+            return None
+        if int(page.page_text_byte_length) <= 0:
+            return None
+
+    try:
+        pages = load_source_evidence_native_pages(
+            store=resolved_store,
+            manifest=manifest,
+            page_numbers=required_pages,
+        )
+    except Exception as exc:
+        raise LiveMarriageDocumentError(
+            "Governed native marriage source failed integrity verification."
+        ) from exc
+
+    if not _native_structure_is_supported(pages):
+        return None
+
+    return LiveMarriageNativeSourceContext(
+        store=resolved_store,
+        manifest=manifest,
+        pages=pages,
+    )
+
+
+def _validate_native_context_for_bundles(
+    *,
+    bundles: tuple[LiveMarriageCandidateBundle, ...],
+    native_context: LiveMarriageNativeSourceContext,
+) -> None:
+    identity = _bundle_source_identity(bundles)
+    if identity is None:
+        raise LiveMarriageDocumentError(
+            "Native marriage enrichment requires one exact source identity."
+        )
+
+    manifest = native_context.manifest
+
+    checks = (
+        manifest.source_document_instance_id
+        == identity["source_document_instance_id"],
+        manifest.source_snapshot_id
+        == identity["source_snapshot_id"],
+        manifest.original_filename
+        == identity["original_filename"],
+        manifest.original_blob_sha256
+        == identity["original_blob_sha256"],
+        manifest.original_byte_length
+        == identity["original_byte_length"],
+    )
+    if not all(checks):
+        raise LiveMarriageDocumentError(
+            "Native marriage source context is stale or source-mismatched."
+        )
+
+    if native_context.page_numbers != (2, 3, 4):
+        raise LiveMarriageDocumentError(
+            "Native marriage source context has an unsupported page set."
+        )
+
+
+def live_marriage_review_fingerprint(
+    bundles: Iterable[LiveMarriageCandidateBundle],
+    *,
+    native_context: LiveMarriageNativeSourceContext | None = None,
+) -> str:
+    material = tuple(bundles)
+
+    payload = {
+        "candidate_fingerprint":
+            live_marriage_candidate_fingerprint(material),
+        "native_source": None,
+    }
+
+    if native_context is not None:
+        payload["native_source"] = {
+            "source_document_instance_id":
+                native_context.manifest.source_document_instance_id,
+            "source_snapshot_id":
+                native_context.manifest.source_snapshot_id,
+            "original_blob_sha256":
+                native_context.manifest.original_blob_sha256,
+            "pages": [
+                {
+                    "page_number":
+                        value.provenance.page_number,
+                    "page_text_sha256":
+                        value.provenance.page_text_sha256,
+                    "page_text_byte_length":
+                        value.provenance.page_text_byte_length,
+                    "extraction_method":
+                        value.provenance.extraction_method,
+                }
+                for value in native_context.pages
+            ],
+        }
+
+    canonical = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+    return hashlib.sha256(canonical).hexdigest()
+
+
 def live_marriage_candidate_fingerprint(
     bundles: Iterable[LiveMarriageCandidateBundle],
 ) -> str:
@@ -292,6 +562,7 @@ def build_live_marriage_document_workspace(
     bundles: Iterable[LiveMarriageCandidateBundle],
     provider: MarriageFactExtractionProvider,
     model: str,
+    native_context: LiveMarriageNativeSourceContext | None = None,
 ) -> MarriageDocumentWorkspace:
     material = tuple(bundles)
     if not material:
@@ -322,4 +593,22 @@ def build_live_marriage_document_workspace(
         )
         records.append(record)
 
-    return build_marriage_document_workspace(tuple(records))
+    workspace = build_marriage_document_workspace(
+        tuple(records)
+    )
+
+    if native_context is None:
+        return workspace
+
+    _validate_native_context_for_bundles(
+        bundles=material,
+        native_context=native_context,
+    )
+
+    bridged = build_source_evidence_native_workspace_bridge(
+        base_workspace=workspace,
+        store=native_context.store,
+        manifest=native_context.manifest,
+        page_numbers=native_context.page_numbers,
+    )
+    return bridged.workspace
