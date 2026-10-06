@@ -316,7 +316,7 @@ Address:
 6. the practical legal significance, expressed conservatively;
 7. what single focused investigation should happen next.
 
-Separate CACI employer action from Unum/insurer action where relevant.
+Use only names supported by the active matter's governed evidence or approved matter/task state. Never import names from another matter, demo, example, test fixture, prior session or background knowledge. Where employer/respondent and insurer/third-party actions are both evidenced, distinguish them explicitly.
 Distinguish recommendation, proposal, agreement and actual implementation.
 Cite material source documents and pages.
 Do not make a corpus-wide absence claim from a partial semantic search.
@@ -350,8 +350,7 @@ Related legal issue: {name}
 Carry out that investigation now using the governed matter evidence.
 Keep the solicitor-facing answer focused and normally under 1,200 words.
 Cite material source documents and pages. State important evidence that helps,
-weakens or qualifies the claimant's position. Distinguish CACI action from
-Unum/insurer action where relevant. Distinguish proposal or recommendation from
+weakens or qualifies the claimant's position. Use only names supported by the active matter's governed evidence or approved matter/task state. Never import names from another matter, demo, example, test fixture, prior session or background knowledge. Where employer/respondent and insurer/third-party actions are both evidenced, distinguish them explicitly. Distinguish proposal or recommendation from
 actual implementation. Do not silently change the Current Assessment. If the
 investigation produces a material new point, keep it provisional pending
 professional review.
@@ -675,7 +674,7 @@ Do not merely repeat the previous result. State:
 5. what remains unproved, unavailable or ambiguous;
 6. whether the approved task is now complete, should continue, or is blocked.
 
-Distinguish CACI/employer action from Unum/insurer action where relevant.
+Use only names supported by the active matter's governed evidence or approved matter/task state. Never import names from another matter, demo, example, test fixture, prior session or background knowledge. Where employer/respondent and insurer/third-party actions are both evidenced, distinguish them explicitly.
 Distinguish proposal, recommendation or discussion from actual implementation.
 Distinguish documented fact, party allegation, later recollection, inference
 and unknown. Do not infer corpus-wide absence from a partial semantic search.
@@ -875,7 +874,7 @@ Report:
 4. what remains unproved, unavailable or ambiguous;
 5. whether the approved task is complete, should continue, or is blocked.
 
-Distinguish CACI/employer action from Unum/insurer action where relevant.
+Use only names supported by the active matter's governed evidence or approved matter/task state. Never import names from another matter, demo, example, test fixture, prior session or background knowledge. Where employer/respondent and insurer/third-party actions are both evidenced, distinguish them explicitly.
 Distinguish proposal, recommendation or discussion from actual implementation.
 Distinguish documented fact, party allegation, later recollection, inference
 and unknown. Do not infer corpus-wide absence from a partial semantic search.

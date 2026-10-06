@@ -539,3 +539,20 @@ def test_r23_continuation_parses_marker_before_cleaning_answer():
     assert "previous_answer = _clean(raw_previous_answer)" in source
     assert "durable_next = extract_next_task_investigation(raw_previous_answer)" in source
     assert "durable_next = extract_next_task_investigation(previous_answer)" not in source
+
+
+def test_case_operator_prompt_templates_are_matter_neutral():
+    source = Path("src/ui/case_operator.py").read_text(encoding="utf-8-sig")
+    assert "CACI" not in source
+    assert "Unum/insurer" not in source
+    assert "Use only names supported by the active matter's governed evidence or approved matter/task state." in source
+    assert "Never import names from another matter, demo, example, test fixture, prior session or background knowledge." in source
+
+
+def test_first_step_prompt_enforces_active_matter_name_isolation():
+    issue = _issue("Reasonable adjustments", (_element(unresolved=("Was the recommendation implemented?",)),))
+    prompt = build_issue_investigation_question(issue, autonomous=True)
+    assert "Use only names supported by the active matter's governed evidence or approved matter/task state." in prompt
+    assert "Never import names from another matter" in prompt
+    assert "CACI" not in prompt
+    assert "Unum" not in prompt
